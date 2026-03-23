@@ -230,6 +230,8 @@ function ByMemberView({ assignments, projects, members, roles }: Props) {
 }
 
 function ByProjectView({ assignments, projects, members }: Props) {
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+
   if (projects.length === 0) {
     return (
       <div className="text-center text-gray-400 text-sm py-12">No projects yet.</div>
@@ -237,13 +239,23 @@ function ByProjectView({ assignments, projects, members }: Props) {
   }
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-3">
+      <div className="flex justify-end">
+        <button
+          type="button"
+          onClick={() => setCollapsed({})}
+          className="text-xs px-2.5 py-1 rounded border border-gray-200 text-gray-500 hover:bg-gray-50 transition-colors"
+        >
+          Collapse all
+        </button>
+      </div>
       {projects.map((project) => {
+        const isOpen = collapsed[project.id] === true;
         const months = getMonthsBetween(project.startMonth, project.endMonth);
         const projectAssignments = assignments.filter((a) => a.projectId === project.id);
         const budgetPerMonth = project.monthlyDistribution;
+        const totalAssigned = projectAssignments.reduce((s, a) => s + a.hoursPerMonth * months.length, 0);
 
-        // Total assigned per month = sum of hoursPerMonth for all assigned members
         const totalAssignedPerMonth: Record<string, number> = {};
         for (const month of months) {
           totalAssignedPerMonth[month] = projectAssignments.reduce(
@@ -254,19 +266,31 @@ function ByProjectView({ assignments, projects, members }: Props) {
 
         return (
           <div key={project.id} className="bg-white rounded-lg ring-1 ring-gray-200 overflow-hidden">
-            <div className="px-5 py-3 border-b border-gray-100 bg-gray-50 flex items-center justify-between">
-              <div>
-                <h2 className="font-semibold text-gray-800">{project.name}</h2>
+            <button
+              type="button"
+              onClick={() => setCollapsed((prev) => ({ ...prev, [project.id]: !prev[project.id] }))}
+              className="w-full px-5 py-3 flex items-center justify-between hover:bg-gray-50 transition-colors text-left"
+            >
+              <div className="flex items-center gap-3">
+                <span className={`text-gray-400 transition-transform duration-200 ${isOpen ? 'rotate-90' : ''}`}>
+                  ▶
+                </span>
+                <span className="font-semibold text-gray-800">{project.name}</span>
                 {project.orderNo && (
-                  <span className="text-xs text-gray-400">Order #{project.orderNo}</span>
+                  <span className="text-xs text-gray-400">#{project.orderNo}</span>
                 )}
+                <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">
+                  {projectAssignments.length} member{projectAssignments.length !== 1 ? 's' : ''}
+                </span>
               </div>
-              <div className="text-xs text-gray-500">
-                Budget: {project.orderAmountHours}h ·{' '}
-                {formatMonth(project.startMonth)} – {formatMonth(project.endMonth)}
+              <div className="flex items-center gap-4 text-xs text-gray-400">
+                <span>{formatMonth(project.startMonth)} – {formatMonth(project.endMonth)} · {months.length} months</span>
+                <span className="font-medium text-gray-600">{totalAssigned}h total</span>
               </div>
-            </div>
-            <div className="overflow-x-auto">
+            </button>
+
+            {isOpen && (
+            <div className="border-t border-gray-100 overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-gray-100 bg-gray-50/50">
@@ -403,6 +427,7 @@ function ByProjectView({ assignments, projects, members }: Props) {
                 </tfoot>
               </table>
             </div>
+            )}
           </div>
         );
       })}
