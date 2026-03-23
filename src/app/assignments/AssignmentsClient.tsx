@@ -114,10 +114,10 @@ function BulkAssignmentForm({
           <div className="flex items-center justify-between mb-2">
             <label className="text-sm font-medium text-gray-700">Team Members</label>
             <div className="flex gap-3 text-xs">
-              <button type="button" onClick={selectAll} className="text-indigo-600 hover:text-indigo-800">
+              <button type="button" onClick={selectAll} className="text-xs px-2.5 py-1 rounded border border-indigo-200 text-indigo-600 hover:bg-indigo-50 transition-colors">
                 Select all
               </button>
-              <button type="button" onClick={clearAll} className="text-gray-400 hover:text-gray-600">
+              <button type="button" onClick={clearAll} className="text-xs px-2.5 py-1 rounded border border-gray-200 text-gray-500 hover:bg-gray-50 transition-colors">
                 Clear
               </button>
             </div>
@@ -359,12 +359,8 @@ export default function AssignmentsClient({ assignments, projects, members, role
           <div className="flex justify-end">
             <button
               type="button"
-              onClick={() => {
-                const next: Record<string, boolean> = {};
-                for (const id of grouped.keys()) next[id] = true;
-                setCollapsed(next);
-              }}
-              className="text-xs text-gray-400 hover:text-gray-600 transition-colors"
+              onClick={() => setCollapsed({})}
+              className="text-xs px-2.5 py-1 rounded border border-gray-200 text-gray-500 hover:bg-gray-50 transition-colors"
             >
               Collapse all
             </button>
@@ -372,7 +368,7 @@ export default function AssignmentsClient({ assignments, projects, members, role
           {Array.from(grouped.entries()).map(([projectId, projectAssignments]) => {
             const project = projects.find((p) => p.id === projectId);
             const months = project ? getMonthsBetween(project.startMonth, project.endMonth) : [];
-            const isOpen = !collapsed[projectId];
+            const isOpen = collapsed[projectId] === true;
 
             return (
               <div key={projectId} className="bg-white rounded-lg ring-1 ring-gray-200 overflow-hidden">

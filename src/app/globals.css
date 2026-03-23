@@ -16,3 +16,7 @@ body {
   color: var(--foreground);
   font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
 }
+
+button, a, select, [role="button"] {
+  cursor: pointer;
+}

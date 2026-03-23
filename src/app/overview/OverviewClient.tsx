@@ -41,9 +41,7 @@ function ByMemberView({ assignments, projects, members, roles }: Props) {
   }
 
   function collapseAll() {
-    const next: Record<string, boolean> = {};
-    for (const m of members) next[m.id] = true;
-    setCollapsed(next);
+    setCollapsed({});
   }
 
   return (
@@ -52,13 +50,13 @@ function ByMemberView({ assignments, projects, members, roles }: Props) {
         <button
           type="button"
           onClick={collapseAll}
-          className="text-xs text-gray-400 hover:text-gray-600 transition-colors"
+          className="text-xs px-2.5 py-1 rounded border border-gray-200 text-gray-500 hover:bg-gray-50 transition-colors"
         >
           Collapse all
         </button>
       </div>
       {members.map((member) => {
-        const isOpen = !collapsed[member.id];
+        const isOpen = collapsed[member.id] === true;
         const role = roles.find((r) => r.id === member.roleId);
         const availability = member.monthlyAvailability ?? 0;
         const memberAssignments = assignments.filter((a) => a.memberId === member.id);
