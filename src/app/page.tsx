@@ -1,65 +1,178 @@
-import Image from "next/image";
+import { readData } from '@/lib/db';
+import { getMonthsBetween, formatMonth } from '@/lib/utils';
 
-export default function Home() {
+const YEAR_MONTHS = getMonthsBetween('2026-01', '2026-12');
+
+export default async function DashboardPage() {
+  const data = readData();
+
+  const internCount = data.teamMembers.filter((m) => {
+    const role = data.roles.find((r) => r.id === m.roleId);
+    return role?.type === 'intern';
+  }).length;
+  const externCount = data.teamMembers.length - internCount;
+
+  const totalOrderedHours = data.projects.reduce(
+    (sum, p) => sum + p.orderAmountHours,
+    0
+  );
+  // Total assigned hours = hoursPerMonth × project duration months
+  const totalAssignedHours = data.assignments.reduce((sum, a) => {
+    const proj = data.projects.find((p) => p.id === a.projectId);
+    if (!proj) return sum;
+    const months = getMonthsBetween(proj.startMonth, proj.endMonth);
+    return sum + a.hoursPerMonth * months.length;
+  }, 0);
+
+  // Build overview table: member -> month -> hours
+  const memberMonthHours: Record<string, Record<string, number>> = {};
+  for (const member of data.teamMembers) {
+    memberMonthHours[member.id] = {};
+    for (const month of YEAR_MONTHS) {
+      memberMonthHours[member.id][month] = 0;
+    }
+  }
+  for (const assignment of data.assignments) {
+    if (!memberMonthHours[assignment.memberId]) continue;
+    const proj = data.projects.find((p) => p.id === assignment.projectId);
+    if (!proj) continue;
+    const projMonths = getMonthsBetween(proj.startMonth, proj.endMonth);
+    for (const month of projMonths) {
+      if (YEAR_MONTHS.includes(month)) {
+        memberMonthHours[assignment.memberId][month] =
+          (memberMonthHours[assignment.memberId][month] || 0) + assignment.hoursPerMonth;
+      }
+    }
+  }
+
+  const summaryCards = [
+    {
+      title: 'Team Members',
+      value: data.teamMembers.length,
+      sub: `${internCount} intern · ${externCount} extern`,
+      color: 'bg-indigo-50 border-indigo-200',
+      textColor: 'text-indigo-700',
+    },
+    {
+      title: 'Active Projects',
+      value: data.projects.length,
+      sub: 'total projects',
+      color: 'bg-emerald-50 border-emerald-200',
+      textColor: 'text-emerald-700',
+    },
+    {
+      title: 'Ordered Hours',
+      value: totalOrderedHours,
+      sub: 'across all projects',
+      color: 'bg-sky-50 border-sky-200',
+      textColor: 'text-sky-700',
+    },
+    {
+      title: 'Assigned Hours',
+      value: totalAssignedHours,
+      sub: 'total assigned',
+      color: 'bg-amber-50 border-amber-200',
+      textColor: 'text-amber-700',
+    },
+  ];
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
+    <div>
+      <div className="mb-8">
+        <h1 className="text-2xl font-bold text-gray-900 mb-1">Dashboard</h1>
+        <p className="text-gray-500 text-sm">Resource management overview for 2026</p>
+      </div>
+
+      {/* Summary Cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+        {summaryCards.map((card) => (
+          <div
+            key={card.title}
+            className={`rounded-lg border p-5 ${card.color} ring-1 ring-gray-200`}
+          >
+            <p className="text-sm font-medium text-gray-500 mb-1">{card.title}</p>
+            <p className={`text-3xl font-bold ${card.textColor}`}>{card.value}</p>
+            <p className="text-xs text-gray-400 mt-1">{card.sub}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Overview Table */}
+      <div className="bg-white rounded-lg ring-1 ring-gray-200 overflow-hidden">
+        <div className="px-6 py-4 border-b border-gray-100">
+          <h2 className="text-base font-semibold text-gray-900">Team Overview — 2026</h2>
+          <p className="text-xs text-gray-400 mt-0.5">
+            Total committed hours per member per month across all active projects
           </p>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
+        {data.teamMembers.length === 0 ? (
+          <div className="px-6 py-8 text-center text-gray-400 text-sm">
+            No team members yet. Add members to see the overview.
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-gray-50 border-b border-gray-100">
+                  <th className="text-left px-4 py-3 font-medium text-gray-600 min-w-[160px]">
+                    Member
+                  </th>
+                  {YEAR_MONTHS.map((month) => (
+                    <th
+                      key={month}
+                      className="text-center px-2 py-3 font-medium text-gray-600 min-w-[60px]"
+                    >
+                      {formatMonth(month).split(' ')[0]}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {data.teamMembers.map((member, idx) => {
+                  const role = data.roles.find((r) => r.id === member.roleId);
+                  const availability = member.monthlyAvailability ?? 0;
+                  return (
+                    <tr
+                      key={member.id}
+                      className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}
+                    >
+                      <td className="px-4 py-2.5 font-medium text-gray-800">
+                        {member.name}
+                        {role && (
+                          <span className="block text-xs text-gray-400 font-normal">
+                            {role.name}
+                          </span>
+                        )}
+                      </td>
+                      {YEAR_MONTHS.map((month) => {
+                        const hours = memberMonthHours[member.id]?.[month] ?? 0;
+                        const isOver = availability > 0 && hours > availability;
+                        const isWarn = availability > 0 && hours >= availability * 0.8 && !isOver;
+                        return (
+                          <td
+                            key={month}
+                            className={`text-center px-2 py-2.5 text-xs rounded ${
+                              isOver
+                                ? 'bg-red-100 text-red-700 font-semibold'
+                                : isWarn
+                                ? 'bg-yellow-50 text-yellow-700'
+                                : hours > 0
+                                ? 'text-indigo-700 font-medium'
+                                : 'text-gray-300'
+                            }`}
+                          >
+                            {hours > 0 ? `${hours}h` : '—'}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

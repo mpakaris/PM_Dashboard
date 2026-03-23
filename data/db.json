@@ -1,0 +1,514 @@
+{
+  "roles": [
+    {
+      "id": "7c6ab440-574e-4c0f-a613-8c27f09e325a",
+      "name": "Spezialist INT",
+      "definition": "",
+      "type": "intern"
+    },
+    {
+      "id": "5257786e-8958-49dd-87f0-f441596db05f",
+      "name": "Spezialist EXT",
+      "definition": "",
+      "type": "extern"
+    },
+    {
+      "id": "06e4c51d-c242-49f6-9ed9-3e0720756222",
+      "name": "Berater INT",
+      "definition": "",
+      "type": "intern"
+    },
+    {
+      "id": "bbe0a5c9-0329-4dbb-bbc3-d73f05ab451c",
+      "name": "Berater EXT",
+      "definition": "",
+      "type": "extern"
+    },
+    {
+      "id": "3213f68c-6bcb-4320-8f32-4ce458993896",
+      "name": "Projektmanager",
+      "definition": "",
+      "type": "intern"
+    },
+    {
+      "id": "ebcb6111-8add-4018-9c6c-fd7a3ff6ea3d",
+      "name": "Spezialist Support iNT",
+      "definition": "",
+      "type": "intern"
+    }
+  ],
+  "profiles": [
+    {
+      "id": "680d23ae-cb92-4a1b-9ffd-e1910209e4ce",
+      "name": "Young Professional",
+      "definition": "Einsteiger - wenig Erfahrung (< 3 Jahre)"
+    },
+    {
+      "id": "2b8c39ce-8d23-4564-9637-93faf638ff39",
+      "name": "Specialist (Medior)",
+      "definition": "Mit Projekterfahrung, kann selbständig arbeiten und Aufgaben erledigen (Erfahrung > 3 Jahre)"
+    },
+    {
+      "id": "907f6c20-3a5b-4c6f-bc9c-efafe09e8241",
+      "name": "Architekt",
+      "definition": "Kann Systeme entwickeln und Kunden eingeständig beraten (Erfahrung > 5-7 Jahre)"
+    },
+    {
+      "id": "d8bc2b2f-a85f-4c05-8fcf-f9419fdecb7a",
+      "name": "Projektmanager",
+      "definition": "Kann Projekte führen, Kunden betreuen, Teams leiten (Erfahrung > 10 Jahre)"
+    }
+  ],
+  "teamMembers": [
+    {
+      "id": "9226608a-6d52-4b31-be38-311f1b46f7e6",
+      "name": "Mate",
+      "roleId": "06e4c51d-c242-49f6-9ed9-3e0720756222",
+      "profileIds": [
+        "907f6c20-3a5b-4c6f-bc9c-efafe09e8241"
+      ],
+      "monthlyAvailability": 80
+    },
+    {
+      "id": "8bc9c6fc-3aba-4fdb-82e9-47eb42030032",
+      "name": "Lazar",
+      "roleId": "7c6ab440-574e-4c0f-a613-8c27f09e325a",
+      "profileIds": [
+        "680d23ae-cb92-4a1b-9ffd-e1910209e4ce"
+      ],
+      "monthlyAvailability": 80
+    },
+    {
+      "id": "e65aa4d9-5a54-4d43-ae64-613fbbd2fcf1",
+      "name": "Patrick",
+      "roleId": "7c6ab440-574e-4c0f-a613-8c27f09e325a",
+      "profileIds": [
+        "680d23ae-cb92-4a1b-9ffd-e1910209e4ce"
+      ],
+      "monthlyAvailability": 80
+    },
+    {
+      "id": "61a02af6-5219-4115-813f-a5dc0bb1be2b",
+      "name": "Norbert I",
+      "roleId": "7c6ab440-574e-4c0f-a613-8c27f09e325a",
+      "profileIds": [
+        "2b8c39ce-8d23-4564-9637-93faf638ff39"
+      ],
+      "monthlyAvailability": 160
+    },
+    {
+      "id": "75d4b164-c4e9-42bc-a1df-d105b385b475",
+      "name": "Norbert II",
+      "roleId": "ebcb6111-8add-4018-9c6c-fd7a3ff6ea3d",
+      "profileIds": [
+        "2b8c39ce-8d23-4564-9637-93faf638ff39"
+      ],
+      "monthlyAvailability": 60
+    },
+    {
+      "id": "c794c1dc-d115-4818-a06f-308e919287f3",
+      "name": "Lukas",
+      "roleId": "5257786e-8958-49dd-87f0-f441596db05f",
+      "profileIds": [
+        "2b8c39ce-8d23-4564-9637-93faf638ff39"
+      ],
+      "monthlyAvailability": 80
+    },
+    {
+      "id": "3ce8d2c5-31bb-496d-b13a-db5fb69c03b2",
+      "name": "Tarek",
+      "roleId": "bbe0a5c9-0329-4dbb-bbc3-d73f05ab451c",
+      "profileIds": [
+        "2b8c39ce-8d23-4564-9637-93faf638ff39"
+      ],
+      "monthlyAvailability": 130
+    },
+    {
+      "id": "696a19d8-07e0-42c1-b032-687d0b70bd6c",
+      "name": "Jürgen",
+      "roleId": "bbe0a5c9-0329-4dbb-bbc3-d73f05ab451c",
+      "profileIds": [
+        "2b8c39ce-8d23-4564-9637-93faf638ff39"
+      ],
+      "monthlyAvailability": 80
+    },
+    {
+      "id": "0132d2d0-aee1-4e65-95d1-c88f51e08fd6",
+      "name": "Matteusz",
+      "roleId": "5257786e-8958-49dd-87f0-f441596db05f",
+      "profileIds": [
+        "680d23ae-cb92-4a1b-9ffd-e1910209e4ce"
+      ],
+      "monthlyAvailability": 80
+    },
+    {
+      "id": "8d5e31dd-5e2d-4395-9bbc-c60797ee5cde",
+      "name": "Alexej",
+      "roleId": "5257786e-8958-49dd-87f0-f441596db05f",
+      "profileIds": [
+        "2b8c39ce-8d23-4564-9637-93faf638ff39"
+      ],
+      "monthlyAvailability": 50
+    },
+    {
+      "id": "906056c3-1c0c-4a8e-a6b7-17dde7fd944f",
+      "name": "Niko",
+      "roleId": "3213f68c-6bcb-4320-8f32-4ce458993896",
+      "profileIds": [
+        "d8bc2b2f-a85f-4c05-8fcf-f9419fdecb7a"
+      ],
+      "monthlyAvailability": 160
+    }
+  ],
+  "projects": [
+    {
+      "id": "9d2c585f-3a53-4ac2-8dbc-c6e36666c784",
+      "name": "IDM.ONe IDMNP",
+      "orderNo": "",
+      "orderAmountHours": 1000,
+      "startMonth": "2026-01",
+      "endMonth": "2026-06",
+      "monthlyDistribution": {
+        "2026-01": 250,
+        "2026-02": 150,
+        "2026-03": 150,
+        "2026-04": 150,
+        "2026-05": 150,
+        "2026-06": 150
+      }
+    },
+    {
+      "id": "00d3c260-584c-48fd-97d9-42b35a5bb618",
+      "name": "IDM.One RUN",
+      "orderNo": "",
+      "orderAmountHours": 3360,
+      "startMonth": "2026-01",
+      "endMonth": "2026-12",
+      "monthlyDistribution": {
+        "2026-01": 280,
+        "2026-02": 280,
+        "2026-03": 280,
+        "2026-04": 280,
+        "2026-05": 280,
+        "2026-06": 280,
+        "2026-07": 280,
+        "2026-08": 280,
+        "2026-09": 280,
+        "2026-10": 280,
+        "2026-11": 280,
+        "2026-12": 280
+      }
+    },
+    {
+      "id": "5edd37d2-6bd1-4ab0-807c-c68697e5cea0",
+      "name": "IDM.ONe Change",
+      "orderNo": "",
+      "orderAmountHours": 1680,
+      "startMonth": "2026-01",
+      "endMonth": "2026-12",
+      "monthlyDistribution": {
+        "2026-01": 140,
+        "2026-02": 140,
+        "2026-03": 140,
+        "2026-04": 140,
+        "2026-05": 140,
+        "2026-06": 140,
+        "2026-07": 140,
+        "2026-08": 140,
+        "2026-09": 140,
+        "2026-10": 140,
+        "2026-11": 140,
+        "2026-12": 140
+      }
+    },
+    {
+      "id": "a128b61f-0474-401c-bd6c-275e12926c15",
+      "name": "IDM.ONe Support",
+      "orderNo": "",
+      "orderAmountHours": 900,
+      "startMonth": "2026-01",
+      "endMonth": "2026-12",
+      "monthlyDistribution": {
+        "2026-01": 75,
+        "2026-02": 75,
+        "2026-03": 75,
+        "2026-04": 75,
+        "2026-05": 75,
+        "2026-06": 75,
+        "2026-07": 75,
+        "2026-08": 75,
+        "2026-09": 75,
+        "2026-10": 75,
+        "2026-11": 75,
+        "2026-12": 75
+      }
+    },
+    {
+      "id": "ab8c1318-fd20-4f72-9e7c-bb411e8e3edc",
+      "name": "WiGeV RUN",
+      "orderNo": "",
+      "orderAmountHours": 1040,
+      "startMonth": "2026-07",
+      "endMonth": "2026-12",
+      "monthlyDistribution": {
+        "2026-07": 175,
+        "2026-08": 175,
+        "2026-09": 175,
+        "2026-10": 175,
+        "2026-11": 175,
+        "2026-12": 165
+      }
+    },
+    {
+      "id": "e68e35c0-f142-4ec9-9a25-328e48493a90",
+      "name": "WiGeV Change",
+      "orderNo": "",
+      "orderAmountHours": 2080,
+      "startMonth": "2026-07",
+      "endMonth": "2026-12",
+      "monthlyDistribution": {
+        "2026-07": 345,
+        "2026-08": 345,
+        "2026-09": 345,
+        "2026-10": 345,
+        "2026-11": 345,
+        "2026-12": 355
+      }
+    },
+    {
+      "id": "b34cd734-570c-45ff-b1bc-7c4b510412a1",
+      "name": "IDM.ONe Kundenanforderung MA06",
+      "orderNo": "",
+      "orderAmountHours": 50,
+      "startMonth": "2026-01",
+      "endMonth": "2026-02",
+      "monthlyDistribution": {
+        "2026-01": 25,
+        "2026-02": 25
+      }
+    },
+    {
+      "id": "7bdab629-b3d8-410c-badd-0c9d85b497de",
+      "name": "IDM.ONe Kundenanforderungen MA68",
+      "orderNo": "",
+      "orderAmountHours": 11,
+      "startMonth": "2026-01",
+      "endMonth": "2026-02",
+      "monthlyDistribution": {
+        "2026-02": 11
+      }
+    }
+  ],
+  "assignments": [
+    {
+      "id": "64afae38-8ec0-4198-bdc8-a62fc95ef22a",
+      "projectId": "9d2c585f-3a53-4ac2-8dbc-c6e36666c784",
+      "memberId": "9226608a-6d52-4b31-be38-311f1b46f7e6",
+      "hoursPerMonth": 60
+    },
+    {
+      "id": "c5ca97c1-265c-401d-8c37-b7856ba97cfa",
+      "projectId": "9d2c585f-3a53-4ac2-8dbc-c6e36666c784",
+      "memberId": "8bc9c6fc-3aba-4fdb-82e9-47eb42030032",
+      "hoursPerMonth": 30
+    },
+    {
+      "id": "62c4a163-a7b9-4a4c-b9c8-1ddff07a40e0",
+      "projectId": "9d2c585f-3a53-4ac2-8dbc-c6e36666c784",
+      "memberId": "e65aa4d9-5a54-4d43-ae64-613fbbd2fcf1",
+      "hoursPerMonth": 20
+    },
+    {
+      "id": "eeaa7393-af0f-4765-8f0b-5665bb35b36b",
+      "projectId": "9d2c585f-3a53-4ac2-8dbc-c6e36666c784",
+      "memberId": "61a02af6-5219-4115-813f-a5dc0bb1be2b",
+      "hoursPerMonth": 10
+    },
+    {
+      "id": "ac6bd572-a914-46dd-a240-9095eee8b288",
+      "projectId": "9d2c585f-3a53-4ac2-8dbc-c6e36666c784",
+      "memberId": "75d4b164-c4e9-42bc-a1df-d105b385b475",
+      "hoursPerMonth": 25
+    },
+    {
+      "id": "1ebdbe5d-8a7e-4235-b63e-35d48f72ba2d",
+      "projectId": "9d2c585f-3a53-4ac2-8dbc-c6e36666c784",
+      "memberId": "c794c1dc-d115-4818-a06f-308e919287f3",
+      "hoursPerMonth": 120
+    },
+    {
+      "id": "a13ad7a0-0769-4ddb-b1df-a8a6239ea474",
+      "projectId": "9d2c585f-3a53-4ac2-8dbc-c6e36666c784",
+      "memberId": "3ce8d2c5-31bb-496d-b13a-db5fb69c03b2",
+      "hoursPerMonth": 120
+    },
+    {
+      "id": "ac73f434-ea7e-446f-aa3c-7084820c6b10",
+      "projectId": "9d2c585f-3a53-4ac2-8dbc-c6e36666c784",
+      "memberId": "696a19d8-07e0-42c1-b032-687d0b70bd6c",
+      "hoursPerMonth": 60
+    },
+    {
+      "id": "bcb234c4-20dc-40ac-b3e6-9cc676a92b37",
+      "projectId": "9d2c585f-3a53-4ac2-8dbc-c6e36666c784",
+      "memberId": "0132d2d0-aee1-4e65-95d1-c88f51e08fd6",
+      "hoursPerMonth": 50
+    },
+    {
+      "id": "2a5e1f61-78eb-4841-9af0-37c7e35e2c2e",
+      "projectId": "9d2c585f-3a53-4ac2-8dbc-c6e36666c784",
+      "memberId": "8d5e31dd-5e2d-4395-9bbc-c60797ee5cde",
+      "hoursPerMonth": 30
+    },
+    {
+      "id": "15bc8031-7a95-4e12-9dbe-f6e5da48bd2f",
+      "projectId": "9d2c585f-3a53-4ac2-8dbc-c6e36666c784",
+      "memberId": "906056c3-1c0c-4a8e-a6b7-17dde7fd944f",
+      "hoursPerMonth": 40
+    },
+    {
+      "id": "bfcc4f2e-360b-4f46-94dc-1ca9038428de",
+      "projectId": "00d3c260-584c-48fd-97d9-42b35a5bb618",
+      "memberId": "9226608a-6d52-4b31-be38-311f1b46f7e6",
+      "hoursPerMonth": 20
+    },
+    {
+      "id": "152c5c49-28d4-40eb-905a-2c6dde8817f9",
+      "projectId": "00d3c260-584c-48fd-97d9-42b35a5bb618",
+      "memberId": "c794c1dc-d115-4818-a06f-308e919287f3",
+      "hoursPerMonth": 40
+    },
+    {
+      "id": "45a8c35e-606f-4280-8f00-95aa04c28014",
+      "projectId": "00d3c260-584c-48fd-97d9-42b35a5bb618",
+      "memberId": "3ce8d2c5-31bb-496d-b13a-db5fb69c03b2",
+      "hoursPerMonth": 40
+    },
+    {
+      "id": "972f99c9-80ed-4daf-8914-a80118d6ea32",
+      "projectId": "00d3c260-584c-48fd-97d9-42b35a5bb618",
+      "memberId": "696a19d8-07e0-42c1-b032-687d0b70bd6c",
+      "hoursPerMonth": 20
+    },
+    {
+      "id": "14432bff-d452-420e-9657-d5a79dbb233d",
+      "projectId": "00d3c260-584c-48fd-97d9-42b35a5bb618",
+      "memberId": "8d5e31dd-5e2d-4395-9bbc-c60797ee5cde",
+      "hoursPerMonth": 10
+    },
+    {
+      "id": "238cad2f-1ccf-4aeb-beeb-181c25005065",
+      "projectId": "5edd37d2-6bd1-4ab0-807c-c68697e5cea0",
+      "memberId": "9226608a-6d52-4b31-be38-311f1b46f7e6",
+      "hoursPerMonth": 40
+    },
+    {
+      "id": "9785bc75-a948-4635-8d67-d1592ac5eb0f",
+      "projectId": "5edd37d2-6bd1-4ab0-807c-c68697e5cea0",
+      "memberId": "c794c1dc-d115-4818-a06f-308e919287f3",
+      "hoursPerMonth": 20
+    },
+    {
+      "id": "acc8b5cb-606c-41bd-a355-cf028996b43d",
+      "projectId": "5edd37d2-6bd1-4ab0-807c-c68697e5cea0",
+      "memberId": "3ce8d2c5-31bb-496d-b13a-db5fb69c03b2",
+      "hoursPerMonth": 20
+    },
+    {
+      "id": "7294600f-f9fe-4ddb-9070-a9c2ea092e9a",
+      "projectId": "5edd37d2-6bd1-4ab0-807c-c68697e5cea0",
+      "memberId": "696a19d8-07e0-42c1-b032-687d0b70bd6c",
+      "hoursPerMonth": 10
+    },
+    {
+      "id": "8bd81377-9ac0-443f-afa7-3f9f1ed92848",
+      "projectId": "5edd37d2-6bd1-4ab0-807c-c68697e5cea0",
+      "memberId": "8d5e31dd-5e2d-4395-9bbc-c60797ee5cde",
+      "hoursPerMonth": 20
+    },
+    {
+      "id": "961088a4-c337-4d5b-ae06-91042e36e967",
+      "projectId": "5edd37d2-6bd1-4ab0-807c-c68697e5cea0",
+      "memberId": "906056c3-1c0c-4a8e-a6b7-17dde7fd944f",
+      "hoursPerMonth": 20
+    },
+    {
+      "id": "d6b24fd5-b886-48b7-92b9-cadbd43dcb70",
+      "projectId": "a128b61f-0474-401c-bd6c-275e12926c15",
+      "memberId": "61a02af6-5219-4115-813f-a5dc0bb1be2b",
+      "hoursPerMonth": 40
+    },
+    {
+      "id": "e695834f-660b-4e5d-8cb4-fb0960d77fc1",
+      "projectId": "a128b61f-0474-401c-bd6c-275e12926c15",
+      "memberId": "75d4b164-c4e9-42bc-a1df-d105b385b475",
+      "hoursPerMonth": 25
+    },
+    {
+      "id": "e17057a4-a203-4828-91b9-0c43410e9269",
+      "projectId": "ab8c1318-fd20-4f72-9e7c-bb411e8e3edc",
+      "memberId": "9226608a-6d52-4b31-be38-311f1b46f7e6",
+      "hoursPerMonth": 50
+    },
+    {
+      "id": "072dd5cf-cba4-4262-b903-8bfc8c4a764a",
+      "projectId": "ab8c1318-fd20-4f72-9e7c-bb411e8e3edc",
+      "memberId": "8bc9c6fc-3aba-4fdb-82e9-47eb42030032",
+      "hoursPerMonth": 10
+    },
+    {
+      "id": "3fd319e7-daa6-4708-b07c-8ecb7fe9a5c6",
+      "projectId": "ab8c1318-fd20-4f72-9e7c-bb411e8e3edc",
+      "memberId": "3ce8d2c5-31bb-496d-b13a-db5fb69c03b2",
+      "hoursPerMonth": 30
+    },
+    {
+      "id": "1d4273af-35d8-483e-bc5e-34e311f5e21f",
+      "projectId": "ab8c1318-fd20-4f72-9e7c-bb411e8e3edc",
+      "memberId": "8d5e31dd-5e2d-4395-9bbc-c60797ee5cde",
+      "hoursPerMonth": 80
+    },
+    {
+      "id": "e8a61653-b4da-4bd7-984f-893f8750c7c0",
+      "projectId": "e68e35c0-f142-4ec9-9a25-328e48493a90",
+      "memberId": "9226608a-6d52-4b31-be38-311f1b46f7e6",
+      "hoursPerMonth": 50
+    },
+    {
+      "id": "a1c1a596-5c2c-48aa-9314-cb932398952f",
+      "projectId": "e68e35c0-f142-4ec9-9a25-328e48493a90",
+      "memberId": "8bc9c6fc-3aba-4fdb-82e9-47eb42030032",
+      "hoursPerMonth": 10
+    },
+    {
+      "id": "2e59f34b-5775-4cbc-8782-70b0a070b0a6",
+      "projectId": "e68e35c0-f142-4ec9-9a25-328e48493a90",
+      "memberId": "3ce8d2c5-31bb-496d-b13a-db5fb69c03b2",
+      "hoursPerMonth": 30
+    },
+    {
+      "id": "e3ab8228-b05f-400a-b94a-6f2f549b09d8",
+      "projectId": "e68e35c0-f142-4ec9-9a25-328e48493a90",
+      "memberId": "8d5e31dd-5e2d-4395-9bbc-c60797ee5cde",
+      "hoursPerMonth": 75
+    },
+    {
+      "id": "4d8b1adb-3229-4724-bc8b-168cc603ac98",
+      "projectId": "e68e35c0-f142-4ec9-9a25-328e48493a90",
+      "memberId": "906056c3-1c0c-4a8e-a6b7-17dde7fd944f",
+      "hoursPerMonth": 30
+    },
+    {
+      "id": "43d599a9-acd1-485d-920b-661625cc0603",
+      "projectId": "b34cd734-570c-45ff-b1bc-7c4b510412a1",
+      "memberId": "696a19d8-07e0-42c1-b032-687d0b70bd6c",
+      "hoursPerMonth": 25
+    },
+    {
+      "id": "28f3fefd-6967-48ca-90cf-9dfded91abea",
+      "projectId": "7bdab629-b3d8-410c-badd-0c9d85b497de",
+      "memberId": "9226608a-6d52-4b31-be38-311f1b46f7e6",
+      "hoursPerMonth": 5
+    }
+  ]
+}
