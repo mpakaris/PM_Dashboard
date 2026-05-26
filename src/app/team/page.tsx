@@ -2,7 +2,7 @@ import { readData } from '@/lib/db';
 import TeamClient from './TeamClient';
 
 export default async function TeamPage() {
-  const data = readData();
+  const data = await readData();
   return (
     <TeamClient
       members={data.teamMembers}

@@ -18,7 +18,7 @@ export interface TeamMember {
   name: string;
   roleId: string;
   profileIds: string[];
-  monthlyAvailability: number; // avg available hours per month (used as baseline)
+  monthlyAvailability: number;
 }
 
 export interface Project {
@@ -26,9 +26,9 @@ export interface Project {
   name: string;
   orderNo: string;
   orderAmountHours: number;
-  startMonth: string; // "YYYY-MM"
-  endMonth: string;   // "YYYY-MM"
-  monthlyDistribution: Record<string, number>; // { "2026-01": 50, ... }
+  startMonth: string;
+  endMonth: string;
+  monthlyDistribution: Record<string, number>;
   managerId: string;
 }
 
@@ -36,7 +36,8 @@ export interface Assignment {
   id: string;
   projectId: string;
   memberId: string;
-  hoursPerMonth: number; // same hours every month of the project duration
+  plannedHours: Record<string, number>; // { "2026-01": 30, "2026-02": 60 }
+  billedHours: Record<string, number>;  // { "2026-01": 10, "2026-02": 60 }
 }
 
 export interface AppData {

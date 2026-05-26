@@ -22,6 +22,10 @@ export function getMonthsBetween(start: string, end: string): string[] {
   return months;
 }
 
+export function formatNumber(value: number): string {
+  return value.toLocaleString('de-DE');
+}
+
 export function formatMonth(month: string): string {
   const [year, monthNum] = month.split('-');
   const date = new Date(Number(year), Number(monthNum) - 1, 1);

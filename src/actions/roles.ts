@@ -6,7 +6,7 @@ import { generateId } from '@/lib/utils';
 import { ResourceType } from '@/lib/types';
 
 export async function createRole(formData: FormData) {
-  const data = readData();
+  const data = await readData();
   const role = {
     id: generateId(),
     name: formData.get('name') as string,
@@ -14,12 +14,12 @@ export async function createRole(formData: FormData) {
     type: formData.get('type') as ResourceType,
   };
   data.roles.push(role);
-  writeData(data);
-  revalidatePath('/');
+  await writeData(data);
+  revalidatePath('/', 'layout');
 }
 
 export async function updateRole(id: string, formData: FormData) {
-  const data = readData();
+  const data = await readData();
   const idx = data.roles.findIndex((r) => r.id === id);
   if (idx !== -1) {
     data.roles[idx] = {
@@ -28,14 +28,14 @@ export async function updateRole(id: string, formData: FormData) {
       definition: formData.get('definition') as string,
       type: formData.get('type') as ResourceType,
     };
-    writeData(data);
+    await writeData(data);
   }
-  revalidatePath('/');
+  revalidatePath('/', 'layout');
 }
 
 export async function deleteRole(id: string) {
-  const data = readData();
+  const data = await readData();
   data.roles = data.roles.filter((r) => r.id !== id);
-  writeData(data);
-  revalidatePath('/');
+  await writeData(data);
+  revalidatePath('/', 'layout');
 }

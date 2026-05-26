@@ -5,9 +5,8 @@ import { readData, writeData } from '@/lib/db';
 import { generateId } from '@/lib/utils';
 
 export async function createProject(formData: FormData) {
-  const data = readData();
+  const data = await readData();
 
-  // Parse monthlyDistribution from form entries like "dist_2026-01"
   const monthlyDistribution: Record<string, number> = {};
   for (const [key, value] of formData.entries()) {
     if (key.startsWith('dist_')) {
@@ -28,12 +27,12 @@ export async function createProject(formData: FormData) {
     managerId: formData.get('managerId') as string,
   };
   data.projects.push(project);
-  writeData(data);
-  revalidatePath('/');
+  await writeData(data);
+  revalidatePath('/', 'layout');
 }
 
 export async function updateProject(id: string, formData: FormData) {
-  const data = readData();
+  const data = await readData();
   const idx = data.projects.findIndex((p) => p.id === id);
   if (idx !== -1) {
     const monthlyDistribution: Record<string, number> = {};
@@ -55,15 +54,15 @@ export async function updateProject(id: string, formData: FormData) {
       monthlyDistribution,
       managerId: formData.get('managerId') as string,
     };
-    writeData(data);
+    await writeData(data);
   }
-  revalidatePath('/');
+  revalidatePath('/', 'layout');
 }
 
 export async function deleteProject(id: string) {
-  const data = readData();
+  const data = await readData();
   data.projects = data.projects.filter((p) => p.id !== id);
   data.assignments = data.assignments.filter((a) => a.projectId !== id);
-  writeData(data);
-  revalidatePath('/');
+  await writeData(data);
+  revalidatePath('/', 'layout');
 }

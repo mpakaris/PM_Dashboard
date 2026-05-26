@@ -1,10 +1,10 @@
 import { readData } from '@/lib/db';
-import { getMonthsBetween, formatMonth } from '@/lib/utils';
+import { getMonthsBetween, formatMonth, formatNumber } from '@/lib/utils';
 
 const YEAR_MONTHS = getMonthsBetween('2026-01', '2026-12');
 
 export default async function DashboardPage() {
-  const data = readData();
+  const data = await readData();
 
   const internCount = data.teamMembers.filter((m) => {
     const role = data.roles.find((r) => r.id === m.roleId);
@@ -16,12 +16,8 @@ export default async function DashboardPage() {
     (sum, p) => sum + p.orderAmountHours,
     0
   );
-  // Total assigned hours = hoursPerMonth × project duration months
   const totalAssignedHours = data.assignments.reduce((sum, a) => {
-    const proj = data.projects.find((p) => p.id === a.projectId);
-    if (!proj) return sum;
-    const months = getMonthsBetween(proj.startMonth, proj.endMonth);
-    return sum + a.hoursPerMonth * months.length;
+    return sum + Object.values(a.plannedHours).reduce((s, v) => s + v, 0);
   }, 0);
 
   // Build overview table: member -> month -> hours
@@ -36,11 +32,10 @@ export default async function DashboardPage() {
     if (!memberMonthHours[assignment.memberId]) continue;
     const proj = data.projects.find((p) => p.id === assignment.projectId);
     if (!proj) continue;
-    const projMonths = getMonthsBetween(proj.startMonth, proj.endMonth);
-    for (const month of projMonths) {
+    for (const [month, hours] of Object.entries(assignment.plannedHours)) {
       if (YEAR_MONTHS.includes(month)) {
         memberMonthHours[assignment.memberId][month] =
-          (memberMonthHours[assignment.memberId][month] || 0) + assignment.hoursPerMonth;
+          (memberMonthHours[assignment.memberId][month] || 0) + hours;
       }
     }
   }
@@ -91,7 +86,7 @@ export default async function DashboardPage() {
             className={`rounded-lg border p-5 ${card.color} ring-1 ring-gray-200`}
           >
             <p className="text-sm font-medium text-gray-500 mb-1">{card.title}</p>
-            <p className={`text-3xl font-bold ${card.textColor}`}>{card.value}</p>
+            <p className={`text-3xl font-bold ${card.textColor}`}>{formatNumber(card.value)}</p>
             <p className="text-xs text-gray-400 mt-1">{card.sub}</p>
           </div>
         ))}

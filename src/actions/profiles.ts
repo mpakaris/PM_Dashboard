@@ -5,19 +5,19 @@ import { readData, writeData } from '@/lib/db';
 import { generateId } from '@/lib/utils';
 
 export async function createProfile(formData: FormData) {
-  const data = readData();
+  const data = await readData();
   const profile = {
     id: generateId(),
     name: formData.get('name') as string,
     definition: formData.get('definition') as string,
   };
   data.profiles.push(profile);
-  writeData(data);
-  revalidatePath('/');
+  await writeData(data);
+  revalidatePath('/', 'layout');
 }
 
 export async function updateProfile(id: string, formData: FormData) {
-  const data = readData();
+  const data = await readData();
   const idx = data.profiles.findIndex((p) => p.id === id);
   if (idx !== -1) {
     data.profiles[idx] = {
@@ -25,14 +25,14 @@ export async function updateProfile(id: string, formData: FormData) {
       name: formData.get('name') as string,
       definition: formData.get('definition') as string,
     };
-    writeData(data);
+    await writeData(data);
   }
-  revalidatePath('/');
+  revalidatePath('/', 'layout');
 }
 
 export async function deleteProfile(id: string) {
-  const data = readData();
+  const data = await readData();
   data.profiles = data.profiles.filter((p) => p.id !== id);
-  writeData(data);
-  revalidatePath('/');
+  await writeData(data);
+  revalidatePath('/', 'layout');
 }

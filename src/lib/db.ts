@@ -1,40 +1,47 @@
-import fs from 'fs';
-import path from 'path';
-import { AppData } from './types';
+import { Redis } from '@upstash/redis';
+import { AppData, Assignment, Project } from './types';
+import { getMonthsBetween } from './utils';
 
-const dbPath = path.join(process.cwd(), 'data', 'db.json');
+const redis = new Redis({
+  url: process.env.UPSTASH_REDIS_REST_URL!,
+  token: process.env.UPSTASH_REDIS_REST_TOKEN!,
+});
 
-function ensureDataDir() {
-  const dir = path.dirname(dbPath);
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
-  if (!fs.existsSync(dbPath)) {
-    const empty: AppData = {
-      roles: [],
-      profiles: [],
-      teamMembers: [],
-      projects: [],
-      assignments: [],
-    };
-    fs.writeFileSync(dbPath, JSON.stringify(empty, null, 2), 'utf-8');
-  }
+const DB_KEY = 'app:db';
+
+const EMPTY: AppData = {
+  roles: [],
+  profiles: [],
+  teamMembers: [],
+  projects: [],
+  assignments: [],
+};
+
+// Migrate assignments that still use the old flat hoursPerMonth field
+function migrateAssignments(raw: any[], projects: Project[]): Assignment[] {
+  return raw.map((a: any) => {
+    if (a.plannedHours !== undefined) return a as Assignment;
+    const project = projects.find((p) => p.id === a.projectId);
+    const months = project ? getMonthsBetween(project.startMonth, project.endMonth) : [];
+    const plannedHours: Record<string, number> = {};
+    for (const month of months) plannedHours[month] = a.hoursPerMonth ?? 0;
+    return { id: a.id, projectId: a.projectId, memberId: a.memberId, plannedHours, billedHours: {} };
+  });
 }
 
-export function readData(): AppData {
-  ensureDataDir();
-  const raw = fs.readFileSync(dbPath, 'utf-8');
-  const data = JSON.parse(raw);
+export async function readData(): Promise<AppData> {
+  const raw = await redis.get<any>(DB_KEY);
+  if (!raw) return { ...EMPTY };
+  const projects: Project[] = raw.projects ?? [];
   return {
-    roles: data.roles ?? [],
-    profiles: data.profiles ?? [],
-    teamMembers: data.teamMembers ?? [],
-    projects: data.projects ?? [],
-    assignments: data.assignments ?? [],
+    roles: raw.roles ?? [],
+    profiles: raw.profiles ?? [],
+    teamMembers: raw.teamMembers ?? [],
+    projects,
+    assignments: migrateAssignments(raw.assignments ?? [], projects),
   };
 }
 
-export function writeData(data: AppData): void {
-  ensureDataDir();
-  fs.writeFileSync(dbPath, JSON.stringify(data, null, 2), 'utf-8');
+export async function writeData(data: AppData): Promise<void> {
+  await redis.set(DB_KEY, data);
 }

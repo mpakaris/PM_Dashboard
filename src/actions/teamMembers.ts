@@ -5,7 +5,7 @@ import { readData, writeData } from '@/lib/db';
 import { generateId } from '@/lib/utils';
 
 export async function createTeamMember(formData: FormData) {
-  const data = readData();
+  const data = await readData();
   const profileIds = formData.getAll('profileIds') as string[];
   const member = {
     id: generateId(),
@@ -15,12 +15,12 @@ export async function createTeamMember(formData: FormData) {
     monthlyAvailability: Number(formData.get('monthlyAvailability')) || 0,
   };
   data.teamMembers.push(member);
-  writeData(data);
-  revalidatePath('/');
+  await writeData(data);
+  revalidatePath('/', 'layout');
 }
 
 export async function updateTeamMember(id: string, formData: FormData) {
-  const data = readData();
+  const data = await readData();
   const idx = data.teamMembers.findIndex((m) => m.id === id);
   if (idx !== -1) {
     const profileIds = formData.getAll('profileIds') as string[];
@@ -31,15 +31,15 @@ export async function updateTeamMember(id: string, formData: FormData) {
       profileIds,
       monthlyAvailability: Number(formData.get('monthlyAvailability')) || 0,
     };
-    writeData(data);
+    await writeData(data);
   }
-  revalidatePath('/');
+  revalidatePath('/', 'layout');
 }
 
 export async function deleteTeamMember(id: string) {
-  const data = readData();
+  const data = await readData();
   data.teamMembers = data.teamMembers.filter((m) => m.id !== id);
   data.assignments = data.assignments.filter((a) => a.memberId !== id);
-  writeData(data);
-  revalidatePath('/');
+  await writeData(data);
+  revalidatePath('/', 'layout');
 }

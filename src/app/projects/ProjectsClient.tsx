@@ -1,14 +1,16 @@
 'use client';
 
 import { useState, useMemo } from 'react';
-import { Project, TeamMember } from '@/lib/types';
+import { useRouter } from 'next/navigation';
+import { Project, TeamMember, Assignment } from '@/lib/types';
 import Modal from '@/components/Modal';
 import { createProject, updateProject, deleteProject } from '@/actions/projects';
-import { getMonthsBetween, formatMonth } from '@/lib/utils';
+import { getMonthsBetween, formatMonth, formatNumber } from '@/lib/utils';
 
 interface Props {
   projects: Project[];
   members: TeamMember[];
+  assignments: Assignment[];
 }
 
 // Generate month options from 2025-01 to 2027-12
@@ -203,7 +205,8 @@ function ProjectForm({
   );
 }
 
-export default function ProjectsClient({ projects, members }: Props) {
+export default function ProjectsClient({ projects, members, assignments }: Props) {
+  const router = useRouter();
   const [showCreate, setShowCreate] = useState(false);
   const [editProject, setEditProject] = useState<Project | null>(null);
 
@@ -236,18 +239,22 @@ export default function ProjectsClient({ projects, members }: Props) {
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Order No.</th>
                 <th className="text-right px-4 py-3 font-medium text-gray-600">Ordered h</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Duration</th>
-                <th className="text-right px-4 py-3 font-medium text-gray-600">Distributed h</th>
+                <th className="text-right px-4 py-3 font-medium text-gray-600">Planned h</th>
+                <th className="text-right px-4 py-3 font-medium text-gray-600">Billed h</th>
                 <th className="text-right px-4 py-3 font-medium text-gray-600">Remaining h</th>
                 <th className="px-4 py-3"></th>
               </tr>
             </thead>
             <tbody>
               {projects.map((project, idx) => {
-                const distributed = Object.values(project.monthlyDistribution).reduce(
-                  (s, v) => s + v,
-                  0
+                const projectAssignments = assignments.filter((a) => a.projectId === project.id);
+                const planned = projectAssignments.reduce(
+                  (s, a) => s + Object.values(a.plannedHours).reduce((x, v) => x + v, 0), 0
                 );
-                const remaining = project.orderAmountHours - distributed;
+                const billed = projectAssignments.reduce(
+                  (s, a) => s + Object.values(a.billedHours).reduce((x, v) => x + v, 0), 0
+                );
+                const remaining = project.orderAmountHours - billed;
                 return (
                   <tr
                     key={project.id}
@@ -259,12 +266,13 @@ export default function ProjectsClient({ projects, members }: Props) {
                     <td className="px-4 py-3 text-gray-600 text-sm">{getManagerName(project.managerId)}</td>
                     <td className="px-4 py-3 text-gray-500">{project.orderNo || '—'}</td>
                     <td className="px-4 py-3 text-right text-gray-600">
-                      {project.orderAmountHours}h
+                      {formatNumber(project.orderAmountHours)}h
                     </td>
                     <td className="px-4 py-3 text-gray-500 text-xs">
                       {formatMonth(project.startMonth)} – {formatMonth(project.endMonth)}
                     </td>
-                    <td className="px-4 py-3 text-right text-gray-600">{distributed}h</td>
+                    <td className="px-4 py-3 text-right text-indigo-600 font-medium">{formatNumber(planned)}h</td>
+                    <td className="px-4 py-3 text-right text-emerald-600 font-medium">{formatNumber(billed)}h</td>
                     <td
                       className={`px-4 py-3 text-right font-medium ${
                         remaining < 0
@@ -274,7 +282,7 @@ export default function ProjectsClient({ projects, members }: Props) {
                           : 'text-gray-600'
                       }`}
                     >
-                      {remaining}h
+                      {formatNumber(remaining)}h
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2 justify-end">
@@ -317,6 +325,7 @@ export default function ProjectsClient({ projects, members }: Props) {
             onSubmit={async (fd) => {
               await createProject(fd);
               setShowCreate(false);
+              router.refresh();
             }}
           />
         </Modal>
@@ -330,6 +339,7 @@ export default function ProjectsClient({ projects, members }: Props) {
             onSubmit={async (fd) => {
               await updateProject(editProject.id, fd);
               setEditProject(null);
+              router.refresh();
             }}
           />
         </Modal>

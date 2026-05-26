@@ -2,7 +2,7 @@ import { readData } from '@/lib/db';
 import OverviewClient from './OverviewClient';
 
 export default async function OverviewPage() {
-  const data = readData();
+  const data = await readData();
   return (
     <OverviewClient
       assignments={data.assignments}

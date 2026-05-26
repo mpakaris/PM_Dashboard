@@ -175,11 +175,12 @@
         "2026-04": 150,
         "2026-05": 150,
         "2026-06": 150
-      }
+      },
+      "managerId": "906056c3-1c0c-4a8e-a6b7-17dde7fd944f"
     },
     {
       "id": "00d3c260-584c-48fd-97d9-42b35a5bb618",
-      "name": "IDM.One RUN",
+      "name": "IDM.One RUN 2026",
       "orderNo": "",
       "orderAmountHours": 3360,
       "startMonth": "2026-01",
@@ -197,11 +198,12 @@
         "2026-10": 280,
         "2026-11": 280,
         "2026-12": 280
-      }
+      },
+      "managerId": "906056c3-1c0c-4a8e-a6b7-17dde7fd944f"
     },
     {
       "id": "5edd37d2-6bd1-4ab0-807c-c68697e5cea0",
-      "name": "IDM.ONe Change",
+      "name": "IDM.ONe Change 2026",
       "orderNo": "",
       "orderAmountHours": 1680,
       "startMonth": "2026-01",
@@ -219,11 +221,12 @@
         "2026-10": 140,
         "2026-11": 140,
         "2026-12": 140
-      }
+      },
+      "managerId": "906056c3-1c0c-4a8e-a6b7-17dde7fd944f"
     },
     {
       "id": "a128b61f-0474-401c-bd6c-275e12926c15",
-      "name": "IDM.ONe Support",
+      "name": "IDM.ONe Support 2026",
       "orderNo": "",
       "orderAmountHours": 900,
       "startMonth": "2026-01",
@@ -241,11 +244,12 @@
         "2026-10": 75,
         "2026-11": 75,
         "2026-12": 75
-      }
+      },
+      "managerId": "906056c3-1c0c-4a8e-a6b7-17dde7fd944f"
     },
     {
       "id": "ab8c1318-fd20-4f72-9e7c-bb411e8e3edc",
-      "name": "WiGeV RUN",
+      "name": "WiGeV RUN 2026",
       "orderNo": "",
       "orderAmountHours": 1040,
       "startMonth": "2026-07",
@@ -257,11 +261,12 @@
         "2026-10": 175,
         "2026-11": 175,
         "2026-12": 165
-      }
+      },
+      "managerId": "906056c3-1c0c-4a8e-a6b7-17dde7fd944f"
     },
     {
       "id": "e68e35c0-f142-4ec9-9a25-328e48493a90",
-      "name": "WiGeV Change",
+      "name": "WiGeV Change 2026",
       "orderNo": "",
       "orderAmountHours": 2080,
       "startMonth": "2026-07",
@@ -273,11 +278,12 @@
         "2026-10": 345,
         "2026-11": 345,
         "2026-12": 355
-      }
+      },
+      "managerId": "906056c3-1c0c-4a8e-a6b7-17dde7fd944f"
     },
     {
       "id": "b34cd734-570c-45ff-b1bc-7c4b510412a1",
-      "name": "IDM.ONe Kundenanforderung MA06",
+      "name": "IDM.ONe Kundenanforderung MA06 2026",
       "orderNo": "",
       "orderAmountHours": 50,
       "startMonth": "2026-01",
@@ -285,7 +291,8 @@
       "monthlyDistribution": {
         "2026-01": 25,
         "2026-02": 25
-      }
+      },
+      "managerId": "906056c3-1c0c-4a8e-a6b7-17dde7fd944f"
     },
     {
       "id": "7bdab629-b3d8-410c-badd-0c9d85b497de",
@@ -296,7 +303,8 @@
       "endMonth": "2026-02",
       "monthlyDistribution": {
         "2026-02": 11
-      }
+      },
+      "managerId": "906056c3-1c0c-4a8e-a6b7-17dde7fd944f"
     }
   ],
   "assignments": [
