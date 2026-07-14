@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Assignment, Project, TeamMember, Role } from '@/lib/types';
 import { getMonthsBetween, formatMonth } from '@/lib/utils';
 import ChartsView from './ChartsView';
+import DashboardView from './DashboardView';
 
 const YEAR_MONTHS = getMonthsBetween('2026-01', '2026-12');
 
@@ -69,9 +70,14 @@ function ByMemberView({ assignments, projects, members, roles }: Props) {
                 <span className="text-gray-400">{memberAssignments.length} project{memberAssignments.length !== 1 ? 's' : ''}</span>
                 <span className="text-indigo-600 font-medium">{grandPlanned}h planned</span>
                 <span className="text-emerald-600 font-medium">{grandBilled}h billed</span>
-                {availability > 0 && (
-                  <span className={`font-medium ${grandPlanned > availability * 12 ? 'text-red-500' : 'text-gray-400'}`}>
-                    {Math.round((grandPlanned / (availability * 12)) * 100)}% util.
+                {availability > 0 && grandBilled > 0 && (
+                  <span className={`font-medium ${grandBilled > availability * 12 ? 'text-red-500' : 'text-emerald-600'}`}>
+                    {Math.round((grandBilled / (availability * 12)) * 100)}% billed util.
+                  </span>
+                )}
+                {availability > 0 && grandPlanned > 0 && (
+                  <span className={`font-medium ${grandPlanned > availability * 12 ? 'text-red-400' : 'text-gray-400'}`}>
+                    {Math.round((grandPlanned / (availability * 12)) * 100)}% planned
                   </span>
                 )}
               </div>
@@ -366,11 +372,12 @@ function ByProjectView({ assignments, projects, members }: Props) {
 // ─── Root ─────────────────────────────────────────────────────────────────────
 
 export default function OverviewClient(props: Props) {
-  const [tab, setTab] = useState<'member' | 'project' | 'charts'>('member');
+  const [tab, setTab] = useState<'dashboard' | 'member' | 'project' | 'charts'>('dashboard');
   const tabs: { key: typeof tab; label: string }[] = [
-    { key: 'member', label: 'By Member' },
-    { key: 'project', label: 'By Project' },
-    { key: 'charts', label: 'Charts' },
+    { key: 'dashboard', label: 'Dashboard' },
+    { key: 'member',    label: 'By Member' },
+    { key: 'project',   label: 'By Project' },
+    { key: 'charts',    label: 'Charts' },
   ];
 
   return (
@@ -385,9 +392,10 @@ export default function OverviewClient(props: Props) {
           ))}
         </div>
       </div>
-      {tab === 'member' && <ByMemberView {...props} />}
-      {tab === 'project' && <ByProjectView {...props} />}
-      {tab === 'charts' && <ChartsView assignments={props.assignments} projects={props.projects} members={props.members} />}
+      {tab === 'dashboard' && <DashboardView assignments={props.assignments} projects={props.projects} members={props.members} />}
+      {tab === 'member'    && <ByMemberView {...props} />}
+      {tab === 'project'   && <ByProjectView {...props} />}
+      {tab === 'charts'    && <ChartsView assignments={props.assignments} projects={props.projects} members={props.members} />}
     </div>
   );
 }
