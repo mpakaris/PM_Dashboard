@@ -11,6 +11,7 @@ const navItems = [
   { label: 'Projects', href: '/projects' },
   { label: 'Assignments', href: '/assignments' },
   { label: 'Overview', href: '/overview' },
+  { label: 'Planning', href: '/planning' },
 ];
 
 export default function Sidebar() {

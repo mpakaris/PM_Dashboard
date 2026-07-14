@@ -67,6 +67,25 @@ export async function updateAssignment(id: string, formData: FormData) {
   revalidatePath('/', 'layout');
 }
 
+export async function updatePlannedHours(id: string, formData: FormData) {
+  const data = await readData();
+  const idx = data.assignments.findIndex((a) => a.id === id);
+  if (idx === -1) return;
+
+  const plannedHours: Record<string, number> = {};
+  for (const [key, value] of formData.entries()) {
+    if (key.startsWith('planned_')) {
+      const month = key.replace('planned_', '');
+      const h = Number(value);
+      if (h >= 0) plannedHours[month] = h;
+    }
+  }
+
+  data.assignments[idx] = { ...data.assignments[idx], plannedHours };
+  await writeData(data);
+  revalidatePath('/', 'layout');
+}
+
 export async function deleteAssignment(id: string) {
   const data = await readData();
   data.assignments = data.assignments.filter((a) => a.id !== id);

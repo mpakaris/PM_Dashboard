@@ -8,6 +8,8 @@ export default async function TeamPage() {
       members={data.teamMembers}
       roles={data.roles}
       profiles={data.profiles}
+      assignments={data.assignments}
+      projects={data.projects}
     />
   );
 }

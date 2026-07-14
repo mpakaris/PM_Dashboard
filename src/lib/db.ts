@@ -1,5 +1,5 @@
 import { Redis } from '@upstash/redis';
-import { AppData, Assignment, Project } from './types';
+import { AppData, Assignment, Project, Forecast } from './types';
 import { getMonthsBetween } from './utils';
 
 const redis = new Redis({
@@ -15,6 +15,7 @@ const EMPTY: AppData = {
   teamMembers: [],
   projects: [],
   assignments: [],
+  forecasts: [],
 };
 
 // Migrate assignments that still use the old flat hoursPerMonth field
@@ -39,6 +40,7 @@ export async function readData(): Promise<AppData> {
     teamMembers: raw.teamMembers ?? [],
     projects,
     assignments: migrateAssignments(raw.assignments ?? [], projects),
+    forecasts: (raw.forecasts ?? []) as Forecast[],
   };
 }
 
