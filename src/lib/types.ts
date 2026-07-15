@@ -81,3 +81,30 @@ export interface AppData {
   assignments: Assignment[];
   forecasts: Forecast[];
 }
+
+export interface ElsapRow {
+  id: string; // dedup key: einkBeleg_position_datum_sapUser
+  jahr: number;
+  periode: number;
+  datum: string;
+  einkBeleg: string;
+  position: string;
+  posText: string;
+  leistZeile: string;
+  leistZText: string;
+  sapUser: string;
+  name: string;
+  aktivitaet: string;
+  stunden: number;
+  sdm: string;
+  sdmName: string;
+  status: string;
+  verrechnet: string;
+}
+
+export interface ElsapMirror {
+  rows: ElsapRow[];
+  lastImport: string;
+  lastApply: string;
+  importStats: { added: number; updated: number; skipped: number };
+}

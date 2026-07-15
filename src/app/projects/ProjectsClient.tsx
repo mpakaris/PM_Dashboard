@@ -1,15 +1,18 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { Project, TeamMember, Assignment } from '@/lib/types';
+import { Project, TeamMember, Role, Assignment } from '@/lib/types';
 import Modal from '@/components/Modal';
 import { createProject, updateProject, deleteProject } from '@/actions/projects';
 import { getMonthsBetween, formatMonth, formatNumber } from '@/lib/utils';
 
+const FTE_HOURS = 1680;
+
 interface Props {
   projects: Project[];
   members: TeamMember[];
+  roles: Role[];
   assignments: Assignment[];
 }
 
@@ -21,35 +24,87 @@ function generateMonthOptions() {
 function ProjectForm({
   initial,
   members,
+  roles,
   onSubmit,
 }: {
   initial?: Project;
   members: TeamMember[];
+  roles: Role[];
   onSubmit: (fd: FormData) => Promise<void>;
 }) {
   const monthOptions = generateMonthOptions();
   const [startMonth, setStartMonth] = useState(initial?.startMonth ?? '2026-01');
   const [endMonth, setEndMonth] = useState(initial?.endMonth ?? '2026-12');
   const [orderAmount, setOrderAmount] = useState(initial?.orderAmountHours ?? 0);
+  const [fte, setFte] = useState(
+    initial?.orderAmountHours ? Math.round((initial.orderAmountHours / FTE_HOURS) * 100) / 100 : 0
+  );
   const [distribution, setDistribution] = useState<Record<string, number>>(
     initial?.monthlyDistribution ?? {}
   );
+  const isFirstMount = useRef(true);
 
   const months = useMemo(() => {
-    if (!startMonth || !endMonth) return [];
-    if (startMonth > endMonth) return [];
+    if (!startMonth || !endMonth || startMonth > endMonth) return [];
     return getMonthsBetween(startMonth, endMonth);
   }, [startMonth, endMonth]);
+
+  // PM members: role name contains "projektmanager" or "projectmanager"
+  const pmMembers = useMemo(() => {
+    const pms = members.filter((m) => {
+      const role = roles.find((r) => r.id === m.roleId);
+      const name = (role?.name ?? '').toLowerCase();
+      return name.includes('projektmanager') || name.includes('projectmanager') || name.includes('project manager');
+    });
+    return pms.length > 0 ? pms : members; // fallback to all if none tagged
+  }, [members, roles]);
+
+  const hasPmFilter = useMemo(() => {
+    return members.some((m) => {
+      const role = roles.find((r) => r.id === m.roleId);
+      const name = (role?.name ?? '').toLowerCase();
+      return name.includes('projektmanager') || name.includes('projectmanager') || name.includes('project manager');
+    });
+  }, [members, roles]);
 
   const totalDistributed = useMemo(
     () => Object.values(distribution).reduce((s, v) => s + (v || 0), 0),
     [distribution]
   );
 
-  const handleDistChange = (month: string, value: string) => {
-    const num = Number(value);
-    setDistribution((prev) => ({ ...prev, [month]: num }));
-  };
+  function distributeEvenly(total: number, ms: string[]) {
+    if (total <= 0 || ms.length === 0) return;
+    const perMonth = Math.floor(total / ms.length);
+    const remainder = total - perMonth * ms.length;
+    const dist: Record<string, number> = {};
+    for (let i = 0; i < ms.length; i++) {
+      dist[ms[i]] = perMonth + (i === 0 ? remainder : 0);
+    }
+    setDistribution(dist);
+  }
+
+  function handleOrderAmountChange(value: string) {
+    const num = Math.round(Number(value)) || 0;
+    setOrderAmount(num);
+    setFte(num > 0 ? Math.round((num / FTE_HOURS) * 100) / 100 : 0);
+    distributeEvenly(num, months);
+  }
+
+  function handleFteChange(value: string) {
+    const f = Number(value) || 0;
+    const hours = Math.round(f * FTE_HOURS);
+    setFte(f);
+    setOrderAmount(hours);
+    distributeEvenly(hours, months);
+  }
+
+  // Re-distribute when month range changes (skip initial mount to preserve edit values)
+  const monthsKey = months.join(',');
+  useEffect(() => {
+    if (isFirstMount.current) { isFirstMount.current = false; return; }
+    if (orderAmount > 0) distributeEvenly(orderAmount, months);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [monthsKey]);
 
   return (
     <form action={onSubmit} className="space-y-5">
@@ -63,20 +118,24 @@ function ProjectForm({
             className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
           />
         </div>
+
         <div className="col-span-2">
-          <label className="block text-sm font-medium text-gray-700 mb-1">Project Manager</label>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Project Manager
+            {!hasPmFilter && <span className="ml-1 text-xs text-gray-400 font-normal">(assign a "Projektmanager" role to filter)</span>}
+          </label>
           <select
             name="managerId"
             defaultValue={initial?.managerId ?? ''}
-            required
             className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
           >
-            <option value="" disabled>Select a project manager…</option>
-            {members.map((m) => (
+            <option value="">— none —</option>
+            {pmMembers.map((m) => (
               <option key={m.id} value={m.id}>{m.name}</option>
             ))}
           </select>
         </div>
+
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Order No.</label>
           <input
@@ -85,20 +144,37 @@ function ProjectForm({
             className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
           />
         </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            Order Amount (hours)
-          </label>
-          <input
-            type="number"
-            name="orderAmountHours"
-            value={orderAmount}
-            onChange={(e) => setOrderAmount(Number(e.target.value))}
-            min={0}
-            required
-            className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
-          />
+
+        <div className="col-span-2 grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Order Amount (h)</label>
+            <input
+              type="number"
+              name="orderAmountHours"
+              value={orderAmount || ''}
+              onChange={(e) => handleOrderAmountChange(e.target.value)}
+              min={0}
+              placeholder="e.g. 2000"
+              className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              FTE
+              <span className="ml-1 text-xs text-gray-400 font-normal">1 FTE = {FTE_HOURS}h</span>
+            </label>
+            <input
+              type="number"
+              value={fte || ''}
+              onChange={(e) => handleFteChange(e.target.value)}
+              min={0}
+              step="any"
+              placeholder="e.g. 1.5"
+              className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
+            />
+          </div>
         </div>
+
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Start Month</label>
           <select
@@ -108,9 +184,7 @@ function ProjectForm({
             className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
           >
             {monthOptions.map((m) => (
-              <option key={m} value={m}>
-                {formatMonth(m)}
-              </option>
+              <option key={m} value={m}>{formatMonth(m)}</option>
             ))}
           </select>
         </div>
@@ -123,9 +197,7 @@ function ProjectForm({
             className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
           >
             {monthOptions.map((m) => (
-              <option key={m} value={m}>
-                {formatMonth(m)}
-              </option>
+              <option key={m} value={m}>{formatMonth(m)}</option>
             ))}
           </select>
         </div>
@@ -134,25 +206,25 @@ function ProjectForm({
       {months.length > 0 && (
         <div>
           <div className="flex items-center justify-between mb-2">
-            <label className="block text-sm font-medium text-gray-700">
-              Hours Distribution
-            </label>
-            <span className="text-xs text-gray-500">
-              {totalDistributed} / {orderAmount}h distributed
-              {orderAmount > 0 && (
-                <span
-                  className={`ml-1 font-medium ${
-                    totalDistributed > orderAmount
-                      ? 'text-red-600'
-                      : totalDistributed === orderAmount
-                      ? 'text-green-600'
-                      : 'text-gray-500'
-                  }`}
-                >
-                  ({orderAmount - totalDistributed >= 0 ? `${orderAmount - totalDistributed}h remaining` : `${totalDistributed - orderAmount}h over`})
-                </span>
-              )}
-            </span>
+            <label className="block text-sm font-medium text-gray-700">Hours Distribution</label>
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => distributeEvenly(orderAmount, months)}
+                disabled={orderAmount <= 0}
+                className="text-xs px-2.5 py-1 rounded border border-indigo-200 text-indigo-600 hover:bg-indigo-50 transition-colors disabled:opacity-30"
+              >
+                Distribute evenly
+              </button>
+              <span className="text-xs text-gray-500">
+                {totalDistributed} / {orderAmount}h
+                {orderAmount > 0 && (
+                  <span className={`ml-1 font-medium ${totalDistributed > orderAmount ? 'text-red-600' : totalDistributed === orderAmount ? 'text-green-600' : 'text-gray-500'}`}>
+                    ({orderAmount - totalDistributed >= 0 ? `${orderAmount - totalDistributed}h left` : `${totalDistributed - orderAmount}h over`})
+                  </span>
+                )}
+              </span>
+            </div>
           </div>
           <div className="border border-gray-200 rounded-md overflow-hidden">
             <table className="w-full text-sm">
@@ -164,17 +236,14 @@ function ProjectForm({
               </thead>
               <tbody>
                 {months.map((month, idx) => (
-                  <tr
-                    key={month}
-                    className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/30'}
-                  >
+                  <tr key={month} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/30'}>
                     <td className="px-3 py-2 text-gray-700">{formatMonth(month)}</td>
                     <td className="px-3 py-2">
                       <input
                         type="number"
                         name={`dist_${month}`}
                         value={distribution[month] ?? 0}
-                        onChange={(e) => handleDistChange(month, e.target.value)}
+                        onChange={(e) => setDistribution((prev) => ({ ...prev, [month]: Number(e.target.value) }))}
                         min={0}
                         className="w-24 ml-auto block border border-gray-300 rounded px-2 py-1 text-sm text-right focus:outline-none focus:ring-1 focus:ring-indigo-500"
                       />
@@ -205,7 +274,7 @@ function ProjectForm({
   );
 }
 
-export default function ProjectsClient({ projects, members, assignments }: Props) {
+export default function ProjectsClient({ projects, members, roles, assignments }: Props) {
   const router = useRouter();
   const [showCreate, setShowCreate] = useState(false);
   const [editProject, setEditProject] = useState<Project | null>(null);
@@ -322,6 +391,7 @@ export default function ProjectsClient({ projects, members, assignments }: Props
         <Modal title="Create Project" onClose={() => setShowCreate(false)}>
           <ProjectForm
             members={members}
+            roles={roles}
             onSubmit={async (fd) => {
               await createProject(fd);
               setShowCreate(false);
@@ -336,6 +406,7 @@ export default function ProjectsClient({ projects, members, assignments }: Props
           <ProjectForm
             initial={editProject}
             members={members}
+            roles={roles}
             onSubmit={async (fd) => {
               await updateProject(editProject.id, fd);
               setEditProject(null);

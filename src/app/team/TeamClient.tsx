@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { TeamMember, Role, Profile, Assignment, Project } from '@/lib/types';
 import Modal from '@/components/Modal';
@@ -147,21 +147,38 @@ function MemberAssignments({
     }
     return init;
   });
+  const editedHoursRef = useRef(editedHours);
+  editedHoursRef.current = editedHours;
 
   const [saving, setSaving] = useState<Record<string, boolean>>({});
-  const [saved, setSaved] = useState<Record<string, boolean>>({});
+  const [isDirty, setIsDirty] = useState<Record<string, boolean>>({});
 
   async function handleSave(assignmentId: string) {
     setSaving((prev) => ({ ...prev, [assignmentId]: true }));
     const fd = new FormData();
-    for (const [month, val] of Object.entries(editedHours[assignmentId] ?? {})) {
+    for (const [month, val] of Object.entries(editedHoursRef.current[assignmentId] ?? {})) {
       fd.append(`planned_${month}`, val);
     }
     await updatePlannedHours(assignmentId, fd);
     setSaving((prev) => ({ ...prev, [assignmentId]: false }));
-    setSaved((prev) => ({ ...prev, [assignmentId]: true }));
-    setTimeout(() => setSaved((prev) => ({ ...prev, [assignmentId]: false })), 1500);
     onSaved();
+  }
+
+  function handleChange(assignmentId: string, month: string, value: string) {
+    setEditedHours((prev) => ({
+      ...prev,
+      [assignmentId]: { ...prev[assignmentId], [month]: value },
+    }));
+    setIsDirty((prev) => ({ ...prev, [assignmentId]: true }));
+  }
+
+  function handleBlur(assignmentId: string, e: React.FocusEvent) {
+    const related = e.relatedTarget as HTMLElement | null;
+    if (related?.dataset?.assignmentId === assignmentId) return;
+    if (isDirty[assignmentId]) {
+      setIsDirty((prev) => ({ ...prev, [assignmentId]: false }));
+      handleSave(assignmentId);
+    }
   }
 
   if (memberAssignments.length === 0) {
@@ -187,7 +204,7 @@ function MemberAssignments({
               </th>
             ))}
             <th className="text-right px-3 py-2 font-medium text-gray-600 min-w-[64px]">Total</th>
-            <th className="px-3 py-2 min-w-[64px]"></th>
+            <th className="px-3 py-2 min-w-[32px]"></th>
           </tr>
         </thead>
         <tbody>
@@ -202,7 +219,32 @@ function MemberAssignments({
             return (
               <tr key={a.id} className="border-b border-gray-100 hover:bg-white/60 transition-colors">
                 <td className="px-4 py-2 font-medium text-gray-700 sticky left-0 bg-transparent">
-                  {project.name}
+                  <div className="flex flex-col gap-1">
+                    <span>{project.name}</span>
+                    <input
+                      type="number"
+                      min={0}
+                      placeholder="fill all…"
+                      data-assignment-id={a.id}
+                      className="w-20 border border-dashed border-gray-300 rounded px-1.5 py-0.5 text-xs text-right font-normal focus:outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-200 placeholder:text-gray-300"
+                      onKeyDown={(e) => {
+                        if (e.key !== 'Enter') return;
+                        e.preventDefault();
+                        const val = (e.target as HTMLInputElement).value.trim();
+                        if (!val) return;
+                        setEditedHours((prev) => ({
+                          ...prev,
+                          [a.id]: {
+                            ...prev[a.id],
+                            ...Object.fromEntries([...projectMonths].map((m) => [m, val])),
+                          },
+                        }));
+                        setIsDirty((prev) => ({ ...prev, [a.id]: false }));
+                        (e.target as HTMLInputElement).value = '';
+                        handleSave(a.id);
+                      }}
+                    />
+                  </div>
                 </td>
                 {allMonths.map((m) => (
                   <td key={m} className="px-2 py-2 text-right">
@@ -210,12 +252,9 @@ function MemberAssignments({
                       <input
                         type="number"
                         value={editedHours[a.id]?.[m] ?? ''}
-                        onChange={(e) =>
-                          setEditedHours((prev) => ({
-                            ...prev,
-                            [a.id]: { ...prev[a.id], [m]: e.target.value },
-                          }))
-                        }
+                        data-assignment-id={a.id}
+                        onChange={(e) => handleChange(a.id, m, e.target.value)}
+                        onBlur={(e) => handleBlur(a.id, e)}
                         min={0}
                         placeholder="0"
                         className="w-16 border border-indigo-200 rounded px-1.5 py-1 text-sm text-right focus:outline-none focus:ring-1 focus:ring-indigo-400 bg-white"
@@ -228,18 +267,8 @@ function MemberAssignments({
                 <td className="px-3 py-2 text-right text-indigo-600 font-semibold text-xs">
                   {totalHours}h
                 </td>
-                <td className="px-3 py-2 text-right">
-                  {saved[a.id] ? (
-                    <span className="text-xs text-emerald-600 font-medium">Saved ✓</span>
-                  ) : (
-                    <button
-                      onClick={() => handleSave(a.id)}
-                      disabled={saving[a.id]}
-                      className="text-xs px-2.5 py-1 rounded border border-indigo-200 text-indigo-600 hover:bg-indigo-50 transition-colors disabled:opacity-40"
-                    >
-                      {saving[a.id] ? '…' : 'Save'}
-                    </button>
-                  )}
+                <td className="px-3 py-2 text-center text-gray-300 text-xs">
+                  {saving[a.id] ? '…' : ''}
                 </td>
               </tr>
             );

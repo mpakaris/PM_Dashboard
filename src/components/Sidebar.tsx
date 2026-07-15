@@ -20,6 +20,13 @@ const sections = [
     label: 'Forecast',
     items: [
       { label: 'Planning', href: '/planning' },
+      { label: 'Timesheets', href: '/timesheets' },
+    ],
+  },
+  {
+    label: 'SAP Import',
+    items: [
+      { label: 'ELSAP', href: '/elsap' },
     ],
   },
 ];

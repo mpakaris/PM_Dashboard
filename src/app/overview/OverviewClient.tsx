@@ -1,8 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
+import { useRouter } from 'next/navigation';
 import { Assignment, Project, TeamMember, Role } from '@/lib/types';
 import { getMonthsBetween, formatMonth } from '@/lib/utils';
+import { updatePlannedHours } from '@/actions/assignments';
 import ChartsView from './ChartsView';
 import DashboardView from './DashboardView';
 
@@ -198,7 +200,52 @@ function ByMemberView({ assignments, projects, members, roles }: Props) {
 // ─── By Project ───────────────────────────────────────────────────────────────
 
 function ByProjectView({ assignments, projects, members }: Props) {
+  const router = useRouter();
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+
+  const [editedHours, setEditedHours] = useState<Record<string, Record<string, string>>>(() => {
+    const init: Record<string, Record<string, string>> = {};
+    for (const a of assignments) {
+      const project = projects.find((p) => p.id === a.projectId);
+      if (!project) continue;
+      const months = getMonthsBetween(project.startMonth, project.endMonth);
+      init[a.id] = Object.fromEntries(months.map((m) => [m, String(a.plannedHours[m] ?? 0)]));
+    }
+    return init;
+  });
+  const editedHoursRef = useRef(editedHours);
+  editedHoursRef.current = editedHours;
+
+  const [saving, setSaving] = useState<Record<string, boolean>>({});
+  const [isDirty, setIsDirty] = useState<Record<string, boolean>>({});
+
+  async function handleSave(assignmentId: string) {
+    setSaving((prev) => ({ ...prev, [assignmentId]: true }));
+    const fd = new FormData();
+    for (const [month, val] of Object.entries(editedHoursRef.current[assignmentId] ?? {})) {
+      fd.append(`planned_${month}`, val);
+    }
+    await updatePlannedHours(assignmentId, fd);
+    setSaving((prev) => ({ ...prev, [assignmentId]: false }));
+    router.refresh();
+  }
+
+  function handleChange(assignmentId: string, month: string, value: string) {
+    setEditedHours((prev) => ({
+      ...prev,
+      [assignmentId]: { ...prev[assignmentId], [month]: value },
+    }));
+    setIsDirty((prev) => ({ ...prev, [assignmentId]: true }));
+  }
+
+  function handleBlur(assignmentId: string, e: React.FocusEvent) {
+    const related = e.relatedTarget as HTMLElement | null;
+    if (related?.dataset?.assignmentId === assignmentId) return;
+    if (isDirty[assignmentId]) {
+      setIsDirty((prev) => ({ ...prev, [assignmentId]: false }));
+      handleSave(assignmentId);
+    }
+  }
 
   if (projects.length === 0)
     return <div className="text-center text-gray-400 text-sm py-12">No projects yet.</div>;
@@ -265,20 +312,58 @@ function ByProjectView({ assignments, projects, members }: Props) {
                     ) : (
                       projectAssignments.map(({ id, memberId, plannedHours, billedHours }, idx) => {
                         const member = members.find((m) => m.id === memberId);
-                        const totalP = months.reduce((s, m) => s + (plannedHours[m] ?? 0), 0);
+                        const projectMonthsSet = new Set(months);
+                        const totalP = months.reduce((s, m) => s + (Number(editedHours[id]?.[m]) || 0), 0);
                         const totalB = months.reduce((s, m) => s + (billedHours[m] ?? 0), 0);
                         const pct = totalP > 0 ? Math.round((totalB / totalP) * 100) : null;
                         return (
                           <>
                             <tr key={`${id}-planned`} className={`border-b border-gray-50 ${idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/30'}`}>
                               <td className="px-4 py-1.5 text-gray-700">
-                                <span className="font-medium">{member?.name ?? 'Unknown'}</span>
-                                <span className="block text-xs text-indigo-400">Planned</span>
+                                <div className="flex flex-col gap-1">
+                                  <span className="font-medium">{member?.name ?? 'Unknown'}</span>
+                                  <div className="flex items-center gap-1">
+                                    <input
+                                      type="number"
+                                      min={0}
+                                      placeholder="fill all…"
+                                      data-assignment-id={id}
+                                      className="w-20 border border-dashed border-indigo-300 rounded px-1.5 py-0.5 text-xs text-right font-normal focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-200 placeholder:text-indigo-200"
+                                      onKeyDown={(e) => {
+                                        if (e.key !== 'Enter') return;
+                                        e.preventDefault();
+                                        const val = (e.target as HTMLInputElement).value.trim();
+                                        if (!val) return;
+                                        setEditedHours((prev) => ({
+                                          ...prev,
+                                          [id]: {
+                                            ...prev[id],
+                                            ...Object.fromEntries([...projectMonthsSet].map((m) => [m, val])),
+                                          },
+                                        }));
+                                        setIsDirty((prev) => ({ ...prev, [id]: false }));
+                                        (e.target as HTMLInputElement).value = '';
+                                        handleSave(id);
+                                      }}
+                                    />
+                                    {saving[id] && <span className="text-xs text-gray-300">…</span>}
+                                  </div>
+                                </div>
                               </td>
-                              {months.map((m) => {
-                                const h = plannedHours[m] ?? 0;
-                                return <td key={m} className={`text-center px-2 py-1.5 text-xs ${h > 0 ? 'text-indigo-600 font-medium' : 'text-gray-200'}`}>{h > 0 ? `${h}h` : '—'}</td>;
-                              })}
+                              {months.map((m) => (
+                                <td key={m} className="text-center px-1 py-1.5">
+                                  <input
+                                    type="number"
+                                    value={editedHours[id]?.[m] ?? ''}
+                                    data-assignment-id={id}
+                                    onChange={(e) => handleChange(id, m, e.target.value)}
+                                    onBlur={(e) => handleBlur(id, e)}
+                                    min={0}
+                                    placeholder="0"
+                                    className="w-14 border border-indigo-200 rounded px-1 py-0.5 text-xs text-right focus:outline-none focus:ring-1 focus:ring-indigo-400 bg-white"
+                                  />
+                                </td>
+                              ))}
                               <td className="text-right px-4 py-1.5 text-indigo-600 font-medium">{totalP}h</td>
                               <td />
                             </tr>

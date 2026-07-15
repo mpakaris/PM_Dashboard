@@ -238,6 +238,18 @@ function EditAssignmentForm({
   const totalBilled = months.reduce((s, m) => s + (Number(billed[m]) || 0), 0);
   const totalDelta = totalBilled - totalPlanned;
 
+  function fillAllPlanned(value: string) {
+    const v = value.trim();
+    if (v === '') return;
+    setPlanned(Object.fromEntries(months.map((m) => [m, v])));
+  }
+
+  function fillAllBilled(value: string) {
+    const v = value.trim();
+    if (v === '') return;
+    setBilled(Object.fromEntries(months.map((m) => [m, v])));
+  }
+
   return (
     <form action={onSubmit} className="space-y-4">
       <input type="hidden" name="projectId" value={initial.projectId} />
@@ -257,8 +269,42 @@ function EditAssignmentForm({
           <thead>
             <tr className="bg-gray-50 border-b border-gray-100 text-xs">
               <th className="text-left px-3 py-2 font-medium text-gray-600">Month</th>
-              <th className="text-right px-3 py-2 font-medium text-indigo-600">Planned (h)</th>
-              <th className="text-right px-3 py-2 font-medium text-emerald-600">Billed (h)</th>
+              <th className="text-right px-3 py-2 font-medium text-indigo-600">
+                <div className="flex items-center justify-end gap-1.5">
+                  <span>Planned (h)</span>
+                  <input
+                    type="number"
+                    min={0}
+                    placeholder="fill all…"
+                    className="w-20 border border-dashed border-indigo-300 rounded px-1.5 py-0.5 text-xs text-right font-normal focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-200 placeholder:text-indigo-200"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        fillAllPlanned((e.target as HTMLInputElement).value);
+                        (e.target as HTMLInputElement).value = '';
+                      }
+                    }}
+                  />
+                </div>
+              </th>
+              <th className="text-right px-3 py-2 font-medium text-emerald-600">
+                <div className="flex items-center justify-end gap-1.5">
+                  <span>Billed (h)</span>
+                  <input
+                    type="number"
+                    min={0}
+                    placeholder="fill all…"
+                    className="w-20 border border-dashed border-emerald-300 rounded px-1.5 py-0.5 text-xs text-right font-normal focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-200 placeholder:text-emerald-200"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        fillAllBilled((e.target as HTMLInputElement).value);
+                        (e.target as HTMLInputElement).value = '';
+                      }
+                    }}
+                  />
+                </div>
+              </th>
               <th className="text-right px-3 py-2 font-medium text-gray-500">Delta</th>
             </tr>
           </thead>

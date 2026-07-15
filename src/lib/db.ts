@@ -1,5 +1,5 @@
 import { Redis } from '@upstash/redis';
-import { AppData, Assignment, Project, Forecast } from './types';
+import { AppData, Assignment, Project, Forecast, ElsapMirror } from './types';
 import { getMonthsBetween } from './utils';
 
 const redis = new Redis({
@@ -8,6 +8,7 @@ const redis = new Redis({
 });
 
 const DB_KEY = 'app:db';
+const ELSAP_KEY = 'app:elsap';
 
 const EMPTY: AppData = {
   roles: [],
@@ -17,6 +18,20 @@ const EMPTY: AppData = {
   assignments: [],
   forecasts: [],
 };
+
+// Retry wrapper — handles transient fetch failures from Node.js native fetch
+async function withRetry<T>(fn: () => Promise<T>, attempts = 3, delayMs = 150): Promise<T> {
+  let lastError: unknown;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastError = err;
+      if (i < attempts - 1) await new Promise((r) => setTimeout(r, delayMs * (i + 1)));
+    }
+  }
+  throw lastError;
+}
 
 // Migrate assignments that still use the old flat hoursPerMonth field
 function migrateAssignments(raw: any[], projects: Project[]): Assignment[] {
@@ -31,7 +46,7 @@ function migrateAssignments(raw: any[], projects: Project[]): Assignment[] {
 }
 
 export async function readData(): Promise<AppData> {
-  const raw = await redis.get<any>(DB_KEY);
+  const raw = await withRetry(() => redis.get<any>(DB_KEY));
   if (!raw) return { ...EMPTY };
   const projects: Project[] = raw.projects ?? [];
   return {
@@ -45,5 +60,27 @@ export async function readData(): Promise<AppData> {
 }
 
 export async function writeData(data: AppData): Promise<void> {
-  await redis.set(DB_KEY, data);
+  await withRetry(() => redis.set(DB_KEY, data));
+}
+
+const EMPTY_ELSAP: ElsapMirror = {
+  rows: [],
+  lastImport: '',
+  lastApply: '',
+  importStats: { added: 0, updated: 0, skipped: 0 },
+};
+
+export async function readElsap(): Promise<ElsapMirror> {
+  const raw = await withRetry(() => redis.get<any>(ELSAP_KEY));
+  if (!raw) return { ...EMPTY_ELSAP };
+  return {
+    rows: raw.rows ?? [],
+    lastImport: raw.lastImport ?? '',
+    lastApply: raw.lastApply ?? '',
+    importStats: raw.importStats ?? { added: 0, updated: 0, skipped: 0 },
+  };
+}
+
+export async function writeElsap(mirror: ElsapMirror): Promise<void> {
+  await withRetry(() => redis.set(ELSAP_KEY, mirror));
 }
