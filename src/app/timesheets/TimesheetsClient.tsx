@@ -27,7 +27,7 @@ function HideBtn({ isHidden, onToggle }: { isHidden: boolean; onToggle: () => vo
       className={`w-5 h-5 flex items-center justify-center rounded text-xs transition-colors ${
         isHidden
           ? 'text-slate-500 bg-slate-50 hover:bg-slate-100'
-          : 'text-gray-300 hover:text-gray-500 hover:bg-gray-100'
+          : 'text-orange-600 hover:text-gray-500 hover:bg-gray-100'
       }`}
     >
       {isHidden ? '↩' : '–'}
@@ -120,13 +120,13 @@ function PersonTable({ entries, baseline, onBaselineChange }: {
                     <td className={`px-2 py-1.5 sticky left-0 ${projHidden ? 'bg-white' : 'bg-slate-50'}`}>
                       <HideBtn isHidden={projHidden} onToggle={() => toggle(`p:${project}`)} />
                     </td>
-                    <td className={`px-3 py-1.5 font-semibold sticky left-8 ${projHidden ? 'line-through text-gray-400 bg-white' : 'text-slate-700 bg-slate-50'}`}>{project}</td>
+                    <td className={`px-3 py-1.5 font-semibold sticky left-8 ${projHidden ? 'text-orange-600 bg-white' : 'text-slate-700 bg-slate-50'}`}>{project}</td>
                     {months.map(m => (
-                      <td key={m} className={`px-3 py-1.5 text-right font-medium ${projHidden ? 'text-gray-300' : 'text-slate-600'}`}>
+                      <td key={m} className={`px-3 py-1.5 text-right font-medium ${projHidden ? 'text-orange-600' : 'text-slate-600'}`}>
                         {!projHidden && projPerMonth[m] ? fmtH(projPerMonth[m]) : '—'}
                       </td>
                     ))}
-                    <td className={`px-3 py-1.5 text-right font-bold ${projHidden ? 'text-gray-300' : 'text-slate-700'}`}>
+                    <td className={`px-3 py-1.5 text-right font-bold ${projHidden ? 'text-orange-600' : 'text-slate-700'}`}>
                       {projHidden ? '—' : fmtH(projTotal)}
                     </td>
                   </tr>
@@ -138,7 +138,7 @@ function PersonTable({ entries, baseline, onBaselineChange }: {
                         <td className="px-2 py-1.5 sticky left-0 bg-white">
                           <HideBtn isHidden={taskHid} onToggle={() => toggle(`t:${project}:::${task}`)} />
                         </td>
-                        <td className={`px-3 py-1.5 pl-5 sticky left-8 bg-white max-w-[280px] truncate ${taskHid ? 'line-through text-gray-400' : 'text-gray-600'}`} title={task}>
+                        <td className={`px-3 py-1.5 pl-5 sticky left-8 bg-white max-w-[280px] truncate ${taskHid ? 'text-orange-600' : 'text-gray-600'}`} title={task}>
                           ↳ {task}
                         </td>
                         {months.map(m => {
@@ -149,7 +149,7 @@ function PersonTable({ entries, baseline, onBaselineChange }: {
                             </td>
                           );
                         })}
-                        <td className={`px-3 py-1.5 text-right ${taskHid ? 'text-gray-300' : 'text-gray-600 font-semibold'}`}>
+                        <td className={`px-3 py-1.5 text-right ${taskHid ? 'text-orange-600' : 'text-gray-600 font-semibold'}`}>
                           {taskHid ? '—' : fmtH(taskTotal)}
                         </td>
                       </tr>
@@ -211,7 +211,7 @@ function PersonTable({ entries, baseline, onBaselineChange }: {
               })}
               {(() => {
                 const activeMonths = months.filter(m => (totalPerMonth[m] ?? 0) > 0);
-                if (activeMonths.length === 0) return <td className="px-3 py-1.5 text-right text-xs text-gray-300">—</td>;
+                if (activeMonths.length === 0) return <td className="px-3 py-1.5 text-right text-xs text-orange-600">—</td>;
                 const avgPct = Math.round(activeMonths.reduce((s, m) => s + ((totalPerMonth[m] - baseline) / baseline) * 100, 0) / activeMonths.length);
                 const over = avgPct > 0;
                 const exact = avgPct === 0;
@@ -406,18 +406,35 @@ function TicketTable({
 
 // ─── By Ticket View ───────────────────────────────────────────────────────────
 
-function ByTicketView({ entries }: { entries: TimesheetEntry[] }) {
-  const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
+function ByTicketView({
+  entries,
+  selectedKeys,
+  setSelectedKeys,
+}: {
+  entries: TimesheetEntry[];
+  selectedKeys: Set<string>;
+  setSelectedKeys: React.Dispatch<React.SetStateAction<Set<string>>>;
+}) {
   const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState('');
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     function onClickOutside(e: MouseEvent) {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) setOpen(false);
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setOpen(false);
+        setSearch('');
+      }
     }
     document.addEventListener('mousedown', onClickOutside);
     return () => document.removeEventListener('mousedown', onClickOutside);
   }, []);
+
+  // Focus search input when dropdown opens
+  useEffect(() => {
+    if (open) setTimeout(() => searchRef.current?.focus(), 10);
+  }, [open]);
 
   const tickets = useMemo(() => {
     const map = new Map<string, { project: string; task: string }>();
@@ -427,6 +444,14 @@ function ByTicketView({ entries }: { entries: TimesheetEntry[] }) {
     }
     return [...map.entries()].sort(([, a], [, b]) => a.task.localeCompare(b.task));
   }, [entries]);
+
+  const filteredTickets = useMemo(() => {
+    if (!search.trim()) return tickets;
+    const q = search.toLowerCase();
+    return tickets.filter(([, { project, task }]) =>
+      task.toLowerCase().includes(q) || project.toLowerCase().includes(q)
+    );
+  }, [tickets, search]);
 
   function toggle(key: string) {
     setSelectedKeys(prev => {
@@ -452,7 +477,7 @@ function ByTicketView({ entries }: { entries: TimesheetEntry[] }) {
   const triggerLabel = selectedKeys.size === 0
     ? `Select tickets… (${tickets.length} available)`
     : selectedKeys.size === 1
-      ? selectedList[0][1].task
+      ? selectedList[0]?.[1].task ?? ''
       : `${selectedKeys.size} tickets selected`;
 
   return (
@@ -478,20 +503,43 @@ function ByTicketView({ entries }: { entries: TimesheetEntry[] }) {
             </svg>
           </div>
         </button>
+
         {open && (
-          <div className="absolute z-20 mt-1 w-full bg-white border border-gray-200 rounded-md shadow-lg max-h-[600px] overflow-y-auto">
-            {tickets.map(([key, { project, task }]) => {
-              const checked = selectedKeys.has(key);
-              return (
-                <label key={key} className={`flex items-start gap-3 px-4 py-2.5 cursor-pointer transition-colors border-b border-gray-50 last:border-0 ${checked ? 'bg-slate-50' : 'hover:bg-gray-50'}`}>
-                  <input type="checkbox" checked={checked} onChange={() => toggle(key)} className="mt-0.5 rounded border-gray-300 text-slate-800 focus:ring-slate-600 shrink-0" />
-                  <div className="min-w-0">
-                    <p className={`text-sm truncate ${checked ? 'font-medium text-slate-800' : 'text-gray-700'}`} title={task}>{task}</p>
-                    <p className="text-xs text-gray-400 mt-0.5">{project}</p>
-                  </div>
-                </label>
-              );
-            })}
+          <div className="absolute z-20 mt-1 w-full bg-white border border-gray-200 rounded-md shadow-lg flex flex-col max-h-[600px]">
+            {/* Search inside dropdown */}
+            <div className="px-3 py-2.5 border-b border-gray-100 shrink-0">
+              <input
+                ref={searchRef}
+                type="text"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder="Search tickets…"
+                className="w-full text-sm border border-gray-200 rounded px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-slate-400 placeholder:text-orange-600"
+              />
+              {search && (
+                <p className="text-xs text-gray-400 mt-1.5">
+                  {filteredTickets.length} of {tickets.length} tickets
+                </p>
+              )}
+            </div>
+            {/* Ticket list */}
+            <div className="overflow-y-auto">
+              {filteredTickets.length === 0 && (
+                <p className="px-4 py-4 text-sm text-gray-400 text-center">No tickets match "{search}"</p>
+              )}
+              {filteredTickets.map(([key, { project, task }]) => {
+                const checked = selectedKeys.has(key);
+                return (
+                  <label key={key} className={`flex items-start gap-3 px-4 py-2.5 cursor-pointer transition-colors border-b border-gray-50 last:border-0 ${checked ? 'bg-slate-50' : 'hover:bg-gray-50'}`}>
+                    <input type="checkbox" checked={checked} onChange={() => toggle(key)} className="mt-0.5 rounded border-gray-300 text-slate-800 focus:ring-slate-600 shrink-0" />
+                    <div className="min-w-0">
+                      <p className={`text-sm truncate ${checked ? 'font-medium text-slate-800' : 'text-gray-700'}`} title={task}>{task}</p>
+                      <p className="text-xs text-gray-400 mt-0.5">{project}</p>
+                    </div>
+                  </label>
+                );
+              })}
+            </div>
           </div>
         )}
       </div>
@@ -521,6 +569,7 @@ export default function TimesheetsClient({ store }: { store: TimesheetStore }) {
   const [uploading, setUploading] = useState(false);
   const [uploadMsg, setUploadMsg] = useState<string | null>(null);
   const [tab, setTab] = useState<'member' | 'ticket'>('member');
+  const [selectedTicketKeys, setSelectedTicketKeys] = useState<Set<string>>(new Set());
   const fileRef = useRef<HTMLInputElement>(null);
 
   async function handleUpload(e: React.FormEvent<HTMLFormElement>) {
@@ -642,7 +691,7 @@ export default function TimesheetsClient({ store }: { store: TimesheetStore }) {
           </div>
 
           {tab === 'member' && <ByMemberView entries={store.entries} baselines={store.baselines} onDeletePerson={handleDeletePerson} onBaselineChange={handleBaselineChange} />}
-          {tab === 'ticket' && <ByTicketView entries={store.entries} />}
+          {tab === 'ticket' && <ByTicketView entries={store.entries} selectedKeys={selectedTicketKeys} setSelectedKeys={setSelectedTicketKeys} />}
         </>
       )}
     </div>

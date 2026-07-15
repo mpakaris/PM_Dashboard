@@ -31,13 +31,22 @@ const sections = [
   },
 ];
 
-export default function Sidebar() {
+export default function Sidebar({ open = true, onToggle }: { open?: boolean; onToggle?: () => void }) {
   const pathname = usePathname();
 
   return (
-    <aside className="fixed left-0 top-0 h-full w-60 bg-slate-800 text-slate-100 flex flex-col z-40">
-      <div className="px-6 py-5 border-b border-slate-700">
+    <aside className={`fixed left-0 top-0 h-full w-60 bg-slate-800 text-slate-100 flex flex-col z-40 transition-transform duration-200 ${open ? 'translate-x-0' : '-translate-x-full'}`}>
+      <div className="px-6 py-5 border-b border-slate-700 flex items-center justify-between">
         <h1 className="text-lg font-bold text-white leading-tight">Resource Dashboard</h1>
+        <button
+          onClick={onToggle}
+          title="Hide sidebar"
+          className="text-slate-400 hover:text-white transition-colors p-1 rounded hover:bg-slate-700"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+          </svg>
+        </button>
       </div>
       <nav className="flex-1 px-3 py-4 space-y-5 overflow-y-auto">
         {sections.map((section) => (
