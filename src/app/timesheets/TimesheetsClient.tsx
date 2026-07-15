@@ -1,82 +1,9 @@
 'use client';
 
-import { useState, useEffect, useRef, useMemo } from 'react';
-
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-interface TEntry {
-  project: string;
-  task: string;
-  month: string; // YYYY-MM
-  user: string;
-  spentTime: number;
-}
-
-interface TStore {
-  entries: TEntry[];
-  uploadedAt: string;
-  sources: string[];
-}
-
-const LS_KEY = 'timesheets_v1';
-const EMPTY: TStore = { entries: [], uploadedAt: '', sources: [] };
-
-// ─── CSV Helpers ──────────────────────────────────────────────────────────────
-
-function parseLine(line: string): string[] {
-  const fields: string[] = [];
-  let cur = '';
-  let inQ = false;
-  let i = 0;
-  while (i < line.length) {
-    const ch = line[i];
-    if (ch === '"') {
-      if (inQ && line[i + 1] === '"') { cur += '"'; i += 2; }
-      else { inQ = !inQ; i++; }
-    } else if (ch === ',' && !inQ) {
-      fields.push(cur.trim()); cur = ''; i++;
-    } else {
-      cur += ch; i++;
-    }
-  }
-  fields.push(cur.trim());
-  return fields;
-}
-
-function datToMonth(dateStr: string): string {
-  const parts = dateStr.trim().split('/');
-  if (parts.length !== 3) return '';
-  const [, m, y] = parts;
-  if (!m || !y) return '';
-  return `${y}-${m.padStart(2, '0')}`;
-}
-
-async function parseFile(file: File): Promise<TEntry[]> {
-  const text = await file.text();
-  const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-  if (lines.length < 2) return [];
-  const headerRaw = parseLine(lines[0]);
-  const h = headerRaw.map(x => x.toLowerCase().replace(/\s+/g, '_'));
-  const iProject = h.indexOf('project');
-  const iTask    = h.indexOf('task');
-  const iDate    = h.indexOf('date');
-  const iUser    = h.indexOf('user');
-  const iTime    = h.findIndex(x => x.includes('spent'));
-  if ([iProject, iTask, iDate, iUser, iTime].some(x => x < 0)) return [];
-  const entries: TEntry[] = [];
-  for (let i = 1; i < lines.length; i++) {
-    const cols = parseLine(lines[i]);
-    const project   = cols[iProject]?.trim() ?? '';
-    const task      = cols[iTask]?.trim() ?? '';
-    const dateStr   = cols[iDate]?.trim() ?? '';
-    const user      = cols[iUser]?.trim() ?? '';
-    const spentTime = parseFloat(cols[iTime]?.trim() ?? '0') || 0;
-    const month     = datToMonth(dateStr);
-    if (!month || !user || spentTime <= 0) continue;
-    entries.push({ project, task, month, user, spentTime });
-  }
-  return entries;
-}
+import { useState, useRef, useMemo, useEffect, useTransition, Fragment } from 'react';
+import { useRouter } from 'next/navigation';
+import { TimesheetEntry, TimesheetStore } from '@/lib/types';
+import { uploadTimesheetFiles, clearTimesheets, deleteTimesheetPerson } from '@/actions/timesheets';
 
 // ─── Display Helpers ──────────────────────────────────────────────────────────
 
@@ -108,9 +35,9 @@ function HideBtn({ isHidden, onToggle }: { isHidden: boolean; onToggle: () => vo
   );
 }
 
-// ─── By Member View ───────────────────────────────────────────────────────────
+// ─── Person Table ─────────────────────────────────────────────────────────────
 
-function PersonTable({ entries }: { entries: TEntry[] }) {
+function PersonTable({ entries }: { entries: TimesheetEntry[] }) {
   const [hidden, setHidden] = useState<Set<string>>(new Set());
 
   function toggle(key: string) {
@@ -181,8 +108,8 @@ function PersonTable({ entries }: { entries: TEntry[] }) {
               const projTotal = Object.values(projPerMonth).reduce((a, b) => a + b, 0);
 
               return (
-                <>
-                  <tr key={`proj-${project}`} className={`border-b border-slate-100 ${projHidden ? 'opacity-40' : 'bg-slate-50'}`}>
+                <Fragment key={project}>
+                  <tr className={`border-b border-slate-100 ${projHidden ? 'opacity-40' : 'bg-slate-50'}`}>
                     <td className={`px-2 py-1.5 sticky left-0 ${projHidden ? 'bg-white' : 'bg-slate-50'}`}>
                       <HideBtn isHidden={projHidden} onToggle={() => toggle(`p:${project}`)} />
                     </td>
@@ -221,7 +148,7 @@ function PersonTable({ entries }: { entries: TEntry[] }) {
                       </tr>
                     );
                   })}
-                </>
+                </Fragment>
               );
             })}
           </tbody>
@@ -279,11 +206,13 @@ function PersonTable({ entries }: { entries: TEntry[] }) {
   );
 }
 
-function ByMemberView({ entries }: { entries: TEntry[] }) {
+// ─── By Member View ───────────────────────────────────────────────────────────
+
+function ByMemberView({ entries, onDeletePerson }: { entries: TimesheetEntry[]; onDeletePerson: (user: string) => void }) {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
   const userMap = useMemo(() => {
-    const map = new Map<string, TEntry[]>();
+    const map = new Map<string, TimesheetEntry[]>();
     for (const e of entries) {
       if (!map.has(e.user)) map.set(e.user, []);
       map.get(e.user)!.push(e);
@@ -303,25 +232,37 @@ function ByMemberView({ entries }: { entries: TEntry[] }) {
         const isOpen = !!expanded[user];
         return (
           <div key={user} className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-            <button
-              type="button"
-              onClick={() => setExpanded(prev => ({ ...prev, [user]: !prev[user] }))}
-              className="w-full px-5 py-3.5 flex items-center justify-between hover:bg-gray-50 transition-colors text-left"
-            >
-              <div className="flex items-center gap-3">
-                <span className={`text-gray-400 text-xs transition-transform duration-150 ${isOpen ? 'rotate-90' : ''}`}>▶</span>
-                <span className="font-semibold text-gray-800">{user}</span>
-                <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">
-                  {months.length} month{months.length !== 1 ? 's' : ''}
-                </span>
-              </div>
-              <div className="flex items-center gap-4 text-xs">
-                <span className="text-gray-400">
-                  {months.length > 0 && `${fmtMonth(months[0])} – ${fmtMonth(months[months.length - 1])}`}
-                </span>
-                <span className="text-slate-600 font-bold">{fmtH(total)}</span>
-              </div>
-            </button>
+            <div className="flex items-center">
+              <button
+                type="button"
+                onClick={() => setExpanded(prev => ({ ...prev, [user]: !prev[user] }))}
+                className="flex-1 px-5 py-3.5 flex items-center justify-between hover:bg-gray-50 transition-colors text-left"
+              >
+                <div className="flex items-center gap-3">
+                  <span className={`text-gray-400 text-xs transition-transform duration-150 ${isOpen ? 'rotate-90' : ''}`}>▶</span>
+                  <span className="font-semibold text-gray-800">{user}</span>
+                  <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">
+                    {months.length} month{months.length !== 1 ? 's' : ''}
+                  </span>
+                </div>
+                <div className="flex items-center gap-4 text-xs">
+                  <span className="text-gray-400">
+                    {months.length > 0 && `${fmtMonth(months[0])} – ${fmtMonth(months[months.length - 1])}`}
+                  </span>
+                  <span className="text-slate-600 font-bold">{fmtH(total)}</span>
+                </div>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (confirm(`Delete all timesheet data for ${user}?`)) onDeletePerson(user);
+                }}
+                className="px-4 py-3.5 text-xs text-red-400 hover:text-red-600 hover:bg-red-50 transition-colors border-l border-gray-100"
+                title="Delete this person's timesheets"
+              >
+                Delete
+              </button>
+            </div>
             {isOpen && (
               <div className="border-t border-gray-100">
                 <PersonTable entries={userEntries} />
@@ -338,7 +279,7 @@ function ByMemberView({ entries }: { entries: TEntry[] }) {
   );
 }
 
-// ─── Ticket Table (shared by single view + summary) ──────────────────────────
+// ─── Ticket Table ─────────────────────────────────────────────────────────────
 
 function TicketTable({
   ticketEntries,
@@ -346,7 +287,7 @@ function TicketTable({
   subtitle,
   isSummary = false,
 }: {
-  ticketEntries: TEntry[];
+  ticketEntries: TimesheetEntry[];
   title: string;
   subtitle?: string;
   isSummary?: boolean;
@@ -431,17 +372,14 @@ function TicketTable({
 
 // ─── By Ticket View ───────────────────────────────────────────────────────────
 
-function ByTicketView({ entries }: { entries: TEntry[] }) {
+function ByTicketView({ entries }: { entries: TimesheetEntry[] }) {
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
   const [open, setOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // Close on outside click
   useEffect(() => {
     function onClickOutside(e: MouseEvent) {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) setOpen(false);
     }
     document.addEventListener('mousedown', onClickOutside);
     return () => document.removeEventListener('mousedown', onClickOutside);
@@ -485,17 +423,13 @@ function ByTicketView({ entries }: { entries: TEntry[] }) {
 
   return (
     <div className="space-y-4">
-      {/* Dropdown */}
       <div className="relative" ref={dropdownRef}>
-        {/* Trigger */}
         <button
           type="button"
           onClick={() => setOpen(v => !v)}
           className="w-full flex items-center justify-between bg-white border border-gray-300 rounded-md px-3 py-2.5 text-sm text-left focus:outline-none focus:ring-2 focus:ring-slate-400 hover:border-slate-400 transition-colors"
         >
-          <span className={selectedKeys.size === 0 ? 'text-gray-400' : 'text-gray-800 font-medium'}>
-            {triggerLabel}
-          </span>
+          <span className={selectedKeys.size === 0 ? 'text-gray-400' : 'text-gray-800 font-medium'}>{triggerLabel}</span>
           <div className="flex items-center gap-2">
             {selectedKeys.size > 0 && (
               <span
@@ -503,32 +437,20 @@ function ByTicketView({ entries }: { entries: TEntry[] }) {
                 onClick={(e) => { e.stopPropagation(); setSelectedKeys(new Set()); }}
                 className="text-gray-400 hover:text-gray-600 text-xs px-1"
                 title="Clear selection"
-              >
-                ✕
-              </span>
+              >✕</span>
             )}
             <svg className={`w-4 h-4 text-gray-400 transition-transform ${open ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
             </svg>
           </div>
         </button>
-
-        {/* Panel */}
         {open && (
-          <div className="absolute z-20 mt-1 w-full bg-white border border-gray-200 rounded-md shadow-lg max-h-72 overflow-y-auto">
+          <div className="absolute z-20 mt-1 w-full bg-white border border-gray-200 rounded-md shadow-lg max-h-[600px] overflow-y-auto">
             {tickets.map(([key, { project, task }]) => {
               const checked = selectedKeys.has(key);
               return (
-                <label
-                  key={key}
-                  className={`flex items-start gap-3 px-4 py-2.5 cursor-pointer transition-colors border-b border-gray-50 last:border-0 ${checked ? 'bg-slate-50' : 'hover:bg-gray-50'}`}
-                >
-                  <input
-                    type="checkbox"
-                    checked={checked}
-                    onChange={() => toggle(key)}
-                    className="mt-0.5 rounded border-gray-300 text-slate-800 focus:ring-slate-600 shrink-0"
-                  />
+                <label key={key} className={`flex items-start gap-3 px-4 py-2.5 cursor-pointer transition-colors border-b border-gray-50 last:border-0 ${checked ? 'bg-slate-50' : 'hover:bg-gray-50'}`}>
+                  <input type="checkbox" checked={checked} onChange={() => toggle(key)} className="mt-0.5 rounded border-gray-300 text-slate-800 focus:ring-slate-600 shrink-0" />
                   <div className="min-w-0">
                     <p className={`text-sm truncate ${checked ? 'font-medium text-slate-800' : 'text-gray-700'}`} title={task}>{task}</p>
                     <p className="text-xs text-gray-400 mt-0.5">{project}</p>
@@ -540,7 +462,6 @@ function ByTicketView({ entries }: { entries: TEntry[] }) {
         )}
       </div>
 
-      {/* Results */}
       {selectedKeys.size === 0 && (
         <div className="bg-white rounded-lg border border-gray-200 px-6 py-12 text-center text-gray-400 text-sm">
           Select one or more tickets above to see the breakdown by team member.
@@ -548,20 +469,11 @@ function ByTicketView({ entries }: { entries: TEntry[] }) {
       )}
 
       {selectedList.length >= 2 && (
-        <TicketTable
-          ticketEntries={allSelectedEntries}
-          title={`Summary — ${selectedList.length} tickets combined`}
-          isSummary
-        />
+        <TicketTable ticketEntries={allSelectedEntries} title={`Summary — ${selectedList.length} tickets combined`} isSummary />
       )}
 
       {selectedList.map(([key, { project, task }]) => (
-        <TicketTable
-          key={key}
-          ticketEntries={entriesForKey(key)}
-          title={task}
-          subtitle={project}
-        />
+        <TicketTable key={key} ticketEntries={entriesForKey(key)} title={task} subtitle={project} />
       ))}
     </div>
   );
@@ -569,47 +481,43 @@ function ByTicketView({ entries }: { entries: TEntry[] }) {
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
-export default function TimesheetsClient() {
-  const [store, setStore] = useState<TStore>(EMPTY);
+export default function TimesheetsClient({ store }: { store: TimesheetStore }) {
+  const router = useRouter();
+  const [isPending, startTransition] = useTransition();
   const [uploading, setUploading] = useState(false);
   const [uploadMsg, setUploadMsg] = useState<string | null>(null);
   const [tab, setTab] = useState<'member' | 'ticket'>('member');
   const fileRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(LS_KEY);
-      if (raw) setStore(JSON.parse(raw));
-    } catch { /* ignore */ }
-  }, []);
-
-  function saveStore(s: TStore) {
-    setStore(s);
-    localStorage.setItem(LS_KEY, JSON.stringify(s));
-  }
-
   async function handleUpload(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    const files = Array.from(fileRef.current?.files ?? []);
-    if (files.length === 0) return;
+    const files = fileRef.current?.files;
+    if (!files || files.length === 0) return;
     setUploading(true);
     setUploadMsg(null);
-    const allNew: TEntry[] = [];
-    const newSources: string[] = [];
-    for (const file of files) {
-      allNew.push(...await parseFile(file));
-      newSources.push(file.name);
+    const fd = new FormData();
+    for (const file of Array.from(files)) fd.append('files', file);
+    const res = await uploadTimesheetFiles(fd);
+    if (res.error) {
+      setUploadMsg(`Error: ${res.error}`);
+    } else {
+      setUploadMsg(`Imported ${res.added} entries from ${files.length} file${files.length > 1 ? 's' : ''}. ${res.total} total entries stored.`);
+      if (fileRef.current) fileRef.current.value = '';
+      startTransition(() => router.refresh());
     }
-    saveStore({ entries: allNew, uploadedAt: new Date().toISOString(), sources: newSources });
-    setUploadMsg(`Imported ${allNew.length} entries from ${files.length} file${files.length > 1 ? 's' : ''}.`);
-    if (fileRef.current) fileRef.current.value = '';
     setUploading(false);
   }
 
-  function handleClear() {
-    if (!confirm('Clear all timesheet data from local storage?')) return;
-    saveStore(EMPTY);
+  async function handleClear() {
+    if (!confirm('Delete all timesheet data?')) return;
+    await clearTimesheets();
     setUploadMsg(null);
+    startTransition(() => router.refresh());
+  }
+
+  async function handleDeletePerson(user: string) {
+    await deleteTimesheetPerson(user);
+    startTransition(() => router.refresh());
   }
 
   const overallTotal = store.entries.reduce((s, e) => s + e.spentTime, 0);
@@ -623,7 +531,6 @@ export default function TimesheetsClient() {
         <p className="text-gray-500 text-sm">Upload team member CSV exports to see monthly hours per project and ticket.</p>
       </div>
 
-      {/* Upload */}
       <div className="bg-white rounded-lg border border-gray-200 p-5 mb-6">
         <div className="flex flex-wrap items-end gap-4">
           <form onSubmit={handleUpload} className="flex items-center gap-3">
@@ -639,21 +546,26 @@ export default function TimesheetsClient() {
             </div>
             <button
               type="submit"
-              disabled={uploading}
-              className="self-end bg-slate-600 text-white px-4 py-1.5 rounded text-sm font-medium hover:bg-slate-700 transition-colors disabled:opacity-40"
+              disabled={uploading || isPending}
+              className="self-end bg-slate-800 text-white px-4 py-1.5 rounded text-sm font-medium hover:bg-slate-700 transition-colors disabled:opacity-40"
             >
               {uploading ? 'Importing…' : 'Upload'}
             </button>
           </form>
           <button
             onClick={handleClear}
-            className="self-end text-xs text-red-500 hover:text-red-700 border border-red-200 px-3 py-1.5 rounded hover:bg-red-50 transition-colors"
+            disabled={isPending}
+            className="self-end text-xs text-red-500 hover:text-red-700 border border-red-200 px-3 py-1.5 rounded hover:bg-red-50 transition-colors disabled:opacity-40"
           >
             Clear all
           </button>
         </div>
 
-        {uploadMsg && <p className="mt-3 text-sm text-emerald-600 font-medium">{uploadMsg}</p>}
+        {uploadMsg && (
+          <p className={`mt-3 text-sm font-medium ${uploadMsg.startsWith('Error') ? 'text-red-600' : 'text-emerald-600'}`}>
+            {uploadMsg}
+          </p>
+        )}
 
         {store.sources.length > 0 && (
           <div className="mt-3 flex flex-wrap gap-2 items-center">
@@ -675,23 +587,22 @@ export default function TimesheetsClient() {
         </div>
       ) : (
         <>
-          {/* Tab switcher */}
           <div className="flex rounded-lg border border-gray-200 overflow-hidden mb-4 w-fit">
             <button
               onClick={() => setTab('member')}
-              className={`px-5 py-2 text-sm font-medium transition-colors ${tab === 'member' ? 'bg-slate-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+              className={`px-5 py-2 text-sm font-medium transition-colors ${tab === 'member' ? 'bg-slate-800 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
             >
               By Team Member
             </button>
             <button
               onClick={() => setTab('ticket')}
-              className={`px-5 py-2 text-sm font-medium transition-colors border-l border-gray-200 ${tab === 'ticket' ? 'bg-slate-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+              className={`px-5 py-2 text-sm font-medium transition-colors border-l border-gray-200 ${tab === 'ticket' ? 'bg-slate-800 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
             >
               By Ticket
             </button>
           </div>
 
-          {tab === 'member' && <ByMemberView entries={store.entries} />}
+          {tab === 'member' && <ByMemberView entries={store.entries} onDeletePerson={handleDeletePerson} />}
           {tab === 'ticket' && <ByTicketView entries={store.entries} />}
         </>
       )}

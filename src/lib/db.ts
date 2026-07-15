@@ -1,5 +1,5 @@
 import { Redis } from '@upstash/redis';
-import { AppData, Assignment, Project, Forecast, ElsapMirror } from './types';
+import { AppData, Assignment, Project, Forecast, ElsapMirror, TimesheetStore } from './types';
 import { getMonthsBetween } from './utils';
 
 const redis = new Redis({
@@ -9,6 +9,7 @@ const redis = new Redis({
 
 const DB_KEY = 'app:db';
 const ELSAP_KEY = 'app:elsap';
+const TIMESHEETS_KEY = 'app:timesheets';
 
 const EMPTY: AppData = {
   roles: [],
@@ -83,4 +84,18 @@ export async function readElsap(): Promise<ElsapMirror> {
 
 export async function writeElsap(mirror: ElsapMirror): Promise<void> {
   await withRetry(() => redis.set(ELSAP_KEY, mirror));
+}
+
+export async function readTimesheets(): Promise<TimesheetStore> {
+  const raw = await withRetry(() => redis.get<any>(TIMESHEETS_KEY));
+  if (!raw) return { entries: [], lastUpload: '', sources: [] };
+  return {
+    entries: raw.entries ?? [],
+    lastUpload: raw.lastUpload ?? '',
+    sources: raw.sources ?? [],
+  };
+}
+
+export async function writeTimesheets(store: TimesheetStore): Promise<void> {
+  await withRetry(() => redis.set(TIMESHEETS_KEY, store));
 }

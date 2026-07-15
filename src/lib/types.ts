@@ -82,6 +82,21 @@ export interface AppData {
   forecasts: Forecast[];
 }
 
+export interface TimesheetEntry {
+  project: string;
+  task: string;
+  month: string; // YYYY-MM
+  user: string;
+  spentTime: number;
+  source: string; // original filename — used for merge-by-file on re-upload
+}
+
+export interface TimesheetStore {
+  entries: TimesheetEntry[];
+  lastUpload: string;
+  sources: string[]; // unique filenames currently stored
+}
+
 export interface ElsapRow {
   id: string; // dedup key: einkBeleg_position_datum_sapUser
   jahr: number;
