@@ -87,7 +87,7 @@ export async function uploadTimesheetFiles(formData: FormData): Promise<{
   const allEntries = [...kept, ...newEntries];
   const allSources = [...new Set(allEntries.map(e => e.source))].sort();
 
-  await writeTimesheets({ entries: allEntries, lastUpload: new Date().toISOString(), sources: allSources });
+  await writeTimesheets({ entries: allEntries, lastUpload: new Date().toISOString(), sources: allSources, baselines: store.baselines });
   revalidatePath('/timesheets');
 
   return { added: newEntries.length, total: allEntries.length, sources: allSources };
@@ -101,7 +101,14 @@ export async function deleteTimesheetPerson(user: string): Promise<void> {
   revalidatePath('/timesheets');
 }
 
+export async function updateTimesheetBaseline(user: string, hours: number): Promise<void> {
+  const store = await readTimesheets();
+  store.baselines = { ...store.baselines, [user]: Math.max(1, Math.round(hours)) };
+  await writeTimesheets(store);
+  revalidatePath('/timesheets');
+}
+
 export async function clearTimesheets(): Promise<void> {
-  await writeTimesheets({ entries: [], lastUpload: '', sources: [] });
+  await writeTimesheets({ entries: [], lastUpload: '', sources: [], baselines: {} });
   revalidatePath('/timesheets');
 }

@@ -94,7 +94,8 @@ export interface TimesheetEntry {
 export interface TimesheetStore {
   entries: TimesheetEntry[];
   lastUpload: string;
-  sources: string[]; // unique filenames currently stored
+  sources: string[];
+  baselines: Record<string, number>; // user name → monthly hour baseline (default 160)
 }
 
 export interface ElsapRow {

@@ -3,7 +3,7 @@
 import { useState, useRef, useMemo, useEffect, useTransition, Fragment } from 'react';
 import { useRouter } from 'next/navigation';
 import { TimesheetEntry, TimesheetStore } from '@/lib/types';
-import { uploadTimesheetFiles, clearTimesheets, deleteTimesheetPerson } from '@/actions/timesheets';
+import { uploadTimesheetFiles, clearTimesheets, deleteTimesheetPerson, updateTimesheetBaseline } from '@/actions/timesheets';
 
 // ─── Display Helpers ──────────────────────────────────────────────────────────
 
@@ -37,7 +37,14 @@ function HideBtn({ isHidden, onToggle }: { isHidden: boolean; onToggle: () => vo
 
 // ─── Person Table ─────────────────────────────────────────────────────────────
 
-function PersonTable({ entries }: { entries: TimesheetEntry[] }) {
+function PersonTable({ entries, baseline, onBaselineChange }: {
+  entries: TimesheetEntry[];
+  baseline: number;
+  onBaselineChange: (h: number) => void;
+}) {
+  const [baselineInput, setBaselineInput] = useState(String(baseline));
+  // sync if prop changes (e.g. after server refresh)
+  useEffect(() => { setBaselineInput(String(baseline)); }, [baseline]);
   const [hidden, setHidden] = useState<Set<string>>(new Set());
 
   function toggle(key: string) {
@@ -165,11 +172,29 @@ function PersonTable({ entries }: { entries: TimesheetEntry[] }) {
             </tr>
             <tr className="bg-gray-50 border-t border-gray-200">
               <td className="sticky left-0 bg-gray-50" />
-              <td className="px-3 py-1.5 text-gray-400 text-xs sticky left-8 bg-gray-50 font-normal">utilization vs. 160h baseline</td>
+              <td className="px-3 py-1.5 text-gray-400 text-xs sticky left-8 bg-gray-50 font-normal">
+                <span>utilization vs. </span>
+                <input
+                  type="number"
+                  min={1}
+                  value={baselineInput}
+                  onChange={e => setBaselineInput(e.target.value)}
+                  onBlur={() => {
+                    const h = Math.max(1, Math.round(Number(baselineInput) || 160));
+                    setBaselineInput(String(h));
+                    if (h !== baseline) onBaselineChange(h);
+                  }}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+                  }}
+                  className="w-12 text-center border-0 border-b border-gray-300 bg-transparent text-gray-600 font-semibold focus:outline-none focus:border-slate-500 text-xs"
+                />
+                <span>h baseline</span>
+              </td>
               {months.map(m => {
                 const total = totalPerMonth[m] ?? 0;
-                const diff = total - 160;
-                const pct = Math.round((diff / 160) * 100);
+                const diff = total - baseline;
+                const pct = Math.round((diff / baseline) * 100);
                 const over = diff > 0;
                 const exact = diff === 0;
                 const color = exact ? 'text-emerald-600' : over ? 'text-red-500' : 'text-amber-500';
@@ -187,7 +212,7 @@ function PersonTable({ entries }: { entries: TimesheetEntry[] }) {
               {(() => {
                 const activeMonths = months.filter(m => (totalPerMonth[m] ?? 0) > 0);
                 if (activeMonths.length === 0) return <td className="px-3 py-1.5 text-right text-xs text-gray-300">—</td>;
-                const avgPct = Math.round(activeMonths.reduce((s, m) => s + ((totalPerMonth[m] - 160) / 160) * 100, 0) / activeMonths.length);
+                const avgPct = Math.round(activeMonths.reduce((s, m) => s + ((totalPerMonth[m] - baseline) / baseline) * 100, 0) / activeMonths.length);
                 const over = avgPct > 0;
                 const exact = avgPct === 0;
                 const color = exact ? 'text-emerald-600' : over ? 'text-red-500' : 'text-amber-500';
@@ -208,7 +233,12 @@ function PersonTable({ entries }: { entries: TimesheetEntry[] }) {
 
 // ─── By Member View ───────────────────────────────────────────────────────────
 
-function ByMemberView({ entries, onDeletePerson }: { entries: TimesheetEntry[]; onDeletePerson: (user: string) => void }) {
+function ByMemberView({ entries, baselines, onDeletePerson, onBaselineChange }: {
+  entries: TimesheetEntry[];
+  baselines: Record<string, number>;
+  onDeletePerson: (user: string) => void;
+  onBaselineChange: (user: string, h: number) => void;
+}) {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
   const userMap = useMemo(() => {
@@ -265,7 +295,11 @@ function ByMemberView({ entries, onDeletePerson }: { entries: TimesheetEntry[]; 
             </div>
             {isOpen && (
               <div className="border-t border-gray-100">
-                <PersonTable entries={userEntries} />
+                <PersonTable
+                  entries={userEntries}
+                  baseline={baselines[user] ?? 160}
+                  onBaselineChange={h => onBaselineChange(user, h)}
+                />
               </div>
             )}
           </div>
@@ -520,6 +554,11 @@ export default function TimesheetsClient({ store }: { store: TimesheetStore }) {
     startTransition(() => router.refresh());
   }
 
+  async function handleBaselineChange(user: string, h: number) {
+    await updateTimesheetBaseline(user, h);
+    startTransition(() => router.refresh());
+  }
+
   const overallTotal = store.entries.reduce((s, e) => s + e.spentTime, 0);
   const userCount = useMemo(() => new Set(store.entries.map(e => e.user)).size, [store.entries]);
   const ticketCount = useMemo(() => new Set(store.entries.map(e => `${e.project}:::${e.task}`)).size, [store.entries]);
@@ -602,7 +641,7 @@ export default function TimesheetsClient({ store }: { store: TimesheetStore }) {
             </button>
           </div>
 
-          {tab === 'member' && <ByMemberView entries={store.entries} onDeletePerson={handleDeletePerson} />}
+          {tab === 'member' && <ByMemberView entries={store.entries} baselines={store.baselines} onDeletePerson={handleDeletePerson} onBaselineChange={handleBaselineChange} />}
           {tab === 'ticket' && <ByTicketView entries={store.entries} />}
         </>
       )}

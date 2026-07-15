@@ -88,11 +88,12 @@ export async function writeElsap(mirror: ElsapMirror): Promise<void> {
 
 export async function readTimesheets(): Promise<TimesheetStore> {
   const raw = await withRetry(() => redis.get<any>(TIMESHEETS_KEY));
-  if (!raw) return { entries: [], lastUpload: '', sources: [] };
+  if (!raw) return { entries: [], lastUpload: '', sources: [], baselines: {} };
   return {
     entries: raw.entries ?? [],
     lastUpload: raw.lastUpload ?? '',
     sources: raw.sources ?? [],
+    baselines: raw.baselines ?? {},
   };
 }
 
