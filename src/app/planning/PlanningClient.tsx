@@ -31,7 +31,7 @@ export default function PlanningClient({ forecasts }: Props) {
         </div>
         <button
           onClick={() => setShowCreate(true)}
-          className="bg-indigo-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-indigo-700 transition-colors"
+          className="bg-slate-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-slate-700 transition-colors"
         >
           New Forecast
         </button>
@@ -42,7 +42,7 @@ export default function PlanningClient({ forecasts }: Props) {
           <p className="text-gray-400 text-sm mb-4">No forecasts yet. Create one to start planning.</p>
           <button
             onClick={() => setShowCreate(true)}
-            className="bg-indigo-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-indigo-700 transition-colors"
+            className="bg-slate-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-slate-700 transition-colors"
           >
             Create First Forecast
           </button>
@@ -74,7 +74,7 @@ export default function PlanningClient({ forecasts }: Props) {
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') handleCreate(); if (e.key === 'Escape') setShowCreate(false); }}
-              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 mb-4"
+              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500 mb-4"
             />
             <div className="flex justify-end gap-2">
               <button onClick={() => { setShowCreate(false); setNewName(''); }} className="px-3 py-1.5 text-sm text-gray-500 hover:text-gray-700">
@@ -83,7 +83,7 @@ export default function PlanningClient({ forecasts }: Props) {
               <button
                 onClick={handleCreate}
                 disabled={!newName.trim() || creating}
-                className="bg-indigo-600 text-white px-4 py-1.5 rounded-md text-sm font-medium hover:bg-indigo-700 disabled:opacity-40"
+                className="bg-slate-600 text-white px-4 py-1.5 rounded-md text-sm font-medium hover:bg-slate-700 disabled:opacity-40"
               >
                 {creating ? 'Creating…' : 'Create'}
               </button>
@@ -105,10 +105,10 @@ function ForecastCard({ forecast, onDelete }: { forecast: Forecast; onDelete: ()
   return (
     <div
       onClick={() => router.push(`/planning/${forecast.id}`)}
-      className="bg-white rounded-lg ring-1 ring-gray-200 p-5 cursor-pointer hover:ring-indigo-300 hover:shadow-sm transition-all group"
+      className="bg-white rounded-lg ring-1 ring-gray-200 p-5 cursor-pointer hover:ring-slate-300 hover:shadow-sm transition-all group"
     >
       <div className="flex items-start justify-between mb-3">
-        <h3 className="font-semibold text-gray-800 group-hover:text-indigo-700 transition-colors leading-tight">
+        <h3 className="font-semibold text-gray-800 group-hover:text-slate-700 transition-colors leading-tight">
           {forecast.name}
         </h3>
         <button
@@ -129,7 +129,7 @@ function ForecastCard({ forecast, onDelete }: { forecast: Forecast; onDelete: ()
         </div>
         <div className="flex justify-between">
           <span>Total allocated</span>
-          <span className="font-medium text-indigo-600">{totalAllocated}h</span>
+          <span className="font-medium text-slate-600">{totalAllocated}h</span>
         </div>
         <div className="flex justify-between pt-1 border-t border-gray-100">
           <span>Created</span>

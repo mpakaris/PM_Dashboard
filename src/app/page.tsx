@@ -45,8 +45,8 @@ export default async function DashboardPage() {
       title: 'Team Members',
       value: data.teamMembers.length,
       sub: `${internCount} intern · ${externCount} extern`,
-      color: 'bg-indigo-50 border-indigo-200',
-      textColor: 'text-indigo-700',
+      color: 'bg-slate-50 border-slate-200',
+      textColor: 'text-slate-700',
     },
     {
       title: 'Active Projects',
@@ -152,7 +152,7 @@ export default async function DashboardPage() {
                                 : isWarn
                                 ? 'bg-yellow-50 text-yellow-700'
                                 : hours > 0
-                                ? 'text-indigo-700 font-medium'
+                                ? 'text-slate-700 font-medium'
                                 : 'text-gray-300'
                             }`}
                           >

@@ -70,7 +70,7 @@ function ByMemberView({ assignments, projects, members, roles }: Props) {
               </div>
               <div className="flex items-center gap-4 text-xs">
                 <span className="text-gray-400">{memberAssignments.length} project{memberAssignments.length !== 1 ? 's' : ''}</span>
-                <span className="text-indigo-600 font-medium">{grandPlanned}h planned</span>
+                <span className="text-slate-600 font-medium">{grandPlanned}h planned</span>
                 <span className="text-emerald-600 font-medium">{grandBilled}h billed</span>
                 {availability > 0 && grandBilled > 0 && (
                   <span className={`font-medium ${grandBilled > availability * 12 ? 'text-red-500' : 'text-emerald-600'}`}>
@@ -115,18 +115,18 @@ function ByMemberView({ assignments, projects, members, roles }: Props) {
                             <tr key={`${id}-planned`} className={`border-b border-gray-50 ${idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/30'}`}>
                               <td className="px-4 py-1.5 text-gray-700">
                                 <span className="font-medium">{project?.name ?? 'Unknown'}</span>
-                                <span className="block text-xs text-indigo-400">Planned</span>
+                                <span className="block text-xs text-slate-400">Planned</span>
                               </td>
                               {YEAR_MONTHS.map((m) => {
                                 const h = plannedHours[m] ?? 0;
                                 const active = projMonths.includes(m);
                                 return (
-                                  <td key={m} className={`text-center px-2 py-1.5 text-xs ${active && h > 0 ? 'text-indigo-600 font-medium' : active ? 'text-gray-300' : 'text-gray-100'}`}>
+                                  <td key={m} className={`text-center px-2 py-1.5 text-xs ${active && h > 0 ? 'text-slate-600 font-medium' : active ? 'text-gray-300' : 'text-gray-100'}`}>
                                     {active ? (h > 0 ? `${h}` : '—') : ''}
                                   </td>
                                 );
                               })}
-                              <td className="text-right px-4 py-1.5 text-indigo-600 font-medium">{totalP}h</td>
+                              <td className="text-right px-4 py-1.5 text-slate-600 font-medium">{totalP}h</td>
                             </tr>
                             {/* Billed row */}
                             <tr key={`${id}-billed`} className={`border-b border-gray-100 ${idx % 2 === 0 ? 'bg-emerald-50/20' : 'bg-emerald-50/10'}`}>
@@ -149,19 +149,19 @@ function ByMemberView({ assignments, projects, members, roles }: Props) {
                   </tbody>
                   <tfoot>
                     {/* Total planned */}
-                    <tr className="border-t border-gray-200 bg-indigo-50/40">
-                      <td className="px-4 py-2 font-semibold text-indigo-700 text-xs">Total Planned</td>
+                    <tr className="border-t border-gray-200 bg-slate-50/40">
+                      <td className="px-4 py-2 font-semibold text-slate-700 text-xs">Total Planned</td>
                       {YEAR_MONTHS.map((m) => {
                         const total = totalPlannedPerMonth[m] ?? 0;
                         const isOver = availability > 0 && total > availability;
                         const isWarn = availability > 0 && total >= availability * 0.8 && !isOver;
                         return (
-                          <td key={m} className={`text-center px-2 py-2 text-xs font-semibold ${isOver ? 'bg-red-100 text-red-700 rounded' : isWarn ? 'bg-yellow-50 text-yellow-700' : total > 0 ? 'text-indigo-600' : 'text-gray-300'}`}>
+                          <td key={m} className={`text-center px-2 py-2 text-xs font-semibold ${isOver ? 'bg-red-100 text-red-700 rounded' : isWarn ? 'bg-yellow-50 text-yellow-700' : total > 0 ? 'text-slate-600' : 'text-gray-300'}`}>
                             {total > 0 ? `${total}h` : '—'}
                           </td>
                         );
                       })}
-                      <td className="text-right px-4 py-2 font-semibold text-indigo-700">{grandPlanned}h</td>
+                      <td className="text-right px-4 py-2 font-semibold text-slate-700">{grandPlanned}h</td>
                     </tr>
                     {/* Total billed */}
                     <tr className="bg-emerald-50/30">
@@ -285,7 +285,7 @@ function ByProjectView({ assignments, projects, members }: Props) {
               </div>
               <div className="flex items-center gap-4 text-xs">
                 <span className="text-gray-400">{formatMonth(project.startMonth)} – {formatMonth(project.endMonth)} · {months.length} months</span>
-                <span className="text-indigo-600 font-medium">{totalPlanned}h planned</span>
+                <span className="text-slate-600 font-medium">{totalPlanned}h planned</span>
                 <span className="text-emerald-600 font-medium">{totalBilled}h billed</span>
               </div>
             </button>
@@ -328,7 +328,7 @@ function ByProjectView({ assignments, projects, members }: Props) {
                                       min={0}
                                       placeholder="fill all…"
                                       data-assignment-id={id}
-                                      className="w-20 border border-dashed border-indigo-300 rounded px-1.5 py-0.5 text-xs text-right font-normal focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-200 placeholder:text-indigo-200"
+                                      className="w-20 border border-dashed border-slate-300 rounded px-1.5 py-0.5 text-xs text-right font-normal focus:outline-none focus:border-slate-500 focus:ring-1 focus:ring-slate-200 placeholder:text-slate-200"
                                       onKeyDown={(e) => {
                                         if (e.key !== 'Enter') return;
                                         e.preventDefault();
@@ -360,11 +360,11 @@ function ByProjectView({ assignments, projects, members }: Props) {
                                     onBlur={(e) => handleBlur(id, e)}
                                     min={0}
                                     placeholder="0"
-                                    className="w-14 border border-indigo-200 rounded px-1 py-0.5 text-xs text-right focus:outline-none focus:ring-1 focus:ring-indigo-400 bg-white"
+                                    className="w-14 border border-slate-200 rounded px-1 py-0.5 text-xs text-right focus:outline-none focus:ring-1 focus:ring-slate-400 bg-white"
                                   />
                                 </td>
                               ))}
-                              <td className="text-right px-4 py-1.5 text-indigo-600 font-medium">{totalP}h</td>
+                              <td className="text-right px-4 py-1.5 text-slate-600 font-medium">{totalP}h</td>
                               <td />
                             </tr>
                             <tr key={`${id}-billed`} className={`border-b border-gray-100 ${idx % 2 === 0 ? 'bg-emerald-50/20' : 'bg-emerald-50/10'}`}>
@@ -388,19 +388,19 @@ function ByProjectView({ assignments, projects, members }: Props) {
                     )}
                   </tbody>
                   <tfoot>
-                    <tr className="border-t border-gray-200 bg-indigo-50/40">
-                      <td className="px-4 py-2 font-semibold text-indigo-700 text-xs">Total Planned</td>
+                    <tr className="border-t border-gray-200 bg-slate-50/40">
+                      <td className="px-4 py-2 font-semibold text-slate-700 text-xs">Total Planned</td>
                       {months.map((m) => {
                         const total = totalPlannedPerMonth[m] ?? 0;
                         const budget = budgetPerMonth[m] ?? 0;
                         const isOver = budget > 0 && total > budget;
                         return (
-                          <td key={m} className={`text-center px-2 py-2 text-xs font-semibold ${isOver ? 'bg-red-100 text-red-700 rounded' : total > 0 ? 'text-indigo-600' : 'text-gray-300'}`}>
+                          <td key={m} className={`text-center px-2 py-2 text-xs font-semibold ${isOver ? 'bg-red-100 text-red-700 rounded' : total > 0 ? 'text-slate-600' : 'text-gray-300'}`}>
                             {total > 0 ? `${total}h` : '—'}
                           </td>
                         );
                       })}
-                      <td className="text-right px-4 py-2 font-semibold text-indigo-700">{totalPlanned}h</td>
+                      <td className="text-right px-4 py-2 font-semibold text-slate-700">{totalPlanned}h</td>
                       <td />
                     </tr>
                     <tr className="bg-emerald-50/30">
@@ -418,7 +418,7 @@ function ByProjectView({ assignments, projects, members }: Props) {
                         )}
                       </td>
                     </tr>
-                    <tr className="bg-indigo-50/20">
+                    <tr className="bg-slate-50/20">
                       <td className="px-4 py-2 text-gray-500 text-xs">Project Budget</td>
                       {months.map((m) => (
                         <td key={m} className="text-center px-2 py-2 text-xs text-gray-400">{budgetPerMonth[m] ? `${budgetPerMonth[m]}h` : '—'}</td>
@@ -471,7 +471,7 @@ export default function OverviewClient(props: Props) {
         <h1 className="text-2xl font-bold text-gray-900">Overview</h1>
         <div className="flex rounded-lg border border-gray-200 overflow-hidden">
           {tabs.map((t, i) => (
-            <button key={t.key} onClick={() => setTab(t.key)} className={`px-4 py-2 text-sm font-medium transition-colors ${i > 0 ? 'border-l border-gray-200' : ''} ${tab === t.key ? 'bg-indigo-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}>
+            <button key={t.key} onClick={() => setTab(t.key)} className={`px-4 py-2 text-sm font-medium transition-colors ${i > 0 ? 'border-l border-gray-200' : ''} ${tab === t.key ? 'bg-slate-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}>
               {t.label}
             </button>
           ))}

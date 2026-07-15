@@ -24,7 +24,7 @@ function ProfileForm({
           name="name"
           defaultValue={initial?.name}
           required
-          className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
+          className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-slate-500 text-sm"
         />
       </div>
       <div>
@@ -33,13 +33,13 @@ function ProfileForm({
           name="definition"
           defaultValue={initial?.definition}
           rows={4}
-          className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
+          className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-slate-500 text-sm"
         />
       </div>
       <div className="pt-2 flex justify-end">
         <button
           type="submit"
-          className="bg-indigo-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-indigo-700 transition-colors"
+          className="bg-slate-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-slate-700 transition-colors"
         >
           {initial ? 'Save Changes' : 'Create Profile'}
         </button>
@@ -58,7 +58,7 @@ export default function ProfilesClient({ profiles }: Props) {
         <h1 className="text-2xl font-bold text-gray-900">Profiles</h1>
         <button
           onClick={() => setShowCreate(true)}
-          className="bg-indigo-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-indigo-700 transition-colors"
+          className="bg-slate-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-slate-700 transition-colors"
         >
           Add Profile
         </button>
@@ -94,7 +94,7 @@ export default function ProfilesClient({ profiles }: Props) {
                     <div className="flex items-center gap-2 justify-end">
                       <button
                         onClick={() => setEditProfile(profile)}
-                        className="text-xs text-indigo-600 hover:text-indigo-800 font-medium"
+                        className="text-xs text-slate-600 hover:text-slate-800 font-medium"
                       >
                         Edit
                       </button>

@@ -34,7 +34,7 @@ const RAG: Record<RagStatus, { label: string; dot: string; text: string; ring: s
   'at-risk':     { label: 'At risk',     dot: 'bg-amber-400',   text: 'text-amber-700',  ring: 'ring-amber-200' },
   'behind':      { label: 'Behind',      dot: 'bg-red-500',     text: 'text-red-700',    ring: 'ring-red-200' },
   'over-budget': { label: 'Over budget', dot: 'bg-red-600',     text: 'text-red-700',    ring: 'ring-red-300' },
-  'completed':   { label: 'Completed',   dot: 'bg-indigo-400',  text: 'text-indigo-700', ring: 'ring-indigo-200' },
+  'completed':   { label: 'Completed',   dot: 'bg-slate-400',  text: 'text-slate-700', ring: 'ring-slate-200' },
   'no-budget':   { label: 'No budget',   dot: 'bg-gray-300',    text: 'text-gray-400',   ring: 'ring-gray-200' },
 };
 
@@ -127,7 +127,7 @@ function ProjectHealthTable({ assignments, projects, members }: Props) {
               <th className="text-left px-4 py-3 font-medium text-gray-500 min-w-[180px]">Project</th>
               <th className="text-right px-4 py-3 font-medium text-gray-500">Budget</th>
               <th className="text-right px-4 py-3 font-medium text-emerald-600">Billed</th>
-              <th className="text-right px-4 py-3 font-medium text-indigo-600">Planned</th>
+              <th className="text-right px-4 py-3 font-medium text-slate-600">Planned</th>
               <th className="px-4 py-3 font-medium text-gray-500">Budget burn</th>
               <th className="px-4 py-3 font-medium text-gray-500">Timeline</th>
               <th className="text-right px-4 py-3 font-medium text-gray-500">Forecast end</th>
@@ -166,7 +166,7 @@ function ProjectHealthTable({ assignments, projects, members }: Props) {
                       {budget > 0 ? `${budget.toLocaleString()}h` : '—'}
                     </td>
                     <td className="px-4 py-3 text-right font-semibold text-emerald-600">{billedToDate}h</td>
-                    <td className="px-4 py-3 text-right text-indigo-500">{plannedToDate}h</td>
+                    <td className="px-4 py-3 text-right text-slate-500">{plannedToDate}h</td>
                     <td className="px-4 py-3">
                       {budget > 0 ? (
                         <div className="space-y-1">
@@ -183,7 +183,7 @@ function ProjectHealthTable({ assignments, projects, members }: Props) {
                     <td className="px-4 py-3">
                       <div className="space-y-1">
                         <div className="flex items-center gap-2">
-                          <ProgressBar pct={timelinePct} color="bg-indigo-300" />
+                          <ProgressBar pct={timelinePct} color="bg-slate-300" />
                           <span className="text-xs font-medium text-gray-600">{timelinePct}%</span>
                         </div>
                         <p className="text-xs text-gray-400">{elapsed.length}/{health.allMonths.length} months</p>
@@ -222,7 +222,7 @@ function ProjectHealthTable({ assignments, projects, members }: Props) {
                                 <div key={a.id} className="bg-white rounded-md ring-1 ring-gray-200 px-3 py-2 text-xs min-w-[140px]">
                                   <p className="font-medium text-gray-700 mb-1">{member?.name ?? 'Unknown'}</p>
                                   <p className="text-emerald-600">Billed: {billed}h</p>
-                                  <p className="text-indigo-500">Planned: {planned}h</p>
+                                  <p className="text-slate-500">Planned: {planned}h</p>
                                   <p className={`font-semibold mt-0.5 ${delta < 0 ? 'text-red-500' : delta > 0 ? 'text-emerald-600' : 'text-gray-400'}`}>
                                     {delta > 0 ? `+${delta}h ahead` : delta < 0 ? `${delta}h behind` : '± on target'}
                                   </p>
@@ -247,7 +247,7 @@ function ProjectHealthTable({ assignments, projects, members }: Props) {
               <td className="px-4 py-3 text-right text-emerald-600">
                 {rows.reduce((s, r) => s + r.health.billedToDate, 0)}h
               </td>
-              <td className="px-4 py-3 text-right text-indigo-500">
+              <td className="px-4 py-3 text-right text-slate-500">
                 {rows.reduce((s, r) => s + r.health.plannedToDate, 0)}h
               </td>
               <td colSpan={5}></td>
@@ -307,7 +307,7 @@ function TeamCapacityGap({ assignments, projects, members }: Props) {
 
       <div className="p-5">
         <div className="flex items-center gap-4 text-xs text-gray-400 mb-4">
-          <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-indigo-400 inline-block" /> Planned</span>
+          <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-slate-400 inline-block" /> Planned</span>
           <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-red-400 inline-block" /> Over capacity</span>
           <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-gray-100 border border-gray-200 inline-block" /> Free capacity</span>
         </div>
@@ -344,8 +344,8 @@ function TeamCapacityGap({ assignments, projects, members }: Props) {
             </thead>
             <tbody>
               <tr className="border-b border-gray-50">
-                <td className="py-1.5 text-indigo-500 font-medium">Planned</td>
-                {data.map((d) => <td key={d.month} className="py-1.5 text-center px-1 text-indigo-600 font-medium">{d.planned > 0 ? `${d.planned}h` : '—'}</td>)}
+                <td className="py-1.5 text-slate-500 font-medium">Planned</td>
+                {data.map((d) => <td key={d.month} className="py-1.5 text-center px-1 text-slate-600 font-medium">{d.planned > 0 ? `${d.planned}h` : '—'}</td>)}
               </tr>
               <tr className="border-b border-gray-50 text-gray-400">
                 <td className="py-1.5">Capacity</td>

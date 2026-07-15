@@ -115,7 +115,7 @@ function ProjectForm({
             name="name"
             defaultValue={initial?.name}
             required
-            className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
+            className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-slate-500 text-sm"
           />
         </div>
 
@@ -127,7 +127,7 @@ function ProjectForm({
           <select
             name="managerId"
             defaultValue={initial?.managerId ?? ''}
-            className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
+            className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-slate-500 text-sm"
           >
             <option value="">— none —</option>
             {pmMembers.map((m) => (
@@ -141,7 +141,7 @@ function ProjectForm({
           <input
             name="orderNo"
             defaultValue={initial?.orderNo}
-            className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
+            className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-slate-500 text-sm"
           />
         </div>
 
@@ -155,7 +155,7 @@ function ProjectForm({
               onChange={(e) => handleOrderAmountChange(e.target.value)}
               min={0}
               placeholder="e.g. 2000"
-              className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
+              className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-slate-500 text-sm"
             />
           </div>
           <div>
@@ -170,7 +170,7 @@ function ProjectForm({
               min={0}
               step="any"
               placeholder="e.g. 1.5"
-              className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
+              className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-slate-500 text-sm"
             />
           </div>
         </div>
@@ -181,7 +181,7 @@ function ProjectForm({
             name="startMonth"
             value={startMonth}
             onChange={(e) => setStartMonth(e.target.value)}
-            className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
+            className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-slate-500 text-sm"
           >
             {monthOptions.map((m) => (
               <option key={m} value={m}>{formatMonth(m)}</option>
@@ -194,7 +194,7 @@ function ProjectForm({
             name="endMonth"
             value={endMonth}
             onChange={(e) => setEndMonth(e.target.value)}
-            className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
+            className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-slate-500 text-sm"
           >
             {monthOptions.map((m) => (
               <option key={m} value={m}>{formatMonth(m)}</option>
@@ -212,7 +212,7 @@ function ProjectForm({
                 type="button"
                 onClick={() => distributeEvenly(orderAmount, months)}
                 disabled={orderAmount <= 0}
-                className="text-xs px-2.5 py-1 rounded border border-indigo-200 text-indigo-600 hover:bg-indigo-50 transition-colors disabled:opacity-30"
+                className="text-xs px-2.5 py-1 rounded border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors disabled:opacity-30"
               >
                 Distribute evenly
               </button>
@@ -245,7 +245,7 @@ function ProjectForm({
                         value={distribution[month] ?? 0}
                         onChange={(e) => setDistribution((prev) => ({ ...prev, [month]: Number(e.target.value) }))}
                         min={0}
-                        className="w-24 ml-auto block border border-gray-300 rounded px-2 py-1 text-sm text-right focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                        className="w-24 ml-auto block border border-gray-300 rounded px-2 py-1 text-sm text-right focus:outline-none focus:ring-1 focus:ring-slate-500"
                       />
                     </td>
                   </tr>
@@ -265,7 +265,7 @@ function ProjectForm({
       <div className="pt-2 flex justify-end">
         <button
           type="submit"
-          className="bg-indigo-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-indigo-700 transition-colors"
+          className="bg-slate-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-slate-700 transition-colors"
         >
           {initial ? 'Save Changes' : 'Create Project'}
         </button>
@@ -288,7 +288,7 @@ export default function ProjectsClient({ projects, members, roles, assignments }
         <h1 className="text-2xl font-bold text-gray-900">Projects</h1>
         <button
           onClick={() => setShowCreate(true)}
-          className="bg-indigo-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-indigo-700 transition-colors"
+          className="bg-slate-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-slate-700 transition-colors"
         >
           Add Project
         </button>
@@ -340,7 +340,7 @@ export default function ProjectsClient({ projects, members, roles, assignments }
                     <td className="px-4 py-3 text-gray-500 text-xs">
                       {formatMonth(project.startMonth)} – {formatMonth(project.endMonth)}
                     </td>
-                    <td className="px-4 py-3 text-right text-indigo-600 font-medium">{formatNumber(planned)}h</td>
+                    <td className="px-4 py-3 text-right text-slate-600 font-medium">{formatNumber(planned)}h</td>
                     <td className="px-4 py-3 text-right text-emerald-600 font-medium">{formatNumber(billed)}h</td>
                     <td
                       className={`px-4 py-3 text-right font-medium ${
@@ -357,7 +357,7 @@ export default function ProjectsClient({ projects, members, roles, assignments }
                       <div className="flex items-center gap-2 justify-end">
                         <button
                           onClick={() => setEditProject(project)}
-                          className="text-xs text-indigo-600 hover:text-indigo-800 font-medium"
+                          className="text-xs text-slate-600 hover:text-slate-800 font-medium"
                         >
                           Edit
                         </button>

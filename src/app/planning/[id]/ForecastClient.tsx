@@ -171,19 +171,19 @@ function ProjectForm({
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-1">Project Name</label>
         <input value={name} onChange={(e) => setName(e.target.value)} required placeholder="e.g. Digital Transformation"
-          className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+          className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500" />
       </div>
 
       <div className="grid grid-cols-2 gap-3">
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Start Month</label>
           <input type="month" value={startMonth} onChange={(e) => setStartMonth(e.target.value)} required
-            className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+            className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500" />
         </div>
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">End Month</label>
           <input type="month" value={endMonth} onChange={(e) => setEndMonth(e.target.value)} required min={startMonth}
-            className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+            className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500" />
         </div>
       </div>
 
@@ -207,11 +207,11 @@ function ProjectForm({
             <div className="relative">
               <input type="number" value={hoursValue} onChange={(e) => setHoursValue(e.target.value)}
                 min={1} required placeholder="e.g. 3360"
-                className="w-full border border-gray-300 rounded-md px-3 py-2 pr-10 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                className="w-full border border-gray-300 rounded-md px-3 py-2 pr-10 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500" />
               <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 font-medium">h</span>
             </div>
             {computedFte !== null && (
-              <p className="text-xs text-indigo-500 mt-1.5 font-medium">
+              <p className="text-xs text-slate-500 mt-1.5 font-medium">
                 = {formatFte(computedFte)}
                 <span className="text-gray-400 font-normal"> over {numMonths} months</span>
               </p>
@@ -222,13 +222,13 @@ function ProjectForm({
             <div className="relative">
               <input type="number" value={fteValue} onChange={(e) => setFteValue(e.target.value)}
                 min={0.1} step={0.1} required placeholder="e.g. 2.0"
-                className="w-full border border-gray-300 rounded-md px-3 py-2 pr-14 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                className="w-full border border-gray-300 rounded-md px-3 py-2 pr-14 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500" />
               <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 font-medium">FTE</span>
             </div>
             {numMonths === 0 ? (
               <p className="text-xs text-amber-500 mt-1.5">Set start and end months first to calculate hours</p>
             ) : computedHours !== null ? (
-              <p className="text-xs text-indigo-500 mt-1.5 font-medium">
+              <p className="text-xs text-slate-500 mt-1.5 font-medium">
                 = {computedHours.toLocaleString()}h
                 <span className="text-gray-400 font-normal">
                   {' '}({Number(fteValue) * FTE_HOURS_PER_YEAR}h/year × {(numMonths / 12).toFixed(numMonths % 12 === 0 ? 0 : 1)} yr · 1 FTE = {FTE_HOURS_PER_YEAR}h/year)
@@ -251,7 +251,7 @@ function ProjectForm({
           </div>
           <div className="flex justify-between">
             <span>FTE equivalent</span>
-            <span className="font-medium text-indigo-600">{formatFte(hoursToFte(finalHours, numMonths))}</span>
+            <span className="font-medium text-slate-600">{formatFte(hoursToFte(finalHours, numMonths))}</span>
           </div>
           <div className="flex justify-between">
             <span>Target rate</span>
@@ -262,7 +262,7 @@ function ProjectForm({
 
       <div className="pt-1 flex justify-end">
         <button type="submit" disabled={!canSubmit}
-          className="bg-indigo-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-indigo-700 disabled:opacity-40">
+          className="bg-slate-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-slate-700 disabled:opacity-40">
           {saving ? 'Saving…' : initial ? 'Save Changes' : 'Add Project'}
         </button>
       </div>
@@ -345,7 +345,7 @@ function AddMemberModal({
               type="button"
               onClick={addAll}
               disabled={addingAll || !!adding}
-              className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-md border border-indigo-200 bg-indigo-50 text-indigo-700 text-sm font-medium hover:bg-indigo-100 transition-colors disabled:opacity-40"
+              className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-md border border-slate-200 bg-slate-50 text-slate-700 text-sm font-medium hover:bg-slate-100 transition-colors disabled:opacity-40"
             >
               {addingAll ? (
                 <>
@@ -372,7 +372,7 @@ function AddMemberModal({
                       <button
                         onClick={() => add(m.id, false, m.monthlyAvailability)}
                         disabled={adding === m.id}
-                        className="text-xs px-2.5 py-1 rounded border border-indigo-200 text-indigo-600 hover:bg-indigo-50 disabled:opacity-40"
+                        className="text-xs px-2.5 py-1 rounded border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-40"
                       >
                         {adding === m.id ? '…' : '+ Add'}
                       </button>
@@ -416,7 +416,7 @@ function AddMemberModal({
           </span>
           <button
             onClick={onClose}
-            className="bg-indigo-600 text-white px-4 py-1.5 rounded-md text-sm font-medium hover:bg-indigo-700 transition-colors"
+            className="bg-slate-600 text-white px-4 py-1.5 rounded-md text-sm font-medium hover:bg-slate-700 transition-colors"
           >
             Done
           </button>
@@ -531,12 +531,12 @@ function AssignmentMatrix({
                         }))}
                         min={0}
                         placeholder="0"
-                        className={`w-16 border rounded px-1.5 py-1 text-sm text-right focus:outline-none focus:ring-1 ${a.isGhost ? 'border-violet-200 focus:ring-violet-400' : 'border-indigo-200 focus:ring-indigo-400'} ${over ? 'bg-red-50 border-red-300' : 'bg-white'}`}
+                        className={`w-16 border rounded px-1.5 py-1 text-sm text-right focus:outline-none focus:ring-1 ${a.isGhost ? 'border-violet-200 focus:ring-violet-400' : 'border-slate-200 focus:ring-slate-400'} ${over ? 'bg-red-50 border-red-300' : 'bg-white'}`}
                       />
                     </td>
                   );
                 })}
-                <td className={`px-3 py-2 text-right font-semibold text-xs ${a.isGhost ? 'text-violet-600' : 'text-indigo-600'}`}>
+                <td className={`px-3 py-2 text-right font-semibold text-xs ${a.isGhost ? 'text-violet-600' : 'text-slate-600'}`}>
                   {total}h
                 </td>
                 <td className="px-3 py-2 text-right">
@@ -545,7 +545,7 @@ function AssignmentMatrix({
                       <span className="text-xs text-emerald-600 font-medium">Saved ✓</span>
                     ) : (
                       <button onClick={() => handleSave(a)} disabled={saving[a.id]}
-                        className={`text-xs px-2 py-1 rounded border transition-colors disabled:opacity-40 ${a.isGhost ? 'border-violet-200 text-violet-600 hover:bg-violet-50' : 'border-indigo-200 text-indigo-600 hover:bg-indigo-50'}`}>
+                        className={`text-xs px-2 py-1 rounded border transition-colors disabled:opacity-40 ${a.isGhost ? 'border-violet-200 text-violet-600 hover:bg-violet-50' : 'border-slate-200 text-slate-600 hover:bg-slate-50'}`}>
                         {saving[a.id] ? '…' : 'Save'}
                       </button>
                     )}
@@ -566,12 +566,12 @@ function AssignmentMatrix({
               const total = projectAssignments.reduce((s, a) => s + (Number(editedHours[a.id]?.[m]) || 0), 0);
               const over = budgetPerMonth > 0 && total > budgetPerMonth;
               return (
-                <td key={m} className={`px-2 py-2 text-right ${over ? 'text-red-600' : total > 0 ? 'text-indigo-600' : 'text-gray-300'}`}>
+                <td key={m} className={`px-2 py-2 text-right ${over ? 'text-red-600' : total > 0 ? 'text-slate-600' : 'text-gray-300'}`}>
                   {total > 0 ? `${total}h` : '—'}
                 </td>
               );
             })}
-            <td className="px-3 py-2 text-right text-indigo-600">
+            <td className="px-3 py-2 text-right text-slate-600">
               {projectAssignments.reduce((s, a) => s + months.reduce((ms, m) => ms + (Number(editedHours[a.id]?.[m]) || 0), 0), 0)}h
             </td>
             <td></td>
@@ -651,22 +651,22 @@ function ProjectCard({
           <div className="text-right space-y-0.5">
             {/* Progress bar */}
             <div className="flex items-baseline gap-1 justify-end">
-              <span className={`font-semibold ${over ? 'text-red-600' : 'text-indigo-600'}`}>{totalAllocated}h</span>
+              <span className={`font-semibold ${over ? 'text-red-600' : 'text-slate-600'}`}>{totalAllocated}h</span>
               <span className="text-gray-300">/</span>
               <span className="font-medium text-gray-500">{project.overallHours}h</span>
               <span className="text-gray-400">({formatFte(budgetFte)})</span>
             </div>
             <div className="w-36 h-1.5 bg-gray-100 rounded-full">
               <div
-                className={`h-1.5 rounded-full transition-all ${over ? 'bg-red-400' : pct >= 80 ? 'bg-emerald-400' : 'bg-indigo-400'}`}
+                className={`h-1.5 rounded-full transition-all ${over ? 'bg-red-400' : pct >= 80 ? 'bg-emerald-400' : 'bg-slate-400'}`}
                 style={{ width: `${Math.min(pct, 100)}%` }}
               />
             </div>
             {/* Real / Ghost breakdown */}
             <div className="flex items-center gap-2 justify-end pt-0.5">
               {realAllocated > 0 && (
-                <span className="flex items-center gap-1 text-indigo-500">
-                  <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 inline-block" />
+                <span className="flex items-center gap-1 text-slate-500">
+                  <span className="w-1.5 h-1.5 rounded-full bg-slate-500 inline-block" />
                   {formatFte(hoursToFte(realAllocated, months.length))} real
                 </span>
               )}
@@ -686,7 +686,7 @@ function ProjectCard({
             </div>
           </div>
           <div className="flex gap-2">
-            <button type="button" onClick={onEdit} className="text-indigo-500 hover:text-indigo-700 font-medium">Edit</button>
+            <button type="button" onClick={onEdit} className="text-slate-500 hover:text-slate-700 font-medium">Edit</button>
             <button type="button" onClick={onDelete} className="text-red-400 hover:text-red-600 font-medium">Delete</button>
           </div>
         </div>
@@ -705,7 +705,7 @@ function ProjectCard({
           <div className="px-5 py-3 border-t border-gray-100 bg-gray-50/40">
             <button
               onClick={() => setShowAddMember(true)}
-              className="text-xs px-3 py-1.5 rounded border border-indigo-200 text-indigo-600 hover:bg-indigo-50 transition-colors font-medium"
+              className="text-xs px-3 py-1.5 rounded border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors font-medium"
             >
               + Add Member
             </button>
@@ -741,11 +741,11 @@ function StatCard({ label, hours, fte, sub, accent }: {
   hours: number;
   fte: number;
   sub?: string;
-  accent: 'gray' | 'indigo' | 'violet' | 'red' | 'emerald';
+  accent: 'gray' | 'slate' | 'violet' | 'red' | 'emerald';
 }) {
   const colors = {
     gray:    { h: 'text-gray-800',   f: 'text-gray-500',   sub: 'text-gray-400' },
-    indigo:  { h: 'text-indigo-700', f: 'text-indigo-500', sub: 'text-indigo-400' },
+    slate:  { h: 'text-slate-700', f: 'text-slate-500', sub: 'text-slate-400' },
     violet:  { h: 'text-violet-700', f: 'text-violet-500', sub: 'text-violet-400' },
     red:     { h: 'text-red-700',    f: 'text-red-500',    sub: 'text-red-400' },
     emerald: { h: 'text-emerald-700',f: 'text-emerald-500',sub: 'text-emerald-400' },
@@ -842,10 +842,10 @@ function PlanSummary({ forecast, teamMembers, roles }: {
             ? stat.projectNames.join(', ')
             : `${stat.projectNames.slice(0, 2).join(', ')} +${stat.projectNames.length - 2}`}
         </td>
-        <td className={`px-4 py-2.5 text-right font-semibold text-sm ${ghost ? 'text-violet-600' : 'text-indigo-600'}`}>
+        <td className={`px-4 py-2.5 text-right font-semibold text-sm ${ghost ? 'text-violet-600' : 'text-slate-600'}`}>
           {stat.totalHours.toLocaleString()}h
         </td>
-        <td className={`px-4 py-2.5 text-right text-xs font-medium ${ghost ? 'text-violet-500' : 'text-indigo-500'}`}>
+        <td className={`px-4 py-2.5 text-right text-xs font-medium ${ghost ? 'text-violet-500' : 'text-slate-500'}`}>
           {formatFte(stat.totalFte)}
         </td>
       </tr>
@@ -884,7 +884,7 @@ function PlanSummary({ forecast, teamMembers, roles }: {
           hours={totalRealHours}
           fte={totalRealFte}
           sub={totalBudget > 0 ? `${pctReal}% of budget` : undefined}
-          accent="indigo"
+          accent="slate"
         />
         <StatCard
           label="Ghost / Hires"
@@ -906,12 +906,12 @@ function PlanSummary({ forecast, teamMembers, roles }: {
       {totalBudget > 0 && (
         <div className="px-5 py-3 border-b border-gray-100">
           <div className="flex items-center gap-2 text-xs text-gray-400 mb-1.5">
-            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-indigo-500 inline-block" /> Real</span>
+            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-slate-500 inline-block" /> Real</span>
             <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-violet-400 inline-block" /> Ghost</span>
             {gap > 0 && <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-red-200 inline-block" /> Needed</span>}
           </div>
           <div className="w-full h-2.5 bg-gray-100 rounded-full overflow-hidden flex">
-            <div className="h-full bg-indigo-500 transition-all" style={{ width: `${pctReal}%` }} />
+            <div className="h-full bg-slate-500 transition-all" style={{ width: `${pctReal}%` }} />
             <div className="h-full bg-violet-400 transition-all" style={{ width: `${pctGhost}%` }} />
           </div>
         </div>
@@ -954,8 +954,8 @@ function PlanSummary({ forecast, teamMembers, roles }: {
       {/* Real team table */}
       {realStats.length > 0 && (
         <div className={ghostStats.length > 0 ? 'border-t border-gray-100' : ''}>
-          <div className="px-5 py-2.5 border-b border-gray-100 bg-indigo-50/30">
-            <p className="text-xs font-semibold text-indigo-700 uppercase tracking-wide">
+          <div className="px-5 py-2.5 border-b border-gray-100 bg-slate-50/30">
+            <p className="text-xs font-semibold text-slate-700 uppercase tracking-wide">
               Team Members ({realStats.length})
             </p>
           </div>
@@ -977,8 +977,8 @@ function PlanSummary({ forecast, teamMembers, roles }: {
             <tfoot>
               <tr className="border-t border-gray-200 bg-gray-50 font-semibold text-sm">
                 <td colSpan={3} className="px-4 py-2 text-gray-600">Total real team</td>
-                <td className="px-4 py-2 text-right text-indigo-600">{totalRealHours.toLocaleString()}h</td>
-                <td className="px-4 py-2 text-right text-indigo-500">{formatFte(totalRealFte)}</td>
+                <td className="px-4 py-2 text-right text-slate-600">{totalRealHours.toLocaleString()}h</td>
+                <td className="px-4 py-2 text-right text-slate-500">{formatFte(totalRealFte)}</td>
               </tr>
             </tfoot>
           </table>
@@ -1088,8 +1088,8 @@ function MemberForecastMatrix({
     );
   }
 
-  const accentBorder = isGhost ? 'border-violet-200 focus:ring-violet-400' : 'border-indigo-200 focus:ring-indigo-400';
-  const accentText   = isGhost ? 'text-violet-600' : 'text-indigo-600';
+  const accentBorder = isGhost ? 'border-violet-200 focus:ring-violet-400' : 'border-slate-200 focus:ring-slate-400';
+  const accentText   = isGhost ? 'text-violet-600' : 'text-slate-600';
 
   return (
     <div className="border-t border-gray-100 overflow-x-auto">
@@ -1129,7 +1129,7 @@ function MemberForecastMatrix({
                         min={0}
                         placeholder="fill all…"
                         data-assignment-id={a.id}
-                        className="w-20 border border-dashed border-gray-300 rounded px-1.5 py-0.5 text-xs text-right focus:outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-200 placeholder:text-gray-300"
+                        className="w-20 border border-dashed border-gray-300 rounded px-1.5 py-0.5 text-xs text-right focus:outline-none focus:border-slate-400 focus:ring-1 focus:ring-slate-200 placeholder:text-gray-300"
                         onBlur={(e) => handleBlur(a, e)}
                         onKeyDown={(e) => {
                           if (e.key === 'Enter') {
@@ -1270,7 +1270,7 @@ function MemberCentricPlanView({
     }, 0);
 
     return (
-      <div className={`bg-white rounded-lg overflow-hidden transition-shadow ${isOpen ? 'ring-2 ring-indigo-200' : 'ring-1 ring-gray-200'}`}>
+      <div className={`bg-white rounded-lg overflow-hidden transition-shadow ${isOpen ? 'ring-2 ring-slate-200' : 'ring-1 ring-gray-200'}`}>
         <div
           role="button" tabIndex={0}
           onClick={() => toggle(id)}
@@ -1289,7 +1289,7 @@ function MemberCentricPlanView({
             <p className="text-xs text-gray-400 mt-0.5">{getRoleName(roleId)}</p>
           </div>
           <div className="text-right text-xs shrink-0 ml-4 space-y-0.5">
-            <p className={`font-semibold text-sm ${isGhost ? 'text-violet-600' : 'text-indigo-600'}`}>{totalHours}h</p>
+            <p className={`font-semibold text-sm ${isGhost ? 'text-violet-600' : 'text-slate-600'}`}>{totalHours}h</p>
             <p className="text-gray-400">{formatFte(totalFte)}</p>
             {monthlyAvailability > 0 && <p className="text-gray-300">{monthlyAvailability}h/mo cap</p>}
           </div>
@@ -1455,11 +1455,11 @@ export default function ForecastClient({ forecast, teamMembers, roles, profiles 
                 onChange={(e) => setNewName(e.target.value)}
                 onBlur={handleRename}
                 onKeyDown={(e) => { if (e.key === 'Enter') handleRename(); if (e.key === 'Escape') setRenaming(false); }}
-                className="text-2xl font-bold text-gray-900 border-b border-indigo-400 outline-none bg-transparent"
+                className="text-2xl font-bold text-gray-900 border-b border-slate-400 outline-none bg-transparent"
               />
             ) : (
               <h1
-                className="text-2xl font-bold text-gray-900 cursor-pointer hover:text-indigo-700 transition-colors"
+                className="text-2xl font-bold text-gray-900 cursor-pointer hover:text-slate-700 transition-colors"
                 onClick={() => setRenaming(true)}
                 title="Click to rename"
               >
@@ -1467,7 +1467,7 @@ export default function ForecastClient({ forecast, teamMembers, roles, profiles 
               </h1>
             )}
             {!renaming && (
-              <button onClick={() => setRenaming(true)} className="text-xs text-gray-400 hover:text-indigo-500 transition-colors">
+              <button onClick={() => setRenaming(true)} className="text-xs text-gray-400 hover:text-slate-500 transition-colors">
                 ✎
               </button>
             )}
@@ -1521,7 +1521,7 @@ export default function ForecastClient({ forecast, teamMembers, roles, profiles 
             </div>
             {planView === 'project' && (
               <button onClick={() => setShowAddProject(true)}
-                className="text-xs px-3 py-1.5 rounded border border-indigo-200 text-indigo-600 hover:bg-indigo-50 transition-colors font-medium bg-white">
+                className="text-xs px-3 py-1.5 rounded border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors font-medium bg-white">
                 + Add Project
               </button>
             )}

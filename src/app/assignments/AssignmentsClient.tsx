@@ -104,7 +104,7 @@ function BulkAssignmentForm({
           value={projectId}
           onChange={(e) => { setProjectId(e.target.value); setChecked({}); setHours({}); }}
           required
-          className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
+          className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-slate-500 text-sm"
         >
           <option value="" disabled>Select a project…</option>
           {projects.map((p) => (
@@ -123,7 +123,7 @@ function BulkAssignmentForm({
           <div className="flex items-center justify-between mb-2">
             <label className="text-sm font-medium text-gray-700">Team Members</label>
             <div className="flex gap-3 text-xs">
-              <button type="button" onClick={selectAll} className="text-xs px-2.5 py-1 rounded border border-indigo-200 text-indigo-600 hover:bg-indigo-50 transition-colors">Select all</button>
+              <button type="button" onClick={selectAll} className="text-xs px-2.5 py-1 rounded border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors">Select all</button>
               <button type="button" onClick={() => setChecked({})} className="text-xs px-2.5 py-1 rounded border border-gray-200 text-gray-500 hover:bg-gray-50 transition-colors">Clear</button>
             </div>
           </div>
@@ -156,10 +156,10 @@ function BulkAssignmentForm({
                         ? Math.max(...months.map((m) => committedPerMemberPerMonth[member.id]?.[m] ?? 0))
                         : 0;
                       return (
-                        <tr key={member.id} className={`border-b border-gray-50 ${alreadyAssigned ? 'bg-gray-50/80 opacity-50' : isChecked ? 'bg-indigo-50/40' : 'bg-white hover:bg-gray-50/40'}`}>
+                        <tr key={member.id} className={`border-b border-gray-50 ${alreadyAssigned ? 'bg-gray-50/80 opacity-50' : isChecked ? 'bg-slate-50/40' : 'bg-white hover:bg-gray-50/40'}`}>
                           <td className="px-3 py-2 text-center">
                             {alreadyAssigned ? <span className="text-xs text-gray-400">✓</span> : (
-                              <input type="checkbox" checked={isChecked} onChange={() => toggleCheck(member.id)} className="rounded text-indigo-600 focus:ring-indigo-500" />
+                              <input type="checkbox" checked={isChecked} onChange={() => toggleCheck(member.id)} className="rounded text-slate-600 focus:ring-slate-500" />
                             )}
                           </td>
                           <td className="px-3 py-2 font-medium text-gray-800">{member.name}</td>
@@ -177,7 +177,7 @@ function BulkAssignmentForm({
                                 disabled={!isChecked}
                                 min={0}
                                 placeholder="0"
-                                className={`w-20 border rounded px-2 py-1 text-sm text-right focus:outline-none focus:ring-1 focus:ring-indigo-500 ${isChecked ? 'border-indigo-300 bg-white' : 'border-gray-200 bg-gray-50 text-gray-300'}`}
+                                className={`w-20 border rounded px-2 py-1 text-sm text-right focus:outline-none focus:ring-1 focus:ring-slate-500 ${isChecked ? 'border-slate-300 bg-white' : 'border-gray-200 bg-gray-50 text-gray-300'}`}
                               />
                             )}
                           </td>
@@ -192,10 +192,10 @@ function BulkAssignmentForm({
               </tbody>
               {checkedCount > 0 && (
                 <tfoot>
-                  <tr className="border-t border-gray-200 bg-indigo-50/60 text-xs font-medium">
+                  <tr className="border-t border-gray-200 bg-slate-50/60 text-xs font-medium">
                     <td colSpan={4} className="px-3 py-2 text-gray-600">{checkedCount} member{checkedCount > 1 ? 's' : ''} selected</td>
-                    <td className="px-3 py-2 text-right text-indigo-700">{Object.entries(hours).filter(([id]) => checked[id]).reduce((s, [, v]) => s + Number(v || 0), 0)}h/month</td>
-                    <td className="px-3 py-2 text-right text-indigo-700">{Object.entries(hours).filter(([id]) => checked[id]).reduce((s, [, v]) => s + Number(v || 0) * months.length, 0)}h total</td>
+                    <td className="px-3 py-2 text-right text-slate-700">{Object.entries(hours).filter(([id]) => checked[id]).reduce((s, [, v]) => s + Number(v || 0), 0)}h/month</td>
+                    <td className="px-3 py-2 text-right text-slate-700">{Object.entries(hours).filter(([id]) => checked[id]).reduce((s, [, v]) => s + Number(v || 0) * months.length, 0)}h total</td>
                   </tr>
                 </tfoot>
               )}
@@ -205,7 +205,7 @@ function BulkAssignmentForm({
       )}
 
       <div className="pt-2 flex justify-end">
-        <button type="submit" disabled={checkedCount === 0} className="bg-indigo-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-indigo-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+        <button type="submit" disabled={checkedCount === 0} className="bg-slate-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-slate-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
           {checkedCount > 0 ? `Assign ${checkedCount} Member${checkedCount > 1 ? 's' : ''}` : 'Select members to assign'}
         </button>
       </div>
@@ -269,14 +269,14 @@ function EditAssignmentForm({
           <thead>
             <tr className="bg-gray-50 border-b border-gray-100 text-xs">
               <th className="text-left px-3 py-2 font-medium text-gray-600">Month</th>
-              <th className="text-right px-3 py-2 font-medium text-indigo-600">
+              <th className="text-right px-3 py-2 font-medium text-slate-600">
                 <div className="flex items-center justify-end gap-1.5">
                   <span>Planned (h)</span>
                   <input
                     type="number"
                     min={0}
                     placeholder="fill all…"
-                    className="w-20 border border-dashed border-indigo-300 rounded px-1.5 py-0.5 text-xs text-right font-normal focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-200 placeholder:text-indigo-200"
+                    className="w-20 border border-dashed border-slate-300 rounded px-1.5 py-0.5 text-xs text-right font-normal focus:outline-none focus:border-slate-500 focus:ring-1 focus:ring-slate-200 placeholder:text-slate-200"
                     onKeyDown={(e) => {
                       if (e.key === 'Enter') {
                         e.preventDefault();
@@ -324,7 +324,7 @@ function EditAssignmentForm({
                       onChange={(e) => setPlanned((prev) => ({ ...prev, [month]: e.target.value }))}
                       min={0}
                       placeholder="0"
-                      className="w-20 border border-indigo-200 rounded px-2 py-1 text-sm text-right focus:outline-none focus:ring-1 focus:ring-indigo-400 bg-white"
+                      className="w-20 border border-slate-200 rounded px-2 py-1 text-sm text-right focus:outline-none focus:ring-1 focus:ring-slate-400 bg-white"
                     />
                   </td>
                   <td className="px-3 py-2 text-right">
@@ -348,7 +348,7 @@ function EditAssignmentForm({
           <tfoot>
             <tr className="border-t border-gray-200 bg-gray-50 font-semibold text-sm">
               <td className="px-3 py-2 text-gray-600">Total</td>
-              <td className="px-3 py-2 text-right text-indigo-600">{totalPlanned}h</td>
+              <td className="px-3 py-2 text-right text-slate-600">{totalPlanned}h</td>
               <td className="px-3 py-2 text-right text-emerald-600">{totalBilled}h</td>
               <td className={`px-3 py-2 text-right text-xs ${totalDelta > 0 ? 'text-red-500' : totalDelta < 0 ? 'text-emerald-600' : 'text-gray-400'}`}>
                 {totalDelta === 0 ? '±0' : totalDelta > 0 ? `+${totalDelta}h` : `${totalDelta}h`}
@@ -361,7 +361,7 @@ function EditAssignmentForm({
       <p className="text-xs text-gray-400">Delta = Billed − Planned. Positive means over-billed, negative means under-billed.</p>
 
       <div className="pt-2 flex justify-end">
-        <button type="submit" className="bg-indigo-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-indigo-700 transition-colors">
+        <button type="submit" className="bg-slate-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-slate-700 transition-colors">
           Save Changes
         </button>
       </div>
@@ -393,7 +393,7 @@ export default function AssignmentsClient({ assignments, projects, members, role
     <div>
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Assignments</h1>
-        <button onClick={() => setShowCreate(true)} className="bg-indigo-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-indigo-700 transition-colors">
+        <button onClick={() => setShowCreate(true)} className="bg-slate-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-slate-700 transition-colors">
           Add Assignments
         </button>
       </div>
@@ -437,7 +437,7 @@ export default function AssignmentsClient({ assignments, projects, members, role
                   </div>
                   <div className="flex items-center gap-4 text-xs text-gray-400">
                     {project && <span>{formatMonth(project.startMonth)} – {formatMonth(project.endMonth)} · {months.length} months</span>}
-                    <span className="text-indigo-600 font-medium">{totalPlanned}h planned</span>
+                    <span className="text-slate-600 font-medium">{totalPlanned}h planned</span>
                     <span className="text-emerald-600 font-medium">{totalBilled}h billed</span>
                   </div>
                 </button>
@@ -448,7 +448,7 @@ export default function AssignmentsClient({ assignments, projects, members, role
                       <thead>
                         <tr className="border-b border-gray-100 bg-gray-50/60 text-xs">
                           <th className="text-left px-4 py-2.5 font-medium text-gray-600">Member</th>
-                          <th className="text-right px-4 py-2.5 font-medium text-indigo-600">Planned</th>
+                          <th className="text-right px-4 py-2.5 font-medium text-slate-600">Planned</th>
                           <th className="text-right px-4 py-2.5 font-medium text-emerald-600">Billed</th>
                           <th className="text-right px-4 py-2.5 font-medium text-gray-500">Delta</th>
                           <th className="px-4 py-2.5"></th>
@@ -475,14 +475,14 @@ export default function AssignmentsClient({ assignments, projects, members, role
                                 return (
                                   <tr key={a.id} className="border-b border-gray-50 hover:bg-gray-50/50 bg-white">
                                     <td className="px-4 py-2.5 font-medium text-gray-800">{member.name}</td>
-                                    <td className="px-4 py-2.5 text-right text-indigo-600 font-semibold">{p}h</td>
+                                    <td className="px-4 py-2.5 text-right text-slate-600 font-semibold">{p}h</td>
                                     <td className="px-4 py-2.5 text-right text-emerald-600 font-semibold">{b}h</td>
                                     <td className={`px-4 py-2.5 text-right text-xs font-medium ${delta > 0 ? 'text-red-500' : delta < 0 ? 'text-emerald-600' : 'text-gray-300'}`}>
                                       {p === 0 && b === 0 ? '—' : delta > 0 ? `+${delta}h` : delta < 0 ? `${delta}h` : '±0'}
                                     </td>
                                     <td className="px-4 py-2.5">
                                       <div className="flex items-center gap-2 justify-end">
-                                        <button onClick={() => setEditAssignment(a)} className="text-xs text-indigo-600 hover:text-indigo-800 font-medium">Edit</button>
+                                        <button onClick={() => setEditAssignment(a)} className="text-xs text-slate-600 hover:text-slate-800 font-medium">Edit</button>
                                         <form action={async () => { await deleteAssignment(a.id); router.refresh(); }}>
                                           <button type="submit" className="text-xs text-red-500 hover:text-red-700 font-medium" onClick={(e) => { if (!confirm('Delete this assignment?')) e.preventDefault(); }}>
                                             Delete
@@ -500,7 +500,7 @@ export default function AssignmentsClient({ assignments, projects, members, role
                       <tfoot>
                         <tr className="border-t border-gray-200 bg-gray-50 font-medium text-sm">
                           <td className="px-4 py-2 text-gray-600">Total</td>
-                          <td className="px-4 py-2 text-right text-indigo-600">{totalPlanned}h</td>
+                          <td className="px-4 py-2 text-right text-slate-600">{totalPlanned}h</td>
                           <td className="px-4 py-2 text-right text-emerald-600">{totalBilled}h</td>
                           <td className={`px-4 py-2 text-right text-xs ${totalBilled - totalPlanned > 0 ? 'text-red-500' : totalBilled - totalPlanned < 0 ? 'text-emerald-600' : 'text-gray-400'}`}>
                             {totalBilled - totalPlanned === 0 ? '±0' : totalBilled - totalPlanned > 0 ? `+${totalBilled - totalPlanned}h` : `${totalBilled - totalPlanned}h`}

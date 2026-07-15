@@ -85,7 +85,7 @@ function LegendPills({ items, hidden, onToggle, onIsolate, onShowAll, onHideAll 
         );
       })}
       <div className="flex gap-2 ml-auto text-xs">
-        <button onClick={onShowAll} className="px-2.5 py-1 rounded border border-indigo-200 text-indigo-600 hover:bg-indigo-50 transition-colors">Show all</button>
+        <button onClick={onShowAll} className="px-2.5 py-1 rounded border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors">Show all</button>
         <button onClick={onHideAll} className="px-2.5 py-1 rounded border border-gray-200 text-gray-500 hover:bg-gray-50 transition-colors">Hide all</button>
       </div>
     </div>
@@ -343,8 +343,8 @@ function PlanVsActualChart({ assignments, projects, members }: Props) {
     >
       <LegendPills items={items} hidden={hidden} onToggle={toggle} onIsolate={isolate} onShowAll={showAll} onHideAll={hideAll} />
       <div className="flex items-center gap-4 text-xs text-gray-400 mb-3">
-        <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-sm bg-indigo-500" /> Billed</span>
-        <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-sm bg-indigo-200" /> Planned</span>
+        <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-sm bg-slate-500" /> Billed</span>
+        <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-sm bg-slate-200" /> Planned</span>
       </div>
       <ResponsiveContainer width="100%" height={300}>
         <BarChart data={data} margin={{ top: 4, right: 16, left: 0, bottom: 4 }}>
@@ -409,8 +409,8 @@ function ProjectBilledVsPlannedChart({ assignments, projects }: Omit<Props, 'mem
     >
       <LegendPills items={items} hidden={hidden} onToggle={toggle} onIsolate={isolate} onShowAll={showAll} onHideAll={hideAll} />
       <div className="flex items-center gap-4 text-xs text-gray-400 mb-3">
-        <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-sm bg-indigo-500" /> Billed</span>
-        <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-sm bg-indigo-200" /> Planned</span>
+        <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-sm bg-slate-500" /> Billed</span>
+        <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-sm bg-slate-200" /> Planned</span>
       </div>
       <ResponsiveContainer width="100%" height={300}>
         <BarChart data={data} margin={{ top: 4, right: 16, left: 0, bottom: 4 }}>
@@ -673,7 +673,7 @@ function MemberLoadByProjectChart({ member, assignments, projects }: {
   return (
     <ChartShell title={member.name}>
       <div className="flex flex-wrap items-center gap-3 text-xs mb-3">
-        <span className="font-semibold text-indigo-600">{totalPlanned}h planned total</span>
+        <span className="font-semibold text-slate-600">{totalPlanned}h planned total</span>
         {member.monthlyAvailability > 0 && (
           <span className="text-gray-400">{member.monthlyAvailability}h/month cap</span>
         )}

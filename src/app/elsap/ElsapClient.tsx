@@ -149,7 +149,7 @@ export default function ElsapClient({ mirror }: Props) {
 
   const SortTh = ({ label, k }: { label: string; k: SortKey }) => (
     <th
-      className="text-left px-3 py-2.5 font-medium text-gray-600 cursor-pointer hover:text-indigo-600 select-none whitespace-nowrap"
+      className="text-left px-3 py-2.5 font-medium text-gray-600 cursor-pointer hover:text-slate-600 select-none whitespace-nowrap"
       onClick={() => toggleSort(k)}
     >
       {label} {sortKey === k ? (sortAsc ? '↑' : '↓') : ''}
@@ -203,7 +203,7 @@ export default function ElsapClient({ mirror }: Props) {
           <button
             type="submit"
             disabled={importing || isPending}
-            className="bg-indigo-600 text-white px-4 py-1.5 rounded text-sm font-medium hover:bg-indigo-700 transition-colors disabled:opacity-40"
+            className="bg-slate-600 text-white px-4 py-1.5 rounded text-sm font-medium hover:bg-slate-700 transition-colors disabled:opacity-40"
           >
             {importing ? 'Importing…' : 'Import CSV'}
           </button>
@@ -242,7 +242,7 @@ export default function ElsapClient({ mirror }: Props) {
               <select
                 value={filterName}
                 onChange={(e) => { setFilterName(e.target.value); }}
-                className="border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-400 min-w-[160px]"
+                className="border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-slate-400 min-w-[160px]"
               >
                 <option value="">All persons</option>
                 {allNames.map((n) => <option key={n} value={n}>{n}</option>)}
@@ -253,7 +253,7 @@ export default function ElsapClient({ mirror }: Props) {
               <select
                 value={filterProject}
                 onChange={(e) => { setFilterProject(e.target.value); }}
-                className="border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-400 min-w-[200px]"
+                className="border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-slate-400 min-w-[200px]"
               >
                 <option value="">All projects</option>
                 {allProjects.map((p) => <option key={p} value={p}>{p}</option>)}
@@ -264,7 +264,7 @@ export default function ElsapClient({ mirror }: Props) {
               <select
                 value={filterMonth}
                 onChange={(e) => { setFilterMonth(e.target.value); }}
-                className="border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                className="border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-slate-400"
               >
                 <option value="">All months</option>
                 {allMonths.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
@@ -275,7 +275,7 @@ export default function ElsapClient({ mirror }: Props) {
               <select
                 value={filterStatus}
                 onChange={(e) => { setFilterStatus(e.target.value); }}
-                className="border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                className="border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-slate-400"
               >
                 <option value="">All statuses</option>
                 {allStatuses.map((s) => <option key={s} value={s}>{s}</option>)}
@@ -286,7 +286,7 @@ export default function ElsapClient({ mirror }: Props) {
               <select
                 value={filterVerrechnet}
                 onChange={(e) => { setFilterVerrechnet(e.target.value); }}
-                className="border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                className="border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-slate-400"
               >
                 <option value="">All</option>
                 <option value="yes">Invoiced</option>
@@ -301,9 +301,9 @@ export default function ElsapClient({ mirror }: Props) {
           </div>
           <div className="mt-3 flex items-center justify-between">
             <span className="text-xs text-gray-400">{filtered.length.toLocaleString('de-DE')} rows</span>
-            <div className="flex items-center gap-2 bg-indigo-50 border border-indigo-200 rounded-md px-3 py-1.5">
-              <span className="text-xs text-indigo-500 font-medium">Subtotal</span>
-              <span className="text-lg font-bold text-indigo-700">
+            <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-md px-3 py-1.5">
+              <span className="text-xs text-slate-500 font-medium">Subtotal</span>
+              <span className="text-lg font-bold text-slate-700">
                 {totalHours.toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}h
               </span>
             </div>
@@ -342,7 +342,7 @@ export default function ElsapClient({ mirror }: Props) {
                     <td className="px-3 py-2 text-gray-700 max-w-[200px] truncate" title={row.posText}>{row.posText}</td>
                     <td className="px-3 py-2 text-gray-400 whitespace-nowrap font-mono">{row.einkBeleg}</td>
                     <td className="px-3 py-2 text-gray-500 max-w-[200px] truncate" title={row.aktivitaet}>{row.aktivitaet}</td>
-                    <td className="px-3 py-2 text-right font-semibold text-indigo-700 whitespace-nowrap">
+                    <td className="px-3 py-2 text-right font-semibold text-slate-700 whitespace-nowrap">
                       {row.stunden.toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 3 })}h
                     </td>
                     <td className="px-3 py-2 whitespace-nowrap">
@@ -359,11 +359,11 @@ export default function ElsapClient({ mirror }: Props) {
                 ))}
               </tbody>
               <tfoot>
-                <tr className="border-t-2 border-indigo-200 bg-indigo-50">
-                  <td colSpan={6} className="px-3 py-2 text-xs font-semibold text-indigo-600">
+                <tr className="border-t-2 border-slate-200 bg-slate-50">
+                  <td colSpan={6} className="px-3 py-2 text-xs font-semibold text-slate-600">
                     Subtotal — {filtered.length.toLocaleString('de-DE')} rows
                   </td>
-                  <td className="px-3 py-2 text-right font-bold text-indigo-700 whitespace-nowrap">
+                  <td className="px-3 py-2 text-right font-bold text-slate-700 whitespace-nowrap">
                     {totalHours.toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}h
                   </td>
                   <td colSpan={2} />

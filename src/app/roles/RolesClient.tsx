@@ -27,7 +27,7 @@ function RoleForm({
           name="name"
           defaultValue={initial?.name}
           required
-          className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
+          className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-slate-500 text-sm"
         />
       </div>
       <div>
@@ -36,7 +36,7 @@ function RoleForm({
           name="definition"
           defaultValue={initial?.definition}
           rows={3}
-          className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
+          className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-slate-500 text-sm"
         />
       </div>
       <div>
@@ -50,7 +50,7 @@ function RoleForm({
                 value={t}
                 checked={type === t}
                 onChange={() => setType(t)}
-                className="text-indigo-600"
+                className="text-slate-600"
               />
               <span className="text-sm capitalize">{t}</span>
             </label>
@@ -61,7 +61,7 @@ function RoleForm({
       <div className="pt-2 flex justify-end">
         <button
           type="submit"
-          className="bg-indigo-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-indigo-700 transition-colors"
+          className="bg-slate-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-slate-700 transition-colors"
         >
           {initial ? 'Save Changes' : 'Create Role'}
         </button>
@@ -80,7 +80,7 @@ export default function RolesClient({ roles }: Props) {
         <h1 className="text-2xl font-bold text-gray-900">Roles</h1>
         <button
           onClick={() => setShowCreate(true)}
-          className="bg-indigo-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-indigo-700 transition-colors"
+          className="bg-slate-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-slate-700 transition-colors"
         >
           Add Role
         </button>
@@ -125,7 +125,7 @@ export default function RolesClient({ roles }: Props) {
                     <div className="flex items-center gap-2 justify-end">
                       <button
                         onClick={() => setEditRole(role)}
-                        className="text-xs text-indigo-600 hover:text-indigo-800 font-medium"
+                        className="text-xs text-slate-600 hover:text-slate-800 font-medium"
                       >
                         Edit
                       </button>

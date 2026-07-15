@@ -46,7 +46,7 @@ function MemberForm({
           name="name"
           defaultValue={initial?.name}
           required
-          className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
+          className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-slate-500 text-sm"
         />
       </div>
       <div>
@@ -55,7 +55,7 @@ function MemberForm({
           name="roleId"
           defaultValue={initial?.roleId ?? ''}
           required
-          className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
+          className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-slate-500 text-sm"
         >
           <option value="" disabled>Select a role…</option>
           {roles.map((r) => (
@@ -76,7 +76,7 @@ function MemberForm({
           defaultValue={initial?.monthlyAvailability ?? 160}
           min={0}
           required
-          className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
+          className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-slate-500 text-sm"
         />
       </div>
       <div>
@@ -93,7 +93,7 @@ function MemberForm({
                   value={p.id}
                   checked={selectedProfiles.includes(p.id)}
                   onChange={() => toggleProfile(p.id)}
-                  className="text-indigo-600 rounded"
+                  className="text-slate-600 rounded"
                 />
                 <span className="text-sm text-gray-700">{p.name}</span>
               </label>
@@ -104,7 +104,7 @@ function MemberForm({
       <div className="pt-2 flex justify-end">
         <button
           type="submit"
-          className="bg-indigo-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-indigo-700 transition-colors"
+          className="bg-slate-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-slate-700 transition-colors"
         >
           {initial ? 'Save Changes' : 'Add Member'}
         </button>
@@ -185,7 +185,7 @@ function MemberAssignments({
     return (
       <div className="px-6 py-4 text-sm text-gray-400 bg-gray-50/60 border-t border-gray-100">
         Not assigned to any project yet. Add assignments from the{' '}
-        <a href="/assignments" className="text-indigo-500 hover:underline">Assignments</a> page.
+        <a href="/assignments" className="text-slate-500 hover:underline">Assignments</a> page.
       </div>
     );
   }
@@ -226,7 +226,7 @@ function MemberAssignments({
                       min={0}
                       placeholder="fill all…"
                       data-assignment-id={a.id}
-                      className="w-20 border border-dashed border-gray-300 rounded px-1.5 py-0.5 text-xs text-right font-normal focus:outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-200 placeholder:text-gray-300"
+                      className="w-20 border border-dashed border-gray-300 rounded px-1.5 py-0.5 text-xs text-right font-normal focus:outline-none focus:border-slate-400 focus:ring-1 focus:ring-slate-200 placeholder:text-gray-300"
                       onKeyDown={(e) => {
                         if (e.key !== 'Enter') return;
                         e.preventDefault();
@@ -257,14 +257,14 @@ function MemberAssignments({
                         onBlur={(e) => handleBlur(a.id, e)}
                         min={0}
                         placeholder="0"
-                        className="w-16 border border-indigo-200 rounded px-1.5 py-1 text-sm text-right focus:outline-none focus:ring-1 focus:ring-indigo-400 bg-white"
+                        className="w-16 border border-slate-200 rounded px-1.5 py-1 text-sm text-right focus:outline-none focus:ring-1 focus:ring-slate-400 bg-white"
                       />
                     ) : (
                       <span className="text-gray-200 text-xs">—</span>
                     )}
                   </td>
                 ))}
-                <td className="px-3 py-2 text-right text-indigo-600 font-semibold text-xs">
+                <td className="px-3 py-2 text-right text-slate-600 font-semibold text-xs">
                   {totalHours}h
                 </td>
                 <td className="px-3 py-2 text-center text-gray-300 text-xs">
@@ -290,7 +290,7 @@ function MemberAssignments({
                 <td
                   key={m}
                   className={`px-2 py-2 text-right font-semibold ${
-                    over ? 'text-red-600' : total > 0 ? 'text-indigo-600' : 'text-gray-300'
+                    over ? 'text-red-600' : total > 0 ? 'text-slate-600' : 'text-gray-300'
                   }`}
                 >
                   {total > 0 ? `${total}h` : '—'}
@@ -359,7 +359,7 @@ export default function TeamClient({ members, roles, profiles, assignments, proj
         <h1 className="text-2xl font-bold text-gray-900">Team Members</h1>
         <button
           onClick={() => setShowCreate(true)}
-          className="bg-indigo-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-indigo-700 transition-colors"
+          className="bg-slate-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-slate-700 transition-colors"
         >
           Add Member
         </button>
@@ -396,14 +396,14 @@ export default function TeamClient({ members, roles, profiles, assignments, proj
                     <tr
                       key={member.id}
                       className={`border-b border-gray-50 transition-colors ${
-                        isExpanded ? 'bg-indigo-50/30' : idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/30'
+                        isExpanded ? 'bg-slate-50/30' : idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/30'
                       } hover:bg-gray-50/50`}
                     >
                       <td className="px-3 py-3 text-center">
                         <button
                           type="button"
                           onClick={() => toggleExpand(member.id)}
-                          className="text-gray-400 hover:text-indigo-600 transition-colors"
+                          className="text-gray-400 hover:text-slate-600 transition-colors"
                           title={isExpanded ? 'Collapse assignments' : 'Expand assignments'}
                         >
                           <span
@@ -437,7 +437,7 @@ export default function TeamClient({ members, roles, profiles, assignments, proj
                         <div className="flex flex-col items-end gap-0.5">
                           <span>{member.monthlyAvailability ? `${member.monthlyAvailability}h` : '—'}</span>
                           {totalPlanned > 0 && (
-                            <span className="text-xs text-indigo-500">{totalPlanned}h assigned</span>
+                            <span className="text-xs text-slate-500">{totalPlanned}h assigned</span>
                           )}
                         </div>
                       </td>
@@ -445,7 +445,7 @@ export default function TeamClient({ members, roles, profiles, assignments, proj
                         <div className="flex items-center gap-2 justify-end">
                           <button
                             onClick={() => setEditMember(member)}
-                            className="text-xs text-indigo-600 hover:text-indigo-800 font-medium"
+                            className="text-xs text-slate-600 hover:text-slate-800 font-medium"
                           >
                             Edit
                           </button>

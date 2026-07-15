@@ -83,7 +83,7 @@ function LegendPills({
         );
       })}
       <div className="flex gap-2 ml-auto text-xs">
-        <button type="button" onClick={onShowAll} className="px-2.5 py-1 rounded border border-indigo-200 text-indigo-600 hover:bg-indigo-50 transition-colors">
+        <button type="button" onClick={onShowAll} className="px-2.5 py-1 rounded border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors">
           Show all
         </button>
         <button type="button" onClick={onHideAll} className="px-2.5 py-1 rounded border border-gray-200 text-gray-500 hover:bg-gray-50 transition-colors">
@@ -141,7 +141,7 @@ function ProjectCapacityChart({ project, forecast }: { project: ForecastProject;
       {/* Stats row */}
       <div className="flex flex-wrap items-center gap-3 mb-4 text-xs">
         <span className="flex items-center gap-1.5 text-gray-500">
-          <span className="w-2.5 h-2.5 rounded-sm bg-indigo-500 inline-block shrink-0" />
+          <span className="w-2.5 h-2.5 rounded-sm bg-slate-500 inline-block shrink-0" />
           Real: <strong className="text-gray-700">{formatFte(hoursToFte(realTotal, numMonths))} ({realTotal}h)</strong>
         </span>
         <span className="flex items-center gap-1.5 text-gray-500">
@@ -245,7 +245,7 @@ function TotalCapacityChart({
       {/* Stats row */}
       <div className="flex flex-wrap items-center gap-3 mb-4 text-xs">
         <span className="flex items-center gap-1.5 text-gray-500">
-          <span className="w-2.5 h-2.5 rounded-sm bg-indigo-500 inline-block shrink-0" />
+          <span className="w-2.5 h-2.5 rounded-sm bg-slate-500 inline-block shrink-0" />
           Real: <strong className="text-gray-700">{formatFte(hoursToFte(totalRealAllocated, avgMonths))} ({totalRealAllocated}h)</strong>
         </span>
         <span className="flex items-center gap-1.5 text-gray-500">
@@ -342,7 +342,7 @@ function ForecastCapacityGapChart({
         )}
       </div>
       <div className="flex items-center gap-4 text-xs text-gray-400 mb-3">
-        <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-indigo-400 inline-block" /> Planned</span>
+        <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-slate-400 inline-block" /> Planned</span>
         <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-red-400 inline-block" /> Over capacity</span>
         <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-gray-100 border border-gray-200 inline-block" /> Free capacity</span>
       </div>
@@ -495,7 +495,7 @@ function ForecastMemberLoadChart({
   const overMonths    = availability > 0
     ? allMonths.filter((m) => memberAssignments.reduce((s, a) => s + (a.plannedHours[m] ?? 0), 0) > availability).length
     : 0;
-  const accentColor   = isGhost ? 'text-violet-600' : 'text-indigo-600';
+  const accentColor   = isGhost ? 'text-violet-600' : 'text-slate-600';
 
   return (
     <ChartShell title={`${isGhost ? '👻 ' : ''}${memberName}`}>
