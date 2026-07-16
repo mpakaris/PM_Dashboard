@@ -91,11 +91,18 @@ export interface TimesheetEntry {
   source: string; // original filename — used for merge-by-file on re-upload
 }
 
+export interface TicketRate {
+  billable: boolean;
+  rate: number; // €/h billed to client
+}
+
 export interface TimesheetStore {
   entries: TimesheetEntry[];
   lastUpload: string;
   sources: string[];
-  baselines: Record<string, number>; // user name → monthly hour baseline (default 160)
+  baselines: Record<string, number>;        // user name → monthly hour baseline (default 160)
+  billingRates: Record<string, TicketRate>; // "project:::task" → billing config
+  costRates: Record<string, number>;        // user name → internal cost €/h
 }
 
 export interface ElsapRow {

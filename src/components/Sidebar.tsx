@@ -1,7 +1,9 @@
 'use client';
 
+import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { pushDevToProd } from '@/actions/devTools';
 
 const sections = [
   {
@@ -78,6 +80,50 @@ export default function Sidebar({ open = true, onToggle }: { open?: boolean; onT
           </div>
         ))}
       </nav>
+
+      {process.env.NODE_ENV === 'development' && <DevToolsPanel />}
     </aside>
+  );
+}
+
+function DevToolsPanel() {
+  const [state, setState] = useState<'idle' | 'pushing' | 'done' | 'error'>('idle');
+  const [errMsg, setErrMsg] = useState('');
+
+  async function handlePush() {
+    if (!confirm('Push DEV → PROD?\n\nThis will overwrite the production database with your local dev data. This cannot be undone.')) return;
+    setState('pushing');
+    try {
+      const result = await pushDevToProd();
+      if (result.ok) {
+        setState('done');
+        setTimeout(() => setState('idle'), 3000);
+      } else {
+        setErrMsg(result.error ?? 'Unknown error');
+        setState('error');
+        setTimeout(() => setState('idle'), 5000);
+      }
+    } catch (e) {
+      setErrMsg(String(e));
+      setState('error');
+      setTimeout(() => setState('idle'), 5000);
+    }
+  }
+
+  return (
+    <div className="px-3 pb-4 pt-3 border-t border-slate-700">
+      <p className="px-3 mb-2 text-xs font-semibold text-amber-500 uppercase tracking-wider">Dev Tools</p>
+      <button
+        type="button"
+        onClick={handlePush}
+        disabled={state === 'pushing'}
+        className="w-full px-3 py-2 rounded-md text-sm font-medium transition-colors disabled:opacity-50 bg-amber-600 hover:bg-amber-500 text-white"
+      >
+        {state === 'pushing' && 'Pushing…'}
+        {state === 'done'    && '✓ Pushed to PROD'}
+        {state === 'error'   && `Error: ${errMsg}`}
+        {state === 'idle'    && 'Push DEV → PROD'}
+      </button>
+    </div>
   );
 }

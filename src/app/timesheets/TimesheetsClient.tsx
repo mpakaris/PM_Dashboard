@@ -2,10 +2,17 @@
 
 import { useState, useRef, useMemo, useEffect, useTransition, Fragment } from 'react';
 import { useRouter } from 'next/navigation';
-import { TimesheetEntry, TimesheetStore } from '@/lib/types';
-import { uploadTimesheetFiles, clearTimesheets, deleteTimesheetPerson, updateTimesheetBaseline } from '@/actions/timesheets';
+import { TimesheetEntry, TimesheetStore, TicketRate } from '@/lib/types';
+import {
+  uploadTimesheetFiles,
+  clearTimesheets,
+  deleteTimesheetPerson,
+  updateTimesheetBaseline,
+  updateTicketRate,
+  updateMemberCostRate,
+} from '@/actions/timesheets';
 
-// ─── Display Helpers ──────────────────────────────────────────────────────────
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function fmtMonth(ym: string): string {
   const [y, m] = ym.split('-');
@@ -14,6 +21,10 @@ function fmtMonth(ym: string): string {
 
 function fmtH(h: number): string {
   return h.toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 2 }) + 'h';
+}
+
+function fmtEur(v: number): string {
+  return v.toLocaleString('de-DE', { minimumFractionDigits: 0, maximumFractionDigits: 0 }) + ' €';
 }
 
 // ─── Hide Button ──────────────────────────────────────────────────────────────
@@ -35,6 +46,56 @@ function HideBtn({ isHidden, onToggle }: { isHidden: boolean; onToggle: () => vo
   );
 }
 
+// ─── Rate Editor ──────────────────────────────────────────────────────────────
+
+function RateEditor({
+  value,
+  onChange,
+}: {
+  value: TicketRate;
+  onChange: (billable: boolean, rate: number) => void;
+}) {
+  const [rateInput, setRateInput] = useState(value.rate ? String(value.rate) : '');
+  useEffect(() => { setRateInput(value.rate ? String(value.rate) : ''); }, [value.rate]);
+
+  return (
+    <div className="flex items-center gap-2 shrink-0">
+      <button
+        type="button"
+        onClick={() => onChange(!value.billable, value.rate)}
+        className={`flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border transition-colors ${
+          value.billable
+            ? 'bg-emerald-50 border-emerald-300 text-emerald-700 hover:bg-emerald-100'
+            : 'bg-gray-100 border-gray-200 text-gray-400 hover:border-gray-300 hover:text-gray-500'
+        }`}
+      >
+        <span className={`w-1.5 h-1.5 rounded-full ${value.billable ? 'bg-emerald-500' : 'bg-gray-300'}`} />
+        {value.billable ? 'Billable' : 'Internal'}
+      </button>
+      {value.billable && (
+        <div className="flex items-center gap-1">
+          <input
+            type="number"
+            min={0}
+            step={1}
+            value={rateInput}
+            onChange={e => setRateInput(e.target.value)}
+            onBlur={() => {
+              const r = Math.max(0, Number(rateInput) || 0);
+              setRateInput(r ? String(r) : '');
+              onChange(value.billable, r);
+            }}
+            onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+            className="w-16 text-right border-0 border-b border-emerald-300 bg-transparent text-emerald-700 font-semibold focus:outline-none focus:border-emerald-500 text-xs"
+            placeholder="rate"
+          />
+          <span className="text-xs text-gray-400">€/h</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Person Table ─────────────────────────────────────────────────────────────
 
 function PersonTable({ entries, baseline, onBaselineChange }: {
@@ -43,7 +104,6 @@ function PersonTable({ entries, baseline, onBaselineChange }: {
   onBaselineChange: (h: number) => void;
 }) {
   const [baselineInput, setBaselineInput] = useState(String(baseline));
-  // sync if prop changes (e.g. after server refresh)
   useEffect(() => { setBaselineInput(String(baseline)); }, [baseline]);
   const [hidden, setHidden] = useState<Set<string>>(new Set());
 
@@ -231,16 +291,101 @@ function PersonTable({ entries, baseline, onBaselineChange }: {
   );
 }
 
+// ─── Member Card ──────────────────────────────────────────────────────────────
+
+function MemberCard({ user, entries, baseline, costRate, onDeletePerson, onBaselineChange, onCostRateChange }: {
+  user: string;
+  entries: TimesheetEntry[];
+  baseline: number;
+  costRate: number;
+  onDeletePerson: () => void;
+  onBaselineChange: (h: number) => void;
+  onCostRateChange: (rate: number) => void;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [costInput, setCostInput] = useState(costRate ? String(costRate) : '');
+  useEffect(() => { setCostInput(costRate ? String(costRate) : ''); }, [costRate]);
+
+  const total = entries.reduce((s, e) => s + e.spentTime, 0);
+  const months = useMemo(() => [...new Set(entries.map(e => e.month))].sort(), [entries]);
+
+  return (
+    <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+      <div className="flex items-center">
+        <button
+          type="button"
+          onClick={() => setIsOpen(v => !v)}
+          className="flex-1 px-5 py-3.5 flex items-center justify-between hover:bg-gray-50 transition-colors text-left"
+        >
+          <div className="flex items-center gap-3">
+            <span className={`text-gray-400 text-xs transition-transform duration-150 ${isOpen ? 'rotate-90' : ''}`}>▶</span>
+            <span className="font-semibold text-gray-800">{user}</span>
+            <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">
+              {months.length} month{months.length !== 1 ? 's' : ''}
+            </span>
+          </div>
+          <div className="flex items-center gap-4 text-xs">
+            <span className="text-gray-400">
+              {months.length > 0 && `${fmtMonth(months[0])} – ${fmtMonth(months[months.length - 1])}`}
+            </span>
+            <span className="text-slate-600 font-bold">{fmtH(total)}</span>
+          </div>
+        </button>
+        <div
+          className="flex items-center gap-1.5 px-3 py-3.5 border-l border-gray-100"
+          title="Internal cost rate per hour"
+        >
+          <span className="text-xs text-gray-400">Cost:</span>
+          <input
+            type="number"
+            min={0}
+            value={costInput}
+            onChange={e => setCostInput(e.target.value)}
+            onBlur={() => {
+              const r = Math.max(0, Number(costInput) || 0);
+              setCostInput(r ? String(r) : '');
+              if (r !== costRate) onCostRateChange(r);
+            }}
+            onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+            className="w-14 text-right border-0 border-b border-gray-300 bg-transparent text-gray-600 font-semibold focus:outline-none focus:border-slate-500 text-xs"
+            placeholder="0"
+          />
+          <span className="text-xs text-gray-400">€/h</span>
+        </div>
+        <button
+          type="button"
+          onClick={() => {
+            if (confirm(`Delete all timesheet data for ${user}?`)) onDeletePerson();
+          }}
+          className="px-4 py-3.5 text-xs text-red-400 hover:text-red-600 hover:bg-red-50 transition-colors border-l border-gray-100"
+          title="Delete this person's timesheets"
+        >
+          Delete
+        </button>
+      </div>
+      {isOpen && (
+        <div className="border-t border-gray-100">
+          <PersonTable
+            entries={entries}
+            baseline={baseline}
+            onBaselineChange={onBaselineChange}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── By Member View ───────────────────────────────────────────────────────────
 
-function ByMemberView({ entries, baselines, onDeletePerson, onBaselineChange }: {
+function ByMemberView({ entries, baselines, costRates, onDeletePerson, onBaselineChange, onCostRateChange }: {
   entries: TimesheetEntry[];
   baselines: Record<string, number>;
+  costRates: Record<string, number>;
   onDeletePerson: (user: string) => void;
   onBaselineChange: (user: string, h: number) => void;
+  onCostRateChange: (user: string, rate: number) => void;
 }) {
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
-
   const userMap = useMemo(() => {
     const map = new Map<string, TimesheetEntry[]>();
     for (const e of entries) {
@@ -255,56 +400,18 @@ function ByMemberView({ entries, baselines, onDeletePerson, onBaselineChange }: 
 
   return (
     <div className="space-y-3">
-      {users.map(user => {
-        const userEntries = userMap.get(user)!;
-        const total = userEntries.reduce((s, e) => s + e.spentTime, 0);
-        const months = [...new Set(userEntries.map(e => e.month))].sort();
-        const isOpen = !!expanded[user];
-        return (
-          <div key={user} className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-            <div className="flex items-center">
-              <button
-                type="button"
-                onClick={() => setExpanded(prev => ({ ...prev, [user]: !prev[user] }))}
-                className="flex-1 px-5 py-3.5 flex items-center justify-between hover:bg-gray-50 transition-colors text-left"
-              >
-                <div className="flex items-center gap-3">
-                  <span className={`text-gray-400 text-xs transition-transform duration-150 ${isOpen ? 'rotate-90' : ''}`}>▶</span>
-                  <span className="font-semibold text-gray-800">{user}</span>
-                  <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">
-                    {months.length} month{months.length !== 1 ? 's' : ''}
-                  </span>
-                </div>
-                <div className="flex items-center gap-4 text-xs">
-                  <span className="text-gray-400">
-                    {months.length > 0 && `${fmtMonth(months[0])} – ${fmtMonth(months[months.length - 1])}`}
-                  </span>
-                  <span className="text-slate-600 font-bold">{fmtH(total)}</span>
-                </div>
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  if (confirm(`Delete all timesheet data for ${user}?`)) onDeletePerson(user);
-                }}
-                className="px-4 py-3.5 text-xs text-red-400 hover:text-red-600 hover:bg-red-50 transition-colors border-l border-gray-100"
-                title="Delete this person's timesheets"
-              >
-                Delete
-              </button>
-            </div>
-            {isOpen && (
-              <div className="border-t border-gray-100">
-                <PersonTable
-                  entries={userEntries}
-                  baseline={baselines[user] ?? 160}
-                  onBaselineChange={h => onBaselineChange(user, h)}
-                />
-              </div>
-            )}
-          </div>
-        );
-      })}
+      {users.map(user => (
+        <MemberCard
+          key={user}
+          user={user}
+          entries={userMap.get(user)!}
+          baseline={baselines[user] ?? 160}
+          costRate={costRates[user] ?? 0}
+          onDeletePerson={() => onDeletePerson(user)}
+          onBaselineChange={h => onBaselineChange(user, h)}
+          onCostRateChange={rate => onCostRateChange(user, rate)}
+        />
+      ))}
       <div className="bg-gray-50 rounded-lg border border-gray-200 px-5 py-3 flex items-center justify-between">
         <span className="text-sm font-semibold text-gray-600">Grand Total — all {users.length} people</span>
         <span className="text-lg font-bold text-slate-700">{fmtH(overallTotal)}</span>
@@ -320,11 +427,17 @@ function TicketTable({
   title,
   subtitle,
   isSummary = false,
+  billingRates = {},
+  singleKey,
+  onRateChange,
 }: {
   ticketEntries: TimesheetEntry[];
   title: string;
   subtitle?: string;
   isSummary?: boolean;
+  billingRates?: Record<string, TicketRate>;
+  singleKey?: string;
+  onRateChange?: (key: string, billable: boolean, rate: number) => void;
 }) {
   const months = useMemo(() => [...new Set(ticketEntries.map(e => e.month))].sort(), [ticketEntries]);
 
@@ -338,10 +451,33 @@ function TicketTable({
     return map;
   }, [ticketEntries]);
 
+  const userRevenueMap = useMemo(() => {
+    const map = new Map<string, Map<string, number>>();
+    for (const e of ticketEntries) {
+      const key = `${e.project}:::${e.task}`;
+      const r = billingRates[key];
+      if (!r?.billable || !r.rate) continue;
+      if (!map.has(e.user)) map.set(e.user, new Map());
+      const mm = map.get(e.user)!;
+      mm.set(e.month, (mm.get(e.month) ?? 0) + e.spentTime * r.rate);
+    }
+    return map;
+  }, [ticketEntries, billingRates]);
+
+  const hasRevenue = userRevenueMap.size > 0;
   const users = useMemo(() => [...userMonthMap.keys()].sort(), [userMonthMap]);
+
   const totalPerMonth: Record<string, number> = {};
   for (const e of ticketEntries) totalPerMonth[e.month] = (totalPerMonth[e.month] ?? 0) + e.spentTime;
   const grandTotal = ticketEntries.reduce((s, e) => s + e.spentTime, 0);
+
+  const revenuePerMonth: Record<string, number> = {};
+  for (const mm of userRevenueMap.values()) {
+    for (const [m, v] of mm) revenuePerMonth[m] = (revenuePerMonth[m] ?? 0) + v;
+  }
+  const grandRevenue = Object.values(revenuePerMonth).reduce((a, b) => a + b, 0);
+
+  const currentRate = singleKey ? (billingRates[singleKey] ?? { billable: false, rate: 0 }) : null;
 
   const headerBg = isSummary ? 'bg-slate-800' : 'bg-slate-50';
   const headerText = isSummary ? 'text-white' : 'text-slate-800';
@@ -350,11 +486,22 @@ function TicketTable({
   return (
     <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
       <div className={`px-5 py-3.5 border-b border-gray-100 ${headerBg}`}>
-        {subtitle && <p className={`text-xs font-medium mb-0.5 ${headerSub}`}>{subtitle}</p>}
-        <p className={`font-semibold text-sm ${headerText}`}>{title}</p>
-        <p className={`text-xs mt-0.5 ${isSummary ? 'text-slate-400' : 'text-gray-400'}`}>
-          {users.length} member{users.length !== 1 ? 's' : ''} · {fmtH(grandTotal)} total
-        </p>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            {subtitle && <p className={`text-xs font-medium mb-0.5 ${headerSub}`}>{subtitle}</p>}
+            <p className={`font-semibold text-sm ${headerText}`}>{title}</p>
+            <p className={`text-xs mt-0.5 ${isSummary ? 'text-slate-400' : 'text-gray-400'}`}>
+              {users.length} member{users.length !== 1 ? 's' : ''} · {fmtH(grandTotal)} total
+              {hasRevenue && ` · ${fmtEur(grandRevenue)} revenue`}
+            </p>
+          </div>
+          {currentRate !== null && (
+            <RateEditor
+              value={currentRate}
+              onChange={(billable, rate) => onRateChange?.(singleKey!, billable, rate)}
+            />
+          )}
+        </div>
       </div>
       <div className="overflow-x-auto">
         <table className="w-full text-xs min-w-max">
@@ -365,12 +512,15 @@ function TicketTable({
                 <th key={m} className="text-right px-3 py-2.5 font-medium text-gray-600 min-w-[72px] whitespace-nowrap">{fmtMonth(m)}</th>
               ))}
               <th className="text-right px-3 py-2.5 font-medium text-gray-700 min-w-[72px]">Total</th>
+              {hasRevenue && <th className="text-right px-3 py-2.5 font-medium text-emerald-600 min-w-[100px]">Revenue</th>}
             </tr>
           </thead>
           <tbody>
             {users.map((user, idx) => {
               const mm = userMonthMap.get(user)!;
+              const rm = userRevenueMap.get(user);
               const userTotal = [...mm.values()].reduce((a, b) => a + b, 0);
+              const userRevenue = rm ? [...rm.values()].reduce((a, b) => a + b, 0) : 0;
               return (
                 <tr key={user} className={`border-b border-gray-50 ${idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/30'}`}>
                   <td className="px-4 py-2 font-medium text-gray-800 sticky left-0 bg-inherit">{user}</td>
@@ -383,6 +533,11 @@ function TicketTable({
                     );
                   })}
                   <td className="px-3 py-2 text-right text-slate-600 font-semibold">{fmtH(userTotal)}</td>
+                  {hasRevenue && (
+                    <td className={`px-3 py-2 text-right font-semibold ${userRevenue > 0 ? 'text-emerald-600' : 'text-gray-200'}`}>
+                      {userRevenue > 0 ? fmtEur(userRevenue) : '—'}
+                    </td>
+                  )}
                 </tr>
               );
             })}
@@ -396,6 +551,9 @@ function TicketTable({
                 </td>
               ))}
               <td className={`px-3 py-2 text-right font-bold ${isSummary ? 'text-slate-800' : 'text-slate-700'}`}>{fmtH(grandTotal)}</td>
+              {hasRevenue && (
+                <td className="px-3 py-2 text-right font-bold text-emerald-700">{fmtEur(grandRevenue)}</td>
+              )}
             </tr>
           </tfoot>
         </table>
@@ -410,10 +568,14 @@ function ByTicketView({
   entries,
   selectedKeys,
   setSelectedKeys,
+  billingRates,
+  onRateChange,
 }: {
   entries: TimesheetEntry[];
   selectedKeys: Set<string>;
   setSelectedKeys: React.Dispatch<React.SetStateAction<Set<string>>>;
+  billingRates: Record<string, TicketRate>;
+  onRateChange: (key: string, billable: boolean, rate: number) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
@@ -431,7 +593,6 @@ function ByTicketView({
     return () => document.removeEventListener('mousedown', onClickOutside);
   }, []);
 
-  // Focus search input when dropdown opens
   useEffect(() => {
     if (open) setTimeout(() => searchRef.current?.focus(), 10);
   }, [open]);
@@ -506,7 +667,6 @@ function ByTicketView({
 
         {open && (
           <div className="absolute z-20 mt-1 w-full bg-white border border-gray-200 rounded-md shadow-lg flex flex-col max-h-[600px]">
-            {/* Search inside dropdown */}
             <div className="px-3 py-2.5 border-b border-gray-100 shrink-0">
               <input
                 ref={searchRef}
@@ -522,20 +682,25 @@ function ByTicketView({
                 </p>
               )}
             </div>
-            {/* Ticket list */}
             <div className="overflow-y-auto">
               {filteredTickets.length === 0 && (
-                <p className="px-4 py-4 text-sm text-gray-400 text-center">No tickets match "{search}"</p>
+                <p className="px-4 py-4 text-sm text-gray-400 text-center">No tickets match &quot;{search}&quot;</p>
               )}
               {filteredTickets.map(([key, { project, task }]) => {
                 const checked = selectedKeys.has(key);
+                const rate = billingRates[key];
                 return (
                   <label key={key} className={`flex items-start gap-3 px-4 py-2.5 cursor-pointer transition-colors border-b border-gray-50 last:border-0 ${checked ? 'bg-slate-50' : 'hover:bg-gray-50'}`}>
                     <input type="checkbox" checked={checked} onChange={() => toggle(key)} className="mt-0.5 rounded border-gray-300 text-slate-800 focus:ring-slate-600 shrink-0" />
-                    <div className="min-w-0">
+                    <div className="min-w-0 flex-1">
                       <p className={`text-sm truncate ${checked ? 'font-medium text-slate-800' : 'text-gray-700'}`} title={task}>{task}</p>
                       <p className="text-xs text-gray-400 mt-0.5">{project}</p>
                     </div>
+                    {rate?.billable && (
+                      <span className="shrink-0 text-xs text-emerald-600 font-medium bg-emerald-50 px-1.5 py-0.5 rounded">
+                        {rate.rate ? `${rate.rate}€/h` : 'Billable'}
+                      </span>
+                    )}
                   </label>
                 );
               })}
@@ -551,12 +716,369 @@ function ByTicketView({
       )}
 
       {selectedList.length >= 2 && (
-        <TicketTable ticketEntries={allSelectedEntries} title={`Summary — ${selectedList.length} tickets combined`} isSummary />
+        <TicketTable
+          ticketEntries={allSelectedEntries}
+          title={`Summary — ${selectedList.length} tickets combined`}
+          isSummary
+          billingRates={billingRates}
+        />
       )}
 
       {selectedList.map(([key, { project, task }]) => (
-        <TicketTable key={key} ticketEntries={entriesForKey(key)} title={task} subtitle={project} />
+        <TicketTable
+          key={key}
+          ticketEntries={entriesForKey(key)}
+          title={task}
+          subtitle={project}
+          billingRates={billingRates}
+          singleKey={key}
+          onRateChange={onRateChange}
+        />
       ))}
+    </div>
+  );
+}
+
+// ─── Ticket Breakdown (economics expansion) ───────────────────────────────────
+
+function TicketBreakdown({ byTicket, costRate, allMonths }: {
+  byTicket: Record<string, {
+    project: string; task: string; isBillable: boolean; billingRate: number;
+    byMonth: Record<string, { hours: number; revenue: number }>;
+  }>;
+  costRate: number;
+  allMonths: string[];
+}) {
+  const tickets = Object.entries(byTicket).sort(([, a], [, b]) => a.task.localeCompare(b.task));
+
+  return (
+    <div className="border-t border-gray-100 overflow-x-auto bg-slate-50/50">
+      <table className="w-full text-xs min-w-max">
+        <thead>
+          <tr className="border-b border-gray-200 bg-slate-100/60">
+            <th className="w-8 sticky left-0 bg-slate-100/60" />
+            <th className="text-left px-4 py-2 pl-10 font-medium text-gray-500 min-w-[260px] sticky left-8 bg-slate-100/60">
+              Ticket
+            </th>
+            {allMonths.map(m => (
+              <th key={m} className="text-right px-3 py-2 font-medium text-gray-500 min-w-[100px] whitespace-nowrap">
+                {fmtMonth(m)}
+                <span className="block text-gray-300 font-normal">h · net</span>
+              </th>
+            ))}
+            <th className="text-right px-3 py-2 font-medium text-gray-500 min-w-[70px]">Total h</th>
+            <th className="text-right px-3 py-2 font-medium text-gray-500 min-w-[90px]">Net</th>
+          </tr>
+        </thead>
+        <tbody>
+          {tickets.map(([key, t]) => {
+            const totalHours   = Object.values(t.byMonth).reduce((s, v) => s + v.hours, 0);
+            const totalRevenue = Object.values(t.byMonth).reduce((s, v) => s + v.revenue, 0);
+            const totalCost    = totalHours * costRate;
+            const totalNet     = totalRevenue - totalCost;
+            const showEconomics = totalRevenue > 0 || costRate > 0;
+
+            return (
+              <tr key={key} className="border-b border-gray-100 last:border-0 hover:bg-white/60 transition-colors">
+                <td className="sticky left-0 bg-inherit" />
+                <td className="px-4 py-2 pl-10 sticky left-8 bg-inherit">
+                  <p className="font-medium text-gray-700 truncate max-w-[220px]" title={t.task}>{t.task}</p>
+                  <p className="text-gray-400 truncate max-w-[220px]" title={t.project}>{t.project}</p>
+                  {t.isBillable
+                    ? <span className="text-emerald-600 font-medium">{t.billingRate} €/h</span>
+                    : <span className="text-slate-400">Internal</span>
+                  }
+                </td>
+                {allMonths.map(m => {
+                  const md = t.byMonth[m];
+                  if (!md) return <td key={m} className="px-3 py-2 text-right text-gray-200">—</td>;
+                  const net = md.revenue - md.hours * costRate;
+                  const netColor = net > 0 ? 'text-emerald-600' : net < 0 ? 'text-red-500' : 'text-gray-400';
+                  return (
+                    <td key={m} className="px-3 py-2 text-right">
+                      <p className="font-medium text-gray-700">{fmtH(md.hours)}</p>
+                      {showEconomics && (
+                        <p className={`text-xs font-medium mt-0.5 ${netColor}`}>
+                          {net > 0 ? '+' : ''}{fmtEur(net)}
+                        </p>
+                      )}
+                    </td>
+                  );
+                })}
+                <td className="px-3 py-2 text-right font-semibold text-gray-600">{fmtH(totalHours)}</td>
+                <td className={`px-3 py-2 text-right font-bold ${
+                  !showEconomics ? 'text-gray-200'
+                  : totalNet > 0 ? 'text-emerald-600'
+                  : totalNet < 0 ? 'text-red-500'
+                  : 'text-gray-400'
+                }`}>
+                  {!showEconomics ? '—' : (totalNet > 0 ? '+' : '') + fmtEur(totalNet)}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// ─── Economics View ───────────────────────────────────────────────────────────
+
+function EconomicsView({ entries, billingRates, costRates }: {
+  entries: TimesheetEntry[];
+  billingRates: Record<string, TicketRate>;
+  costRates: Record<string, number>;
+}) {
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+
+  const users = useMemo(() => [...new Set(entries.map(e => e.user))].sort(), [entries]);
+
+  const stats = useMemo(() => {
+    type TicketEntry = {
+      project: string; task: string; isBillable: boolean; billingRate: number;
+      byMonth: Record<string, { hours: number; revenue: number }>;
+    };
+    const result: Record<string, {
+      costRate: number; totalHours: number; billableHours: number;
+      revenue: number; cost: number; net: number;
+      byMonth: Record<string, { hours: number; billableHours: number; revenue: number; cost: number; net: number }>;
+      byTicket: Record<string, TicketEntry>;
+    }> = {};
+
+    for (const user of users) {
+      const costRate = costRates[user] ?? 0;
+      const byMonth: Record<string, { hours: number; billableHours: number; revenue: number; cost: number; net: number }> = {};
+      const byTicket: Record<string, TicketEntry> = {};
+
+      for (const e of entries) {
+        if (e.user !== user) continue;
+        const key = `${e.project}:::${e.task}`;
+        const r = billingRates[key];
+        const isBillable = r?.billable && r.rate > 0;
+        const entryRevenue = isBillable ? e.spentTime * r.rate : 0;
+
+        if (!byMonth[e.month]) byMonth[e.month] = { hours: 0, billableHours: 0, revenue: 0, cost: 0, net: 0 };
+        byMonth[e.month].hours += e.spentTime;
+        byMonth[e.month].billableHours += isBillable ? e.spentTime : 0;
+        byMonth[e.month].revenue += entryRevenue;
+
+        if (!byTicket[key]) byTicket[key] = {
+          project: e.project, task: e.task,
+          isBillable: !!(r?.billable && r.rate > 0), billingRate: r?.rate ?? 0,
+          byMonth: {},
+        };
+        if (!byTicket[key].byMonth[e.month]) byTicket[key].byMonth[e.month] = { hours: 0, revenue: 0 };
+        byTicket[key].byMonth[e.month].hours += e.spentTime;
+        byTicket[key].byMonth[e.month].revenue += entryRevenue;
+      }
+
+      for (const m of Object.keys(byMonth)) {
+        byMonth[m].cost = byMonth[m].hours * costRate;
+        byMonth[m].net = byMonth[m].revenue - byMonth[m].cost;
+      }
+
+      const totalHours    = Object.values(byMonth).reduce((s, v) => s + v.hours, 0);
+      const billableHours = Object.values(byMonth).reduce((s, v) => s + v.billableHours, 0);
+      const revenue       = Object.values(byMonth).reduce((s, v) => s + v.revenue, 0);
+      const cost          = totalHours * costRate;
+
+      result[user] = { costRate, totalHours, billableHours, revenue, cost, net: revenue - cost, byMonth, byTicket };
+    }
+
+    return result;
+  }, [entries, billingRates, costRates, users]);
+
+  const totals = useMemo(() => {
+    const revenue       = Object.values(stats).reduce((s, v) => s + v.revenue, 0);
+    const cost          = Object.values(stats).reduce((s, v) => s + v.cost, 0);
+    const billableHours = Object.values(stats).reduce((s, v) => s + v.billableHours, 0);
+    const totalHours    = Object.values(stats).reduce((s, v) => s + v.totalHours, 0);
+    return { revenue, cost, net: revenue - cost, billableHours, internalHours: totalHours - billableHours, totalHours };
+  }, [stats]);
+
+  function netColor(n: number) {
+    return n > 0 ? 'text-emerald-600' : n < 0 ? 'text-red-500' : 'text-gray-400';
+  }
+
+  function fmtNet(v: number) {
+    if (v === 0) return '±0 €';
+    return (v > 0 ? '+' : '') + fmtEur(v);
+  }
+
+  const noCostRates = users.every(u => !costRates[u]);
+  const noBillingRates = !Object.values(billingRates).some(r => r.billable);
+
+  return (
+    <div className="space-y-5">
+      {(noCostRates || noBillingRates) && (
+        <div className="bg-amber-50 border border-amber-200 rounded-lg px-5 py-3.5 text-sm text-amber-700 space-y-1">
+          {noBillingRates && (
+            <p>No billable tickets configured — go to <strong>By Ticket</strong> and toggle a ticket to <em>Billable</em> to set a rate.</p>
+          )}
+          {noCostRates && (
+            <p>No cost rates set — open <strong>By Team Member</strong> and enter a <em>Cost €/h</em> for each person.</p>
+          )}
+        </div>
+      )}
+
+      <div className="grid grid-cols-3 gap-4">
+        <div className="bg-white rounded-lg border border-gray-200 p-5">
+          <p className="text-xs text-gray-400 mb-1.5">Total Revenue</p>
+          <p className="text-2xl font-bold text-emerald-600">
+            {totals.revenue > 0 ? fmtEur(totals.revenue) : <span className="text-gray-300">—</span>}
+          </p>
+        </div>
+        <div className="bg-white rounded-lg border border-gray-200 p-5">
+          <p className="text-xs text-gray-400 mb-1.5">Total Cost</p>
+          <p className="text-2xl font-bold text-red-500">
+            {totals.cost > 0 ? fmtEur(totals.cost) : <span className="text-gray-300">—</span>}
+          </p>
+        </div>
+        <div className={`rounded-lg border p-5 ${
+          totals.revenue === 0 && totals.cost === 0
+            ? 'bg-white border-gray-200'
+            : totals.net >= 0
+              ? 'bg-emerald-50 border-emerald-200'
+              : 'bg-red-50 border-red-200'
+        }`}>
+          <p className="text-xs text-gray-400 mb-1.5">Net P&amp;L</p>
+          <p className={`text-2xl font-bold ${
+            totals.revenue === 0 && totals.cost === 0 ? 'text-gray-300' : netColor(totals.net)
+          }`}>
+            {totals.revenue === 0 && totals.cost === 0 ? '—' : fmtNet(totals.net)}
+          </p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4">
+        <div className="bg-white rounded-lg border border-gray-200 px-5 py-3.5 flex items-center justify-between">
+          <div>
+            <p className="text-xs text-gray-400 mb-1">Billable Hours</p>
+            <p className="text-xl font-bold text-emerald-600">{fmtH(totals.billableHours)}</p>
+          </div>
+          {totals.totalHours > 0 && (
+            <span className="text-sm font-semibold text-emerald-500 bg-emerald-50 px-2.5 py-1 rounded-full">
+              {Math.round((totals.billableHours / totals.totalHours) * 100)}%
+            </span>
+          )}
+        </div>
+        <div className="bg-white rounded-lg border border-gray-200 px-5 py-3.5 flex items-center justify-between">
+          <div>
+            <p className="text-xs text-gray-400 mb-1">Internal Hours</p>
+            <p className="text-xl font-bold text-slate-500">{fmtH(totals.internalHours)}</p>
+          </div>
+          {totals.totalHours > 0 && (
+            <span className="text-sm font-semibold text-slate-400 bg-slate-100 px-2.5 py-1 rounded-full">
+              {Math.round((totals.internalHours / totals.totalHours) * 100)}%
+            </span>
+          )}
+        </div>
+      </div>
+
+      <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+        <div className="px-5 py-3.5 border-b border-gray-100 bg-slate-50">
+          <p className="font-semibold text-sm text-slate-800">Cost vs. Revenue — per team member</p>
+          <p className="text-xs text-gray-400 mt-0.5">Click a row to expand monthly breakdown</p>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs min-w-max">
+            <thead>
+              <tr className="bg-gray-100 border-b border-gray-200">
+                <th className="w-8 px-3 py-2.5 sticky left-0 bg-gray-100" />
+                <th className="text-left px-4 py-2.5 font-medium text-gray-600 min-w-[180px] sticky left-8 bg-gray-100">Team Member</th>
+                <th className="text-right px-3 py-2.5 font-medium text-gray-500 min-w-[80px]">Cost €/h</th>
+                <th className="text-right px-3 py-2.5 font-medium text-gray-600 min-w-[80px]">Hours</th>
+                <th className="text-right px-3 py-2.5 font-medium text-emerald-600 min-w-[80px]">Billable h</th>
+                <th className="text-right px-3 py-2.5 font-medium text-slate-500 min-w-[80px]">Internal h</th>
+                <th className="text-right px-3 py-2.5 font-medium text-emerald-600 min-w-[110px]">Revenue</th>
+                <th className="text-right px-3 py-2.5 font-medium text-red-500 min-w-[110px]">Cost</th>
+                <th className="text-right px-3 py-2.5 font-medium text-gray-700 min-w-[110px]">Net</th>
+              </tr>
+            </thead>
+            <tbody>
+              {users.map((user, idx) => {
+                const s = stats[user];
+                const isExpanded = expanded.has(user);
+                const billPct = s.totalHours > 0 ? Math.round((s.billableHours / s.totalHours) * 100) : 0;
+                const userMonths = Object.keys(s.byMonth).sort();
+                const rowBg = isExpanded ? 'bg-slate-50' : idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/30';
+                // 9 cols: toggle | name | cost€/h | hours | billable h | internal h | revenue | cost | net
+
+                return (
+                  <Fragment key={user}>
+                    <tr
+                      className={`border-b border-gray-100 cursor-pointer transition-colors ${rowBg} hover:bg-slate-50/70`}
+                      onClick={() => setExpanded(prev => {
+                        const n = new Set(prev);
+                        n.has(user) ? n.delete(user) : n.add(user);
+                        return n;
+                      })}
+                    >
+                      <td className={`px-3 py-2.5 sticky left-0 ${rowBg}`}>
+                        <span className={`text-gray-400 text-xs transition-transform duration-150 inline-block ${isExpanded ? 'rotate-90' : ''}`}>▶</span>
+                      </td>
+                      <td className={`px-4 py-2.5 font-medium text-gray-800 sticky left-8 ${rowBg}`}>{user}</td>
+                      <td className="px-3 py-2.5 text-right text-gray-500">
+                        {s.costRate > 0 ? `${s.costRate} €` : <span className="text-gray-300">—</span>}
+                      </td>
+                      <td className="px-3 py-2.5 text-right text-gray-600">{fmtH(s.totalHours)}</td>
+                      <td className="px-3 py-2.5 text-right">
+                        <span className="text-emerald-600 font-medium">{fmtH(s.billableHours)}</span>
+                        {billPct > 0 && <span className="ml-1 text-gray-400 text-xs">{billPct}%</span>}
+                      </td>
+                      <td className="px-3 py-2.5 text-right text-slate-500">
+                        {fmtH(s.totalHours - s.billableHours)}
+                      </td>
+                      <td className={`px-3 py-2.5 text-right font-medium ${s.revenue > 0 ? 'text-emerald-600' : 'text-gray-200'}`}>
+                        {s.revenue > 0 ? fmtEur(s.revenue) : '—'}
+                      </td>
+                      <td className={`px-3 py-2.5 text-right font-medium ${s.cost > 0 ? 'text-red-500' : 'text-gray-200'}`}>
+                        {s.cost > 0 ? fmtEur(s.cost) : '—'}
+                      </td>
+                      <td className={`px-3 py-2.5 text-right font-bold ${s.revenue === 0 && s.cost === 0 ? 'text-gray-200' : netColor(s.net)}`}>
+                        {s.revenue === 0 && s.cost === 0 ? '—' : fmtNet(s.net)}
+                      </td>
+                    </tr>
+                    {isExpanded && (
+                      <tr key={`${user}-breakdown`}>
+                        <td colSpan={9} className="p-0">
+                          <TicketBreakdown
+                            byTicket={s.byTicket}
+                            costRate={s.costRate}
+                            allMonths={userMonths}
+                          />
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                );
+              })}
+            </tbody>
+            <tfoot>
+              <tr className="border-t-2 border-gray-300 bg-gray-50 font-semibold">
+                <td className="sticky left-0 bg-gray-50" />
+                <td className="px-4 py-2.5 text-gray-700 sticky left-8 bg-gray-50">Total</td>
+                <td className="px-3 py-2.5 text-right text-gray-400 text-xs font-normal">{users.length} members</td>
+                <td />
+                <td className="px-3 py-2.5 text-right text-emerald-600">{fmtH(totals.billableHours)}</td>
+                <td className="px-3 py-2.5 text-right text-slate-500">{fmtH(totals.internalHours)}</td>
+                <td className={`px-3 py-2.5 text-right ${totals.revenue > 0 ? 'text-emerald-600' : 'text-gray-300'}`}>
+                  {totals.revenue > 0 ? fmtEur(totals.revenue) : '—'}
+                </td>
+                <td className={`px-3 py-2.5 text-right ${totals.cost > 0 ? 'text-red-500' : 'text-gray-300'}`}>
+                  {totals.cost > 0 ? fmtEur(totals.cost) : '—'}
+                </td>
+                <td className={`px-3 py-2.5 text-right font-bold ${
+                  totals.revenue === 0 && totals.cost === 0 ? 'text-gray-300' : netColor(totals.net)
+                }`}>
+                  {totals.revenue === 0 && totals.cost === 0 ? '—' : fmtNet(totals.net)}
+                </td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
     </div>
   );
 }
@@ -568,7 +1090,7 @@ export default function TimesheetsClient({ store }: { store: TimesheetStore }) {
   const [isPending, startTransition] = useTransition();
   const [uploading, setUploading] = useState(false);
   const [uploadMsg, setUploadMsg] = useState<string | null>(null);
-  const [tab, setTab] = useState<'member' | 'ticket'>('member');
+  const [tab, setTab] = useState<'member' | 'ticket' | 'economics'>('member');
   const [selectedTicketKeys, setSelectedTicketKeys] = useState<Set<string>>(new Set());
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -608,9 +1130,25 @@ export default function TimesheetsClient({ store }: { store: TimesheetStore }) {
     startTransition(() => router.refresh());
   }
 
+  async function handleCostRateChange(user: string, rate: number) {
+    await updateMemberCostRate(user, rate);
+    startTransition(() => router.refresh());
+  }
+
+  async function handleTicketRateChange(key: string, billable: boolean, rate: number) {
+    await updateTicketRate(key, billable, rate);
+    startTransition(() => router.refresh());
+  }
+
   const overallTotal = store.entries.reduce((s, e) => s + e.spentTime, 0);
   const userCount = useMemo(() => new Set(store.entries.map(e => e.user)).size, [store.entries]);
   const ticketCount = useMemo(() => new Set(store.entries.map(e => `${e.project}:::${e.task}`)).size, [store.entries]);
+
+  const tabs: { key: typeof tab; label: string }[] = [
+    { key: 'member', label: 'By Team Member' },
+    { key: 'ticket', label: 'By Ticket' },
+    { key: 'economics', label: 'Economics' },
+  ];
 
   return (
     <div>
@@ -676,22 +1214,45 @@ export default function TimesheetsClient({ store }: { store: TimesheetStore }) {
       ) : (
         <>
           <div className="flex rounded-lg border border-gray-200 overflow-hidden mb-4 w-fit">
-            <button
-              onClick={() => setTab('member')}
-              className={`px-5 py-2 text-sm font-medium transition-colors ${tab === 'member' ? 'bg-slate-800 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
-            >
-              By Team Member
-            </button>
-            <button
-              onClick={() => setTab('ticket')}
-              className={`px-5 py-2 text-sm font-medium transition-colors border-l border-gray-200 ${tab === 'ticket' ? 'bg-slate-800 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
-            >
-              By Ticket
-            </button>
+            {tabs.map(({ key, label }, i) => (
+              <button
+                key={key}
+                onClick={() => setTab(key)}
+                className={`px-5 py-2 text-sm font-medium transition-colors ${i > 0 ? 'border-l border-gray-200' : ''} ${
+                  tab === key ? 'bg-slate-800 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
           </div>
 
-          {tab === 'member' && <ByMemberView entries={store.entries} baselines={store.baselines} onDeletePerson={handleDeletePerson} onBaselineChange={handleBaselineChange} />}
-          {tab === 'ticket' && <ByTicketView entries={store.entries} selectedKeys={selectedTicketKeys} setSelectedKeys={setSelectedTicketKeys} />}
+          {tab === 'member' && (
+            <ByMemberView
+              entries={store.entries}
+              baselines={store.baselines}
+              costRates={store.costRates}
+              onDeletePerson={handleDeletePerson}
+              onBaselineChange={handleBaselineChange}
+              onCostRateChange={handleCostRateChange}
+            />
+          )}
+          {tab === 'ticket' && (
+            <ByTicketView
+              entries={store.entries}
+              selectedKeys={selectedTicketKeys}
+              setSelectedKeys={setSelectedTicketKeys}
+              billingRates={store.billingRates}
+              onRateChange={handleTicketRateChange}
+            />
+          )}
+          {tab === 'economics' && (
+            <EconomicsView
+              entries={store.entries}
+              billingRates={store.billingRates}
+              costRates={store.costRates}
+            />
+          )}
         </>
       )}
     </div>

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   Forecast, ForecastProject, ForecastAssignment, GhostMember,
@@ -448,7 +448,10 @@ function AssignmentMatrix({
     }
     return init;
   });
+  const editedHoursRef = useRef(editedHours);
+  editedHoursRef.current = editedHours;
 
+  const [isDirty, setIsDirty] = useState<Record<string, boolean>>({});
   const [saving, setSaving] = useState<Record<string, boolean>>({});
   const [saved, setSaved] = useState<Record<string, boolean>>({});
   const [removing, setRemoving] = useState<Record<string, boolean>>({});
@@ -456,14 +459,21 @@ function AssignmentMatrix({
   async function handleSave(a: ForecastAssignment) {
     setSaving((prev) => ({ ...prev, [a.id]: true }));
     const plannedHours: Record<string, number> = {};
-    for (const [m, v] of Object.entries(editedHours[a.id] ?? {})) {
+    for (const [m, v] of Object.entries(editedHoursRef.current[a.id] ?? {})) {
       plannedHours[m] = Number(v) || 0;
     }
     await upsertForecastAssignment(forecastId, a.projectId, a.memberId, a.isGhost, plannedHours);
+    setIsDirty((prev) => ({ ...prev, [a.id]: false }));
     setSaving((prev) => ({ ...prev, [a.id]: false }));
     setSaved((prev) => ({ ...prev, [a.id]: true }));
     setTimeout(() => setSaved((prev) => ({ ...prev, [a.id]: false })), 1500);
     onRefresh();
+  }
+
+  function handleBlur(a: ForecastAssignment, e: React.FocusEvent) {
+    const related = e.relatedTarget as HTMLElement | null;
+    if (related?.dataset?.assignmentId === a.id) return;
+    if (isDirty[a.id]) handleSave(a);
   }
 
   async function handleRemove(a: ForecastAssignment) {
@@ -526,9 +536,14 @@ function AssignmentMatrix({
                       <input
                         type="number"
                         value={editedHours[a.id]?.[m] ?? ''}
-                        onChange={(e) => setEditedHours((prev) => ({
-                          ...prev, [a.id]: { ...prev[a.id], [m]: e.target.value },
-                        }))}
+                        data-assignment-id={a.id}
+                        onChange={(e) => {
+                          setEditedHours((prev) => ({
+                            ...prev, [a.id]: { ...prev[a.id], [m]: e.target.value },
+                          }));
+                          setIsDirty((prev) => ({ ...prev, [a.id]: true }));
+                        }}
+                        onBlur={(e) => handleBlur(a, e)}
                         min={0}
                         placeholder="0"
                         className={`w-16 border rounded px-1.5 py-1 text-sm text-right focus:outline-none focus:ring-1 ${a.isGhost ? 'border-violet-200 focus:ring-violet-400' : 'border-slate-200 focus:ring-slate-400'} ${over ? 'bg-red-50 border-red-300' : 'bg-white'}`}
@@ -539,16 +554,15 @@ function AssignmentMatrix({
                 <td className={`px-3 py-2 text-right font-semibold text-xs ${a.isGhost ? 'text-violet-600' : 'text-slate-600'}`}>
                   {total}h
                 </td>
-                <td className="px-3 py-2 text-right">
+                <td className="px-3 py-2 text-right w-8">
                   <div className="flex items-center justify-end gap-1.5">
-                    {saved[a.id] ? (
-                      <span className="text-xs text-emerald-600 font-medium">Saved ✓</span>
-                    ) : (
-                      <button onClick={() => handleSave(a)} disabled={saving[a.id]}
-                        className={`text-xs px-2 py-1 rounded border transition-colors disabled:opacity-40 ${a.isGhost ? 'border-violet-200 text-violet-600 hover:bg-violet-50' : 'border-slate-200 text-slate-600 hover:bg-slate-50'}`}>
-                        {saving[a.id] ? '…' : 'Save'}
-                      </button>
-                    )}
+                    {saving[a.id] ? (
+                      <span className="text-xs text-gray-400 animate-pulse">…</span>
+                    ) : saved[a.id] ? (
+                      <span className="text-xs text-emerald-500">✓</span>
+                    ) : isDirty[a.id] ? (
+                      <span className="text-xs text-amber-400" title="Unsaved changes">●</span>
+                    ) : null}
                     <button onClick={() => handleRemove(a)} disabled={removing[a.id]}
                       className="text-xs text-red-400 hover:text-red-600 disabled:opacity-40">
                       {removing[a.id] ? '…' : '✕'}
