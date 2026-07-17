@@ -3,7 +3,7 @@
 import { useState, useMemo, useRef, useTransition, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { ElsapMirror, ElsapRow } from '@/lib/types';
-import { importElsapCsv, applyElsapToDb } from '@/actions/elsap';
+import { importElsapCsv, applyElsapToDb, inspectElsapFile } from '@/actions/elsap';
 import Modal from '@/components/Modal';
 
 interface Props {
@@ -27,7 +27,8 @@ export default function ElsapClient({ mirror }: Props) {
   const [isPending, startTransition] = useTransition();
   const [importing, setImporting] = useState(false);
   const [applying, setApplying] = useState(false);
-  const [importResult, setImportResult] = useState<{ added: number; updated: number; skipped: number; total: number; error?: string } | null>(null);
+  const [importResult, setImportResult] = useState<{ added: number; removed: number; updated: number; unchanged: number; total: number; error?: string } | null>(null);
+  const [inspectResult, setInspectResult] = useState<{ columns: string[]; verrechnetCount: number; verrechnetSamples: string[]; yearBreakdown: Record<string, number>; error?: string } | null>(null);
   const [applyResult, setApplyResult] = useState<{ roles: number; members: number; projects: number; assignments: number; error?: string } | null>(null);
   const [errorModal, setErrorModal] = useState<string | null>(null);
 
@@ -117,6 +118,16 @@ export default function ElsapClient({ mirror }: Props) {
     setFilterVerrechnet('');
   }
 
+  async function handleInspect() {
+    const file = fileRef.current?.files?.[0];
+    if (!file) return;
+    setInspectResult(null);
+    const fd = new FormData();
+    fd.append('file', file);
+    const res = await inspectElsapFile(fd);
+    setInspectResult(res);
+  }
+
   async function handleImport(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const file = fileRef.current?.files?.[0];
@@ -180,7 +191,7 @@ export default function ElsapClient({ mirror }: Props) {
           <p className="text-sm font-semibold text-gray-700 mt-1">{formatTs(mirror.lastImport)}</p>
           {mirror.importStats && mirror.lastImport && (
             <p className="text-xs text-gray-400 mt-0.5">
-              +{mirror.importStats.added} new · {mirror.importStats.updated} updated · {mirror.importStats.skipped} skipped
+              +{mirror.importStats.added} new · {mirror.importStats.updated} changed · {mirror.importStats.skipped} unchanged
             </p>
           )}
         </div>
@@ -193,20 +204,32 @@ export default function ElsapClient({ mirror }: Props) {
       {/* Action Bar */}
       <div className="flex flex-wrap items-start gap-4 mb-6">
         {/* Upload Form */}
-        <form onSubmit={handleImport} className="flex items-center gap-2">
-          <input
-            ref={fileRef}
-            type="file"
-            accept=".csv"
-            className="text-sm text-gray-600 file:mr-3 file:py-1.5 file:px-3 file:rounded file:border file:border-gray-300 file:text-sm file:font-medium file:bg-white file:text-gray-700 hover:file:bg-gray-50 cursor-pointer"
-          />
-          <button
-            type="submit"
-            disabled={importing || isPending}
-            className="bg-slate-600 text-white px-4 py-1.5 rounded text-sm font-medium hover:bg-slate-700 transition-colors disabled:opacity-40"
-          >
-            {importing ? 'Importing…' : 'Import CSV'}
-          </button>
+        <form onSubmit={handleImport} className="flex flex-col gap-2">
+          <div className="flex items-center gap-2">
+            <input
+              ref={fileRef}
+              type="file"
+              accept=".csv,.xlsx,.xls"
+              className="text-sm text-gray-600 file:mr-3 file:py-1.5 file:px-3 file:rounded file:border file:border-gray-300 file:text-sm file:font-medium file:bg-white file:text-gray-700 hover:file:bg-gray-50 cursor-pointer"
+              onChange={() => setInspectResult(null)}
+            />
+            <button
+              type="submit"
+              disabled={importing || isPending}
+              className="bg-slate-600 text-white px-4 py-1.5 rounded text-sm font-medium hover:bg-slate-700 transition-colors disabled:opacity-40"
+            >
+              {importing ? 'Importing…' : 'Import'}
+            </button>
+            <button
+              type="button"
+              onClick={handleInspect}
+              disabled={importing || isPending}
+              className="border border-gray-300 text-gray-600 px-3 py-1.5 rounded text-sm font-medium hover:bg-gray-50 transition-colors disabled:opacity-40"
+            >
+              Inspect columns
+            </button>
+          </div>
+          <p className="text-xs text-gray-400">Each import fully replaces the mirror with the uploaded file.</p>
         </form>
 
         {/* Apply Button */}
@@ -224,9 +247,31 @@ export default function ElsapClient({ mirror }: Props) {
         <div className={`mb-4 px-4 py-3 rounded-md text-sm ${importResult.error ? 'bg-red-50 text-red-700 border border-red-200' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'}`}>
           {importResult.error
             ? `Import failed: ${importResult.error}`
-            : `Import complete — ${importResult.added} rows added, ${importResult.updated} updated, ${importResult.skipped} unchanged. Mirror total: ${importResult.total} rows.`}
+            : `Import complete — ${importResult.added} new · ${importResult.updated} changed · ${importResult.removed} removed · ${importResult.unchanged} unchanged. Total: ${importResult.total} rows.`}
         </div>
       )}
+      {inspectResult && (
+        <div className="mb-4 px-4 py-3 rounded-md text-sm bg-slate-50 border border-slate-200 space-y-2">
+          <p className="font-semibold text-slate-700">File columns ({inspectResult.columns.length})</p>
+          <div className="flex flex-wrap gap-1">
+            {inspectResult.columns.map((col, i) => (
+              <span key={i} className={`px-2 py-0.5 rounded text-xs font-mono ${col.toLowerCase().includes('verrechnet') ? 'bg-sky-100 text-sky-700 font-bold' : 'bg-white border border-slate-200 text-slate-500'}`}>
+                {col || <em className="text-gray-300">empty</em>}
+              </span>
+            ))}
+          </div>
+          <div className="text-xs space-y-0.5">
+            <p><span className="font-medium text-slate-600">Rows with Verrechnet value:</span> <span className="font-bold text-sky-700">{inspectResult.verrechnetCount}</span></p>
+            {inspectResult.verrechnetSamples.length > 0 && (
+              <p><span className="font-medium text-slate-600">Sample values:</span> {inspectResult.verrechnetSamples.join(', ')}</p>
+            )}
+            {Object.keys(inspectResult.yearBreakdown).length > 0 && (
+              <p><span className="font-medium text-slate-600">Jahr breakdown:</span> {Object.entries(inspectResult.yearBreakdown).sort().map(([y, n]) => `${y}: ${n} rows`).join(' · ')}</p>
+            )}
+          </div>
+        </div>
+      )}
+
       {applyResult && !applyResult.error && (
         <div className="mb-4 px-4 py-3 rounded-md text-sm bg-sky-50 text-sky-700 border border-sky-200">
           Applied to dashboard — {applyResult.roles} new roles, {applyResult.members} new members, {applyResult.projects} new projects, {applyResult.assignments} new assignments. Planned hours were not changed. Billed hours recomputed from Verbucht rows.
@@ -304,7 +349,7 @@ export default function ElsapClient({ mirror }: Props) {
             <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-md px-3 py-1.5">
               <span className="text-xs text-slate-500 font-medium">Subtotal</span>
               <span className="text-lg font-bold text-slate-700">
-                {totalHours.toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}h
+                {totalHours.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}h
               </span>
             </div>
           </div>
@@ -364,7 +409,7 @@ export default function ElsapClient({ mirror }: Props) {
                     Subtotal — {filtered.length.toLocaleString('de-DE')} rows
                   </td>
                   <td className="px-3 py-2 text-right font-bold text-slate-700 whitespace-nowrap">
-                    {totalHours.toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}h
+                    {totalHours.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}h
                   </td>
                   <td colSpan={2} />
                 </tr>

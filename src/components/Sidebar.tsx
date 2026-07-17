@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { pushDevToProd } from '@/actions/devTools';
+import { pushDevToProd, pushProdToDev } from '@/actions/devTools';
 
 const sections = [
   {
@@ -28,7 +28,8 @@ const sections = [
   {
     label: 'SAP Import',
     items: [
-      { label: 'ELSAP', href: '/elsap' },
+      { label: 'ELSAP',     href: '/elsap' },
+      { label: 'Invoicing', href: '/invoicing' },
     ],
   },
 ];
@@ -87,42 +88,54 @@ export default function Sidebar({ open = true, onToggle }: { open?: boolean; onT
 }
 
 function DevToolsPanel() {
-  const [state, setState] = useState<'idle' | 'pushing' | 'done' | 'error'>('idle');
+  const [devState, setDevState] = useState<'idle' | 'busy' | 'done' | 'error'>('idle');
+  const [prodState, setProdState] = useState<'idle' | 'busy' | 'done' | 'error'>('idle');
   const [errMsg, setErrMsg] = useState('');
 
-  async function handlePush() {
-    if (!confirm('Push DEV → PROD?\n\nThis will overwrite the production database with your local dev data. This cannot be undone.')) return;
-    setState('pushing');
+  async function handlePushToProd() {
+    if (!confirm('Push DEV → PROD?\n\nThis overwrites production with your local dev data. Cannot be undone.')) return;
+    setDevState('busy');
     try {
-      const result = await pushDevToProd();
-      if (result.ok) {
-        setState('done');
-        setTimeout(() => setState('idle'), 3000);
-      } else {
-        setErrMsg(result.error ?? 'Unknown error');
-        setState('error');
-        setTimeout(() => setState('idle'), 5000);
-      }
-    } catch (e) {
-      setErrMsg(String(e));
-      setState('error');
-      setTimeout(() => setState('idle'), 5000);
-    }
+      const r = await pushDevToProd();
+      if (r.ok) { setDevState('done'); setTimeout(() => setDevState('idle'), 3000); }
+      else { setErrMsg(r.error ?? 'Unknown error'); setDevState('error'); setTimeout(() => setDevState('idle'), 5000); }
+    } catch (e) { setErrMsg(String(e)); setDevState('error'); setTimeout(() => setDevState('idle'), 5000); }
+  }
+
+  async function handlePullFromProd() {
+    if (!confirm('Pull PROD → DEV?\n\nThis flushes the local dev database and replaces it with production data.')) return;
+    setProdState('busy');
+    try {
+      const r = await pushProdToDev();
+      if (r.ok) { setProdState('done'); setTimeout(() => setProdState('idle'), 3000); }
+      else { setErrMsg(r.error ?? 'Unknown error'); setProdState('error'); setTimeout(() => setProdState('idle'), 5000); }
+    } catch (e) { setErrMsg(String(e)); setProdState('error'); setTimeout(() => setProdState('idle'), 5000); }
   }
 
   return (
-    <div className="px-3 pb-4 pt-3 border-t border-slate-700">
+    <div className="px-3 pb-4 pt-3 border-t border-slate-700 space-y-2">
       <p className="px-3 mb-2 text-xs font-semibold text-amber-500 uppercase tracking-wider">Dev Tools</p>
       <button
         type="button"
-        onClick={handlePush}
-        disabled={state === 'pushing'}
+        onClick={handlePullFromProd}
+        disabled={prodState === 'busy'}
+        className="w-full px-3 py-2 rounded-md text-sm font-medium transition-colors disabled:opacity-50 bg-sky-700 hover:bg-sky-600 text-white"
+      >
+        {prodState === 'busy'  && 'Pulling…'}
+        {prodState === 'done'  && '✓ DEV restored from PROD'}
+        {prodState === 'error' && `Error: ${errMsg}`}
+        {prodState === 'idle'  && 'Pull PROD → DEV'}
+      </button>
+      <button
+        type="button"
+        onClick={handlePushToProd}
+        disabled={devState === 'busy'}
         className="w-full px-3 py-2 rounded-md text-sm font-medium transition-colors disabled:opacity-50 bg-amber-600 hover:bg-amber-500 text-white"
       >
-        {state === 'pushing' && 'Pushing…'}
-        {state === 'done'    && '✓ Pushed to PROD'}
-        {state === 'error'   && `Error: ${errMsg}`}
-        {state === 'idle'    && 'Push DEV → PROD'}
+        {devState === 'busy'  && 'Pushing…'}
+        {devState === 'done'  && '✓ Pushed to PROD'}
+        {devState === 'error' && `Error: ${errMsg}`}
+        {devState === 'idle'  && 'Push DEV → PROD'}
       </button>
     </div>
   );

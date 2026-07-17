@@ -1,135 +1,216 @@
 'use server';
 
+import * as XLSX from 'xlsx';
 import { revalidatePath } from 'next/cache';
 import { readData, writeData, readElsap, writeElsap } from '@/lib/db';
 import { generateId } from '@/lib/utils';
 import { ElsapRow } from '@/lib/types';
 
-// ─── CSV Parser ───────────────────────────────────────────────────────────────
+// ─── Shared helpers ───────────────────────────────────────────────────────────
 
-function parseStunden(raw: string): number {
-  return parseFloat(raw.replace(',', '.')) || 0;
+function parseStunden(raw: unknown): number {
+  if (typeof raw === 'number') return raw;
+  return parseFloat(String(raw).replace(',', '.')) || 0;
 }
 
-function makeDedupId(einkBeleg: string, position: string, datum: string, sapUser: string, aktivitaet: string): string {
-  return `${einkBeleg}_${position}_${datum}_${sapUser}_${aktivitaet.slice(0, 40).replace(/[^a-zA-Z0-9]/g, '_')}`;
+function makeDedupId(einkBeleg: string, position: string, leistZeile: string, datum: string, sapUser: string, aktivitaet: string): string {
+  return [einkBeleg, position, leistZeile, datum, sapUser, aktivitaet].join('|');
 }
+
+// ─── Shared row builder (works for both CSV columns and Excel cells) ──────────
+
+function rowsFromMatrix(header: string[], data: unknown[][]): ElsapRow[] {
+  const idx = {
+    jahr:      header.indexOf('Jahr'),
+    periode:   header.indexOf('Periode'),
+    datum:     header.indexOf('Datum'),
+    einkBeleg: header.indexOf('EinkBeleg'),
+    position:  header.indexOf('Position'),
+    posText:   header.indexOf('PosText'),
+    leistZeile: header.indexOf('LeistZeile'),
+    leistZText: header.indexOf('LeistZText'),
+    sapUser:   header.findIndex((h) => h.includes('SAP User')),
+    name:      header.findIndex((h) => h.includes('Name') && h.includes('Leistungserbringer')),
+    aktivitaet: header.findIndex((h) => h.includes('Aktivit')),
+    stunden:   header.indexOf('Stunden'),
+    sdm:       header.indexOf('SDM'),
+    sdmName:   header.findIndex((h) => h === 'SDM Name'),
+    status:    header.indexOf('Status'),
+    verrechnet: header.findIndex((h) => h.toLowerCase() === 'verrechnet'),
+  };
+
+  const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+  const str = (v: unknown): string => {
+    if (v instanceof Date) {
+      // SAP date cells → YYYYMMDD (stable, used in IDs)
+      const y = v.getFullYear();
+      const m = String(v.getMonth() + 1).padStart(2, '0');
+      const d = String(v.getDate()).padStart(2, '0');
+      return `${y}${m}${d}`;
+    }
+    return String(v ?? '').trim();
+  };
+
+  // Verrechnet is a month/year label, not a full date — format as "Jun 26"
+  const strVerrechnet = (v: unknown): string => {
+    if (v instanceof Date) return `${MONTHS[v.getMonth()]} ${String(v.getFullYear()).slice(2)}`;
+    return String(v ?? '').trim();
+  };
+
+  const get = (cols: unknown[], i: number) => i >= 0 ? str(cols[i]) : '';
+
+  const rows: ElsapRow[] = [];
+  for (const cols of data) {
+    const jahr = parseInt(get(cols, idx.jahr), 10);
+    if (isNaN(jahr) || jahr !== 2026) continue;
+
+    const einkBeleg  = get(cols, idx.einkBeleg);
+    const position   = get(cols, idx.position);
+    const leistZeile = get(cols, idx.leistZeile);
+
+    const datum      = get(cols, idx.datum);
+    const sapUser    = get(cols, idx.sapUser);
+    const aktivitaet = get(cols, idx.aktivitaet);
+
+    rows.push({
+      id:         makeDedupId(einkBeleg, position, leistZeile, datum, sapUser, aktivitaet),
+      jahr,
+      periode:    parseInt(get(cols, idx.periode), 10) || 0,
+      datum,
+      einkBeleg,
+      position,
+      posText:    get(cols, idx.posText),
+      leistZeile,
+      leistZText: get(cols, idx.leistZText),
+      sapUser,
+      name:       get(cols, idx.name),
+      aktivitaet,
+      stunden:    parseStunden(idx.stunden >= 0 ? cols[idx.stunden] : 0),
+      sdm:        get(cols, idx.sdm),
+      sdmName:    get(cols, idx.sdmName),
+      status:     get(cols, idx.status),
+      verrechnet: strVerrechnet(idx.verrechnet >= 0 ? cols[idx.verrechnet] : ''),
+    });
+  }
+  return rows;
+}
+
+// ─── Format-specific parsers ──────────────────────────────────────────────────
 
 function parseCsv(buffer: ArrayBuffer): ElsapRow[] {
   const text = new TextDecoder('utf-16le').decode(buffer);
   const lines = text.split(/\r?\n/);
   if (lines.length < 2) return [];
-
   const header = lines[0].split(';').map((h) => h.trim());
-  const idx = {
-    jahr: header.indexOf('Jahr'),
-    periode: header.indexOf('Periode'),
-    datum: header.indexOf('Datum'),
-    einkBeleg: header.indexOf('EinkBeleg'),
-    position: header.indexOf('Position'),
-    posText: header.indexOf('PosText'),
-    leistZeile: header.indexOf('LeistZeile'),
-    leistZText: header.indexOf('LeistZText'),
-    sapUser: header.findIndex((h) => h.includes('SAP User')),
-    name: header.findIndex((h) => h.includes('Name') && h.includes('Leistungserbringer')),
-    aktivitaet: header.findIndex((h) => h.includes('Aktivit')),
-    stunden: header.indexOf('Stunden'),
-    sdm: header.indexOf('SDM'),
-    sdmName: header.findIndex((h) => h === 'SDM Name'),
-    status: header.indexOf('Status'),
-    verrechnet: header.indexOf('Verrechnet'),
-  };
+  const data = lines.slice(1).filter((l) => l.trim()).map((l) => l.split(';'));
+  return rowsFromMatrix(header, data);
+}
 
-  const rows: ElsapRow[] = [];
-  for (let i = 1; i < lines.length; i++) {
-    const line = lines[i].trim();
-    if (!line) continue;
-    const cols = line.split(';');
+function parseExcel(buffer: ArrayBuffer): ElsapRow[] {
+  const workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
+  const sheet = workbook.Sheets[workbook.SheetNames[0]];
+  const raw = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: '' });
+  if (raw.length < 2) return [];
+  const header = (raw[0] as unknown[]).map((h) => String(h ?? '').trim());
+  return rowsFromMatrix(header, raw.slice(1) as unknown[][]);
+}
 
-    const jahr = parseInt(cols[idx.jahr] ?? '', 10);
-    if (isNaN(jahr) || jahr !== 2026) continue;
+// ─── Inspect Action ──────────────────────────────────────────────────────────
 
-    const einkBeleg = (cols[idx.einkBeleg] ?? '').trim();
-    const position = (cols[idx.position] ?? '').trim();
-    const datum = (cols[idx.datum] ?? '').trim();
-    const sapUser = (cols[idx.sapUser] ?? '').trim();
-    const aktivitaet = (cols[idx.aktivitaet] ?? '').trim();
-    const name = (cols[idx.name] ?? '').trim();
+export async function inspectElsapFile(formData: FormData): Promise<{
+  columns: string[];
+  verrechnetCount: number;
+  verrechnetSamples: string[];
+  yearBreakdown: Record<string, number>;
+  error?: string;
+}> {
+  const file = formData.get('file') as File | null;
+  if (!file) return { columns: [], verrechnetCount: 0, verrechnetSamples: [], yearBreakdown: {} };
 
-    const id = makeDedupId(einkBeleg, position, datum, sapUser, aktivitaet);
+  const buffer = await file.arrayBuffer();
+  const isExcel = /\.(xlsx|xls|xlsb|xlsm)$/i.test(file.name);
 
-    rows.push({
-      id,
-      jahr,
-      periode: parseInt(cols[idx.periode] ?? '0', 10),
-      datum,
-      einkBeleg,
-      position,
-      posText: (cols[idx.posText] ?? '').trim(),
-      leistZeile: (cols[idx.leistZeile] ?? '').trim(),
-      leistZText: (cols[idx.leistZText] ?? '').trim(),
-      sapUser,
-      name,
-      aktivitaet,
-      stunden: parseStunden(cols[idx.stunden] ?? '0'),
-      sdm: (cols[idx.sdm] ?? '').trim(),
-      sdmName: (cols[idx.sdmName] ?? '').trim(),
-      status: (cols[idx.status] ?? '').trim(),
-      verrechnet: idx.verrechnet >= 0 ? (cols[idx.verrechnet] ?? '').trim() : '',
-    });
+  let allRows: unknown[][] = [];
+  let columns: string[] = [];
+
+  if (isExcel) {
+    const workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    const raw = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: '' });
+    if (raw.length > 0) {
+      columns = (raw[0] as unknown[]).map((h) => String(h ?? '').trim());
+      allRows = raw.slice(1) as unknown[][];
+    }
+  } else {
+    const text = new TextDecoder('utf-16le').decode(buffer);
+    const lines = text.split(/\r?\n/).filter((l) => l.trim());
+    if (lines.length > 0) {
+      columns = lines[0].split(';').map((h) => h.trim());
+      allRows = lines.slice(1).map((l) => l.split(';'));
+    }
   }
-  return rows;
+
+  const vIdx  = columns.findIndex((h) => h.toLowerCase().includes('verrechnet'));
+  const jIdx  = columns.indexOf('Jahr');
+
+  const verrechnetRows = allRows.filter((r) => String(r[vIdx] ?? '').trim() !== '');
+  const verrechnetSamples = [...new Set(verrechnetRows.map((r) => String(r[vIdx]).trim()))].slice(0, 5);
+
+  const yearBreakdown: Record<string, number> = {};
+  for (const r of verrechnetRows) {
+    const yr = String(r[jIdx] ?? 'unknown').trim();
+    yearBreakdown[yr] = (yearBreakdown[yr] ?? 0) + 1;
+  }
+
+  return { columns, verrechnetCount: verrechnetRows.length, verrechnetSamples, yearBreakdown };
 }
 
 // ─── Import Action ────────────────────────────────────────────────────────────
 
 export async function importElsapCsv(formData: FormData): Promise<{
   added: number;
+  removed: number;
   updated: number;
-  skipped: number;
+  unchanged: number;
   total: number;
   error?: string;
 }> {
   const file = formData.get('file') as File | null;
-  if (!file) return { added: 0, updated: 0, skipped: 0, total: 0, error: 'No file provided' };
+  if (!file) return { added: 0, removed: 0, updated: 0, unchanged: 0, total: 0, error: 'No file provided' };
 
   const buffer = await file.arrayBuffer();
-  const incoming = parseCsv(buffer);
+  const isExcel = /\.(xlsx|xls|xlsb|xlsm)$/i.test(file.name);
+  const incoming = isExcel ? parseExcel(buffer) : parseCsv(buffer);
 
   if (incoming.length === 0) {
-    return { added: 0, updated: 0, skipped: 0, total: 0, error: 'No 2026 rows found in file — check encoding or Jahr column' };
+    return { added: 0, removed: 0, updated: 0, unchanged: 0, total: 0, error: 'No 2026 rows found in file — check encoding, Jahr column, or sheet layout' };
   }
 
   const mirror = await readElsap();
-  const existingMap = new Map<string, ElsapRow>(mirror.rows.map((r) => [r.id, r]));
 
-  let added = 0, updated = 0, skipped = 0;
+  // Compute stats against previous mirror for information only
+  const oldMap = new Map(mirror.rows.map(r => [r.id, r]));
+  const newMap = new Map(incoming.map(r => [r.id, r]));
 
-  for (const row of incoming) {
-    const existing = existingMap.get(row.id);
-    if (!existing) {
-      existingMap.set(row.id, row);
-      added++;
-    } else if (
-      existing.stunden !== row.stunden ||
-      existing.status !== row.status ||
-      existing.verrechnet !== row.verrechnet
-    ) {
-      existingMap.set(row.id, row);
-      updated++;
-    } else {
-      skipped++;
-    }
+  let added = 0, updated = 0, unchanged = 0;
+  for (const [id, row] of newMap) {
+    const old = oldMap.get(id);
+    if (!old) added++;
+    else if (old.stunden !== row.stunden || old.status !== row.status || old.verrechnet !== row.verrechnet) updated++;
+    else unchanged++;
   }
+  const removed = [...oldMap.keys()].filter(id => !newMap.has(id)).length;
 
-  mirror.rows = Array.from(existingMap.values());
+  // Full replace — the SAP export is authoritative
+  mirror.rows = incoming;
   mirror.lastImport = new Date().toISOString();
-  mirror.importStats = { added, updated, skipped };
+  mirror.importStats = { added, updated, skipped: unchanged };
 
   await writeElsap(mirror);
   revalidatePath('/elsap');
 
-  return { added, updated, skipped, total: mirror.rows.length };
+  return { added, removed, updated, unchanged, total: incoming.length };
 }
 
 // ─── Apply to Dashboard ───────────────────────────────────────────────────────

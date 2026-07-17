@@ -1,5 +1,5 @@
 import { Redis } from '@upstash/redis';
-import { AppData, Assignment, Project, Forecast, ElsapMirror, TimesheetStore } from './types';
+import { AppData, Assignment, Project, Forecast, ElsapMirror, TimesheetStore, InvoicingStore } from './types';
 import { getMonthsBetween } from './utils';
 
 const redis = new Redis({
@@ -10,6 +10,7 @@ const redis = new Redis({
 const DB_KEY = 'app:db';
 const ELSAP_KEY = 'app:elsap';
 const TIMESHEETS_KEY = 'app:timesheets';
+const INVOICING_KEY = 'app:invoicing';
 
 const EMPTY: AppData = {
   roles: [],
@@ -101,4 +102,30 @@ export async function readTimesheets(): Promise<TimesheetStore> {
 
 export async function writeTimesheets(store: TimesheetStore): Promise<void> {
   await withRetry(() => redis.set(TIMESHEETS_KEY, store));
+}
+
+const EMPTY_INVOICING: InvoicingStore = {
+  defaultRates: {},
+  rateOverrides: {},
+  roleOverrides: [],
+  invoices: [],
+};
+
+export async function readInvoicing(): Promise<InvoicingStore> {
+  const raw = await withRetry(() => redis.get<any>(INVOICING_KEY));
+  if (!raw) return { ...EMPTY_INVOICING };
+  // Only keep records that match the current InvoiceLineItem shape (role + invoicedHours required)
+  const invoices = (raw.invoices ?? [])
+    .filter((i: any) => typeof i.role === 'string' && typeof i.invoicedHours === 'number')
+    .map((i: any) => ({ ...i, members: i.members ?? [] }));
+  return {
+    defaultRates: raw.defaultRates ?? {},
+    rateOverrides: raw.rateOverrides ?? {},
+    roleOverrides: raw.roleOverrides ?? [],
+    invoices,
+  };
+}
+
+export async function writeInvoicing(store: InvoicingStore): Promise<void> {
+  await withRetry(() => redis.set(INVOICING_KEY, store));
 }

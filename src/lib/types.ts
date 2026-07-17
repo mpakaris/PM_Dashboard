@@ -106,7 +106,7 @@ export interface TimesheetStore {
 }
 
 export interface ElsapRow {
-  id: string; // dedup key: einkBeleg_position_datum_sapUser
+  id: string; // dedup key: einkBeleg_position_leistZeile (SAP document hierarchy)
   jahr: number;
   periode: number;
   datum: string;
@@ -123,6 +123,37 @@ export interface ElsapRow {
   sdmName: string;
   status: string;
   verrechnet: string;
+}
+
+export interface InvoiceRoleOverride {
+  sapUser: string;
+  month: string;       // "YYYY-MM"
+  projectName: string;
+  role: string;
+}
+
+export interface InvoiceLineMember {
+  sapUser: string;
+  name: string;
+  hours: number;
+}
+
+export interface InvoiceLineItem {
+  id: string;
+  month: string;         // "YYYY-MM"
+  projectName: string;
+  role: string;          // effective role (after overrides)
+  fakturaNumber: string;
+  invoicedHours: number; // exact hours on this invoice line
+  invoicedAt: string;    // ISO
+  members: InvoiceLineMember[]; // which ELSAP lines were included (traceability)
+}
+
+export interface InvoicingStore {
+  defaultRates: Record<string, number>;   // role → €/h
+  rateOverrides: Record<string, number>;  // "month|projectName|role" → €/h
+  roleOverrides: InvoiceRoleOverride[];
+  invoices: InvoiceLineItem[];
 }
 
 export interface ElsapMirror {
