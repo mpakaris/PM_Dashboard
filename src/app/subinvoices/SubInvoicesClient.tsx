@@ -564,11 +564,11 @@ function buildRefData(subStore: SubContractorStore, mirror: ElsapMirror, invoici
         const key = `${r.posText || '(no project)'}|${r.leistZText || '(no role)'}`;
         return line.elsapEntryKeys.includes(key);
       });
-      const entryMap = new Map<string, { project: string; role: string; hours: number }>();
+      const entryMap = new Map<string, { key: string; project: string; role: string; hours: number }>();
       for (const r of lineRows) {
         const project = r.posText || '(no project)', role = r.leistZText || '(no role)', key = `${project}|${role}`;
         const ex = entryMap.get(key);
-        if (ex) ex.hours += r.stunden; else entryMap.set(key, { project, role, hours: r.stunden });
+        if (ex) ex.hours += r.stunden; else entryMap.set(key, { key, project, role, hours: r.stunden });
       }
       const entries = [...entryMap.values()];
       const elsapH  = lineRows.reduce((s, r) => s + r.stunden, 0);
