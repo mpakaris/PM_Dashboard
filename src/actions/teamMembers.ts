@@ -7,10 +7,12 @@ import { generateId } from '@/lib/utils';
 export async function createTeamMember(formData: FormData) {
   const data = await readData();
   const profileIds = formData.getAll('profileIds') as string[];
+  const typeOverride = formData.get('typeOverride') as string | null;
   const member = {
     id: generateId(),
     name: formData.get('name') as string,
     roleId: formData.get('roleId') as string,
+    ...(typeOverride ? { typeOverride: typeOverride as 'intern' | 'extern' } : {}),
     profileIds,
     monthlyAvailability: Number(formData.get('monthlyAvailability')) || 0,
   };
@@ -24,10 +26,12 @@ export async function updateTeamMember(id: string, formData: FormData) {
   const idx = data.teamMembers.findIndex((m) => m.id === id);
   if (idx !== -1) {
     const profileIds = formData.getAll('profileIds') as string[];
+    const typeOverride = formData.get('typeOverride') as string | null;
     data.teamMembers[idx] = {
       id,
       name: formData.get('name') as string,
       roleId: formData.get('roleId') as string,
+      ...(typeOverride ? { typeOverride: typeOverride as 'intern' | 'extern' } : {}),
       profileIds,
       monthlyAvailability: Number(formData.get('monthlyAvailability')) || 0,
     };

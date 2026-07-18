@@ -1,5 +1,5 @@
 import { Redis } from '@upstash/redis';
-import { AppData, Assignment, Project, Forecast, ElsapMirror, TimesheetStore, InvoicingStore } from './types';
+import { AppData, Assignment, Project, Forecast, ElsapMirror, TimesheetStore, InvoicingStore, SubContractorStore } from './types';
 import { getMonthsBetween } from './utils';
 
 const redis = new Redis({
@@ -128,4 +128,19 @@ export async function readInvoicing(): Promise<InvoicingStore> {
 
 export async function writeInvoicing(store: InvoicingStore): Promise<void> {
   await withRetry(() => redis.set(INVOICING_KEY, store));
+}
+
+const SUB_KEY = 'app:subcontractors';
+
+export async function readSubContractors(): Promise<SubContractorStore> {
+  const raw = await withRetry(() => redis.get<any>(SUB_KEY));
+  if (!raw) return { subContractors: [], invoices: [] };
+  return {
+    subContractors: raw.subContractors ?? [],
+    invoices: raw.invoices ?? [],
+  };
+}
+
+export async function writeSubContractors(store: SubContractorStore): Promise<void> {
+  await withRetry(() => redis.set(SUB_KEY, store));
 }

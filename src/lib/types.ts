@@ -16,7 +16,8 @@ export interface Profile {
 export interface TeamMember {
   id: string;
   name: string;
-  roleId: string;
+  roleId: string;            // ELSAP role — drives billing rates and conversion factors
+  typeOverride?: ResourceType;
   profileIds: string[];
   monthlyAvailability: number;
 }
@@ -161,4 +162,41 @@ export interface ElsapMirror {
   lastImport: string;
   lastApply: string;
   importStats: { added: number; updated: number; skipped: number };
+}
+
+// ─── Sub Contractor types ────────────────────────────────────────────────────
+
+export interface SubMember {
+  sapUser: string;   // ELSAP sapUser — primary key for matching
+  name: string;      // display name
+  role: string;      // their actual role (e.g. "Spezialist")
+}
+
+export interface SubContractor {
+  id: string;
+  name: string;
+  shortName: string;
+  rates: Record<string, number>;  // role → €/h (Set 2: what they charge us)
+  members: SubMember[];
+}
+
+export interface SubInvoiceLine {
+  id: string;
+  sapUser: string;
+  elsapEntryKeys: string[];  // "project|role" keys selected from ELSAP
+  applyFactor: boolean;
+}
+
+export interface SubInvoice {
+  id: string;
+  subContractorId: string;
+  month: string;         // "YYYY-MM"
+  label: string;         // auto-generated: "Ref 1", "Ref 2", …
+  createdAt: string;     // ISO
+  lines: SubInvoiceLine[];
+}
+
+export interface SubContractorStore {
+  subContractors: SubContractor[];
+  invoices: SubInvoice[];
 }

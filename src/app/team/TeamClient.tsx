@@ -31,6 +31,12 @@ function MemberForm({
   const [selectedProfiles, setSelectedProfiles] = useState<string[]>(
     initial?.profileIds ?? []
   );
+  const [selectedRoleId, setSelectedRoleId] = useState(initial?.roleId ?? '');
+  const roleDefault = roles.find(r => r.id === selectedRoleId)?.type ?? 'intern';
+  const [typeOverride, setTypeOverride] = useState<'intern' | 'extern' | ''>(
+    initial?.typeOverride ?? ''
+  );
+  const effectiveType = typeOverride || roleDefault;
 
   const toggleProfile = (id: string) => {
     setSelectedProfiles((prev) =>
@@ -50,10 +56,11 @@ function MemberForm({
         />
       </div>
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
+        <label className="block text-sm font-medium text-gray-700 mb-1">ELSAP Role</label>
         <select
           name="roleId"
-          defaultValue={initial?.roleId ?? ''}
+          value={selectedRoleId}
+          onChange={e => { setSelectedRoleId(e.target.value); setTypeOverride(''); }}
           required
           className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-slate-500 text-sm"
         >
@@ -64,6 +71,29 @@ function MemberForm({
             </option>
           ))}
         </select>
+      </div>
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-2">Type</label>
+        <div className="flex gap-2">
+          {(['intern', 'extern'] as const).map(t => (
+            <button
+              key={t} type="button"
+              onClick={() => setTypeOverride(effectiveType === t && !typeOverride ? '' : t)}
+              className={`flex-1 py-2 rounded-md text-sm font-medium border transition-colors capitalize ${
+                effectiveType === t
+                  ? t === 'intern'
+                    ? 'bg-blue-600 border-blue-600 text-white'
+                    : 'bg-orange-500 border-orange-500 text-white'
+                  : 'bg-white border-gray-300 text-gray-500 hover:border-gray-400'
+              }`}>
+              {t}
+              {!typeOverride && effectiveType === t && (
+                <span className="ml-1 text-xs opacity-70">(from role)</span>
+              )}
+            </button>
+          ))}
+        </div>
+        <input type="hidden" name="typeOverride" value={typeOverride} />
       </div>
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -336,7 +366,8 @@ export default function TeamClient({ members, roles, profiles, assignments, proj
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
   const getRoleName = (roleId: string) => roles.find((r) => r.id === roleId)?.name ?? '—';
-  const getRoleType = (roleId: string) => roles.find((r) => r.id === roleId)?.type ?? 'intern';
+  const getMemberType = (member: TeamMember) =>
+    member.typeOverride ?? roles.find((r) => r.id === member.roleId)?.type ?? 'intern';
   const getProfileNames = (profileIds: string[]) =>
     profileIds.map((id) => profiles.find((p) => p.id === id)?.name).filter(Boolean).join(', ') || '—';
 
@@ -376,7 +407,7 @@ export default function TeamClient({ members, roles, profiles, assignments, proj
               <tr className="bg-gray-50 border-b border-gray-100">
                 <th className="w-8 px-3 py-3"></th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Name</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Role</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600">ELSAP Role</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Type</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Profiles</th>
                 <th className="text-right px-4 py-3 font-medium text-gray-600">Avail. h/month</th>
@@ -426,8 +457,8 @@ export default function TeamClient({ members, roles, profiles, assignments, proj
                       <td className="px-4 py-3 text-gray-600">{getRoleName(member.roleId)}</td>
                       <td className="px-4 py-3">
                         <Badge
-                          label={getRoleType(member.roleId)}
-                          color={getRoleType(member.roleId) === 'intern' ? 'blue' : 'orange'}
+                          label={getMemberType(member)}
+                          color={getMemberType(member) === 'intern' ? 'blue' : 'orange'}
                         />
                       </td>
                       <td className="px-4 py-3 text-gray-500 text-xs">

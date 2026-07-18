@@ -57,7 +57,7 @@ function buildView(rows: ElsapMirror['rows'], store: InvoicingStore): ViewMonth[
     mMap.set(row.sapUser, entry);
   }
 
-  return [...acc.entries()].sort().map(([month, pMap]) => {
+  return [...acc.entries()].sort().reverse().map(([month, pMap]) => {
     const [y, m] = month.split('-');
     const label = `${MONTHS_DE[parseInt(m) - 1]} ${y}`;
 
