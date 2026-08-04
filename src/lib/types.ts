@@ -143,6 +143,7 @@ export interface InvoiceLineItem {
   id: string;
   month: string;         // "YYYY-MM"
   projectName: string;
+  poNumber: string;      // ELSAP einkBeleg (PO number); '' for legacy lines
   role: string;          // effective role (after overrides)
   fakturaNumber: string;
   invoicedHours: number; // exact hours on this invoice line
@@ -199,4 +200,55 @@ export interface SubInvoice {
 export interface SubContractorStore {
   subContractors: SubContractor[];
   invoices: SubInvoice[];
+}
+
+// ─── Projekt Analysis ─────────────────────────────────────────────────────────
+
+export interface ProjektAnalysisEntry {
+  task: string;
+  month: string;     // "YYYY-MM"
+  user: string;
+  activity: string;  // "Work" | "Operations"
+  spentTime: number;
+}
+
+export interface ProjektAnalysisMemberSettings {
+  user: string;
+  costRate: number;    // €/h internal cost
+  billingRate: number; // €/h billed to client
+}
+
+export interface ProjektAnalysisTicketForecast {
+  task: string;
+  expectedHours: number;
+  billable: boolean;
+  rate: number; // €/h billing rate
+}
+
+export interface ProjektAnalysisForecast {
+  monthsRemaining: number;
+  totalExpectedHours: number;
+  tickets: ProjektAnalysisTicketForecast[];
+}
+
+export type ProjektAnalysisType = 'time-and-material' | 'festpreis';
+
+export interface ProjektAnalysisChange {
+  id: string;
+  description: string;
+  value: number; // additional € (Nachtrag)
+}
+
+export interface ProjektAnalysisProject {
+  id: string;
+  name: string;           // derived from filename, e.g. "Barmer"
+  createdAt: string;
+  uploadedAt: string;
+  projectType: ProjektAnalysisType;
+  contractHours: number;  // Festpreis: calculated hours (basis for price)
+  contractValue: number;  // Festpreis: base contract value €
+  changes: ProjektAnalysisChange[];  // Nachträge — increases to contract value
+  entries: ProjektAnalysisEntry[];
+  memberSettings: ProjektAnalysisMemberSettings[];
+  forecast: ProjektAnalysisForecast;
 }

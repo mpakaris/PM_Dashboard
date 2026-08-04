@@ -6,7 +6,7 @@ import {
   SubContractorStore, SubContractor, SubMember, SubInvoice, SubInvoiceLine,
   ElsapMirror, AppData, InvoicingStore,
 } from '@/lib/types';
-import { createSubReference, deleteSubInvoice } from '@/actions/subcontractors';
+import { createSubReference, deleteSubInvoice, renameSubReference } from '@/actions/subcontractors';
 
 interface Props {
   subStore: SubContractorStore;
@@ -603,8 +603,13 @@ function buildRefData(subStore: SubContractorStore, mirror: ElsapMirror, invoici
 function ReferencesView({ subStore, mirror, invoicingStore }: {
   subStore: SubContractorStore; mirror: ElsapMirror; invoicingStore: InvoicingStore;
 }) {
+  const router = useRouter();
+  const [, startT] = useTransition();
   const [query, setQuery]       = useState('');
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameInput, setRenameInput] = useState('');
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const allRefs  = useMemo(() => buildRefData(subStore, mirror, invoicingStore), [subStore, mirror, invoicingStore]);
   const filtered = useMemo(() => {
@@ -670,13 +675,44 @@ function ReferencesView({ subStore, mirror, invoicingStore }: {
         const subName    = ref.sub?.shortName || ref.sub?.name || '—';
         return (
           <div key={ref.inv.id} className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-            <button onClick={() => toggle(ref.inv.id)}
-              className="w-full flex items-center gap-3 px-5 py-3.5 hover:bg-gray-50 transition-colors text-left">
+            <div className="flex items-center gap-3 px-5 py-3.5 hover:bg-gray-50 transition-colors cursor-pointer"
+              onClick={() => toggle(ref.inv.id)}>
               <svg className={`w-4 h-4 text-gray-400 transition-transform shrink-0 ${isExpanded ? 'rotate-90' : ''}`}
                 fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
               </svg>
-              <span className="font-semibold text-gray-800 text-sm shrink-0">{ref.inv.label}</span>
+
+              {/* Label — inline rename on click */}
+              {renamingId === ref.inv.id ? (
+                <input autoFocus
+                  value={renameInput}
+                  onChange={e => setRenameInput(e.target.value)}
+                  onClick={e => e.stopPropagation()}
+                  onBlur={async () => {
+                    const trimmed = renameInput.trim();
+                    if (trimmed && trimmed !== ref.inv.label) {
+                      await renameSubReference(ref.inv.id, trimmed);
+                      startT(() => router.refresh());
+                    }
+                    setRenamingId(null);
+                  }}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+                    if (e.key === 'Escape') setRenamingId(null);
+                  }}
+                  className="font-semibold text-gray-800 text-sm border-b border-emerald-400 focus:outline-none bg-transparent shrink-0"
+                />
+              ) : (
+                <span
+                  className="font-semibold text-gray-800 text-sm shrink-0 group flex items-center gap-1 cursor-pointer"
+                  onClick={e => { e.stopPropagation(); setRenamingId(ref.inv.id); setRenameInput(ref.inv.label); }}
+                  title="Click to rename"
+                >
+                  {ref.inv.label}
+                  <span className="text-gray-300 text-xs opacity-0 group-hover:opacity-100 transition-opacity">✎</span>
+                </span>
+              )}
+
               <span className="text-xs bg-gray-100 text-gray-600 rounded px-2 py-0.5 shrink-0">{subName}</span>
               <span className="text-xs text-gray-400 shrink-0">{monthLabel(ref.inv.month)}</span>
               <span className="text-xs text-gray-400 tabular-nums shrink-0">{fmtDate(ref.inv.createdAt)}</span>
@@ -689,8 +725,36 @@ function ReferencesView({ subStore, mirror, invoicingStore }: {
                     Margin {fmtEur(ref.totMargin)} ({ref.totRevenue > 0 ? Math.round(ref.totMargin / ref.totRevenue * 100) : 0}%)
                   </span>
                 )}
+
+                {/* Delete with inline confirmation */}
+                {deletingId === ref.inv.id ? (
+                  <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
+                    <span className="text-xs text-red-600 font-medium">Delete?</span>
+                    <button
+                      onClick={async e => {
+                        e.stopPropagation();
+                        await deleteSubInvoice(ref.inv.id);
+                        setDeletingId(null);
+                        startT(() => router.refresh());
+                      }}
+                      className="text-xs text-red-600 hover:text-red-800 font-semibold border border-red-300 rounded px-1.5 py-0.5">
+                      Yes
+                    </button>
+                    <button
+                      onClick={e => { e.stopPropagation(); setDeletingId(null); }}
+                      className="text-xs text-gray-500 hover:text-gray-700 border border-gray-200 rounded px-1.5 py-0.5">
+                      No
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={e => { e.stopPropagation(); setDeletingId(ref.inv.id); }}
+                    className="text-xs text-red-400 hover:text-red-600 border border-red-100 hover:border-red-300 rounded px-2 py-0.5 transition-colors">
+                    Delete
+                  </button>
+                )}
               </div>
-            </button>
+            </div>
 
             {isExpanded && (
               <div className="border-t border-gray-100 px-5 pb-3">

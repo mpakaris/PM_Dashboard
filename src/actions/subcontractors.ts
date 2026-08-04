@@ -55,6 +55,14 @@ export async function deleteSubInvoice(id: string): Promise<void> {
   revalidatePath('/subinvoices');
 }
 
+export async function renameSubReference(id: string, label: string): Promise<void> {
+  const store = await readSubContractors();
+  const inv = store.invoices.find(i => i.id === id);
+  if (inv) inv.label = label;
+  await writeSubContractors(store);
+  revalidatePath('/subinvoices');
+}
+
 export async function setLineApplyFactor(
   invoiceId: string, lineId: string, applyFactor: boolean
 ): Promise<void> {

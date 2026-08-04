@@ -1,5 +1,5 @@
 import { Redis } from '@upstash/redis';
-import { AppData, Assignment, Project, Forecast, ElsapMirror, TimesheetStore, InvoicingStore, SubContractorStore } from './types';
+import { AppData, Assignment, Project, Forecast, ElsapMirror, TimesheetStore, InvoicingStore, SubContractorStore, ProjektAnalysisProject } from './types';
 import { getMonthsBetween } from './utils';
 
 const redis = new Redis({
@@ -117,7 +117,7 @@ export async function readInvoicing(): Promise<InvoicingStore> {
   // Only keep records that match the current InvoiceLineItem shape (role + invoicedHours required)
   const invoices = (raw.invoices ?? [])
     .filter((i: any) => typeof i.role === 'string' && typeof i.invoicedHours === 'number')
-    .map((i: any) => ({ ...i, members: i.members ?? [] }));
+    .map((i: any) => ({ ...i, members: i.members ?? [], poNumber: i.poNumber ?? '' }));
   return {
     defaultRates: raw.defaultRates ?? {},
     rateOverrides: raw.rateOverrides ?? {},
@@ -143,4 +143,23 @@ export async function readSubContractors(): Promise<SubContractorStore> {
 
 export async function writeSubContractors(store: SubContractorStore): Promise<void> {
   await withRetry(() => redis.set(SUB_KEY, store));
+}
+
+const PROJEKT_ANALYSIS_KEY = 'app:projekt-analysis';
+
+export async function readProjektAnalysis(): Promise<ProjektAnalysisProject[]> {
+  const raw = await withRetry(() => redis.get<any>(PROJEKT_ANALYSIS_KEY));
+  if (!raw) return [];
+  if (!Array.isArray(raw)) return [];
+  return raw.map((p: any) => ({
+    projectType: 'time-and-material',
+    contractHours: 0,
+    contractValue: 0,
+    changes: [],
+    ...p,
+  })) as ProjektAnalysisProject[];
+}
+
+export async function writeProjektAnalysis(projects: ProjektAnalysisProject[]): Promise<void> {
+  await withRetry(() => redis.set(PROJEKT_ANALYSIS_KEY, projects));
 }

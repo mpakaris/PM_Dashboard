@@ -42,10 +42,11 @@ export async function removeRoleOverride(sapUser: string, month: string, project
 export async function addInvoiceLine(
   month: string, projectName: string, role: string,
   fakturaNumber: string, invoicedHours: number,
-  members: InvoiceLineMember[]
+  members: InvoiceLineMember[],
+  poNumber: string
 ): Promise<void> {
   const store = await readInvoicing();
-  store.invoices.push({ id: generateId(), month, projectName, role, fakturaNumber, invoicedHours, invoicedAt: new Date().toISOString(), members });
+  store.invoices.push({ id: generateId(), month, projectName, poNumber, role, fakturaNumber, invoicedHours, invoicedAt: new Date().toISOString(), members });
   await writeInvoicing(store);
   revalidatePath('/invoicing');
 }
@@ -53,6 +54,22 @@ export async function addInvoiceLine(
 export async function removeInvoiceLine(id: string): Promise<void> {
   const store = await readInvoicing();
   store.invoices = store.invoices.filter(i => i.id !== id);
+  await writeInvoicing(store);
+  revalidatePath('/invoicing');
+}
+
+export async function renameFaktura(oldNumber: string, newNumber: string): Promise<void> {
+  const store = await readInvoicing();
+  for (const inv of store.invoices) {
+    if (inv.fakturaNumber === oldNumber) inv.fakturaNumber = newNumber;
+  }
+  await writeInvoicing(store);
+  revalidatePath('/invoicing');
+}
+
+export async function deleteFaktura(fakturaNumber: string): Promise<void> {
+  const store = await readInvoicing();
+  store.invoices = store.invoices.filter(i => i.fakturaNumber !== fakturaNumber);
   await writeInvoicing(store);
   revalidatePath('/invoicing');
 }

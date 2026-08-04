@@ -2,7 +2,7 @@
 
 import { Redis } from '@upstash/redis';
 
-const KEYS = ['app:db', 'app:elsap', 'app:timesheets', 'app:invoicing'] as const;
+const KEYS = ['app:db', 'app:elsap', 'app:timesheets', 'app:invoicing', 'app:subcontractors'] as const;
 
 function getProdRedis() {
   const prodUrl   = process.env.UPSTASH_REDIS_REST_URL_PROD;

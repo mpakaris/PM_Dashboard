@@ -29,6 +29,7 @@ const sections = [
     items: [
       { label: "Planning", href: "/planning" },
       { label: "Timesheets", href: "/timesheets" },
+      { label: "Projekt Analysis", href: "/projekt-analysis" },
     ],
   },
   {

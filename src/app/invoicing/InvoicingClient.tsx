@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { ElsapMirror, InvoicingStore, InvoiceLineItem } from '@/lib/types';
 import {
   setDefaultRate, setRateOverride, setRoleOverride, removeRoleOverride,
-  addInvoiceLine, removeInvoiceLine,
+  addInvoiceLine, removeInvoiceLine, renameFaktura, deleteFaktura,
 } from '@/actions/invoicing';
 
 interface Props { mirror: ElsapMirror; store: InvoicingStore; }
@@ -18,7 +18,7 @@ interface ViewRole    {
   invoiceLines: InvoiceLineItem[]; invoicedHours: number; remainingHours: number;
 }
 interface ViewProject {
-  projectName: string; roles: ViewRole[];
+  projectName: string; poNumber: string; roles: ViewRole[];
   totalHours: number; invoicedHours: number; remainingHours: number;
 }
 interface ViewMonth   { month: string; label: string; projects: ViewProject[]; totalHours: number; }
@@ -31,15 +31,20 @@ function buildView(rows: ElsapMirror['rows'], store: InvoicingStore): ViewMonth[
   const verbucht = rows.filter(r => r.status === 'Verbucht');
   const overrideMap = new Map(store.roleOverrides.map(o => [`${o.sapUser}|${o.month}|${o.projectName}`, o.role]));
 
-  // Invoice lines lookup: "month|project|role" → lines[]
+  // Invoice lines lookup: "month|project|poNumber|role" → lines[]
+  // Legacy lines (created before PO split) have poNumber '' — included as fallback.
   const invMap = new Map<string, InvoiceLineItem[]>();
   for (const inv of store.invoices) {
-    const k = `${inv.month}|${inv.projectName}|${inv.role}`;
+    const po = inv.poNumber ?? '';
+    const k = `${inv.month}|${inv.projectName}|${po}|${inv.role}`;
     const list = invMap.get(k) ?? [];
     list.push(inv);
     invMap.set(k, list);
   }
 
+  // projMeta: projectKey → { posText, einkBeleg }
+  const projMeta = new Map<string, { posText: string; einkBeleg: string }>();
+  // acc: month → projectKey → role → sapUser → data
   const acc = new Map<string, Map<string, Map<string, Map<string, { name: string; hours: number; originalRole: string }>>>> ();
 
   for (const row of verbucht) {
@@ -47,9 +52,14 @@ function buildView(rows: ElsapMirror['rows'], store: InvoicingStore): ViewMonth[
     const month = `${row.jahr}-${String(row.periode).padStart(2, '0')}`;
     const orig  = row.leistZText || '(no role)';
     const role  = overrideMap.get(`${row.sapUser}|${month}|${row.posText}`) ?? orig;
+    const einkBeleg = row.einkBeleg || '';
+    // Use null byte as separator — safe since neither field contains it
+    const projectKey = `${row.posText}\x00${einkBeleg}`;
+
+    projMeta.set(projectKey, { posText: row.posText, einkBeleg });
 
     const pMap = acc.get(month) ?? new Map(); acc.set(month, pMap);
-    const rMap = pMap.get(row.posText) ?? new Map(); pMap.set(row.posText, rMap);
+    const rMap = pMap.get(projectKey) ?? new Map(); pMap.set(projectKey, rMap);
     const mMap = rMap.get(role) ?? new Map(); rMap.set(role, mMap);
 
     const entry = mMap.get(row.sapUser) ?? { name: row.name || row.sapUser, hours: 0, originalRole: orig };
@@ -61,14 +71,19 @@ function buildView(rows: ElsapMirror['rows'], store: InvoicingStore): ViewMonth[
     const [y, m] = month.split('-');
     const label = `${MONTHS_DE[parseInt(m) - 1]} ${y}`;
 
-    const projects: ViewProject[] = [...pMap.entries()].sort().map(([projectName, rMap]) => {
+    const projects: ViewProject[] = [...pMap.entries()].sort().map(([projectKey, rMap]) => {
+      const { posText: projectName, einkBeleg: poNumber } = projMeta.get(projectKey)!;
+
       const roles: ViewRole[] = [...rMap.entries()].sort().map(([role, mMap]) => {
         const members = [...mMap.entries()]
           .map(([sapUser, d]) => ({ sapUser, name: d.name, hours: d.hours, originalRole: d.originalRole }))
           .sort((a, b) => a.name.localeCompare(b.name));
-        const totalHours    = members.reduce((s, m) => s + m.hours, 0);
-        const invoiceLines  = invMap.get(`${month}|${projectName}|${role}`) ?? [];
-        const invoicedHours = Math.round(invoiceLines.reduce((s, l) => s + l.invoicedHours, 0) * 1000) / 1000;
+        const totalHours   = members.reduce((s, m) => s + m.hours, 0);
+        const directLines  = invMap.get(`${month}|${projectName}|${poNumber}|${role}`) ?? [];
+        // Legacy lines (no poNumber) always shown in any PO group for backward compat
+        const legacyLines  = poNumber ? (invMap.get(`${month}|${projectName}||${role}`) ?? []) : [];
+        const invoiceLines = [...directLines, ...legacyLines];
+        const invoicedHours  = Math.round(invoiceLines.reduce((s, l) => s + l.invoicedHours, 0) * 1000) / 1000;
         const remainingHours = Math.round((totalHours - invoicedHours) * 1000) / 1000;
         return { role, members, totalHours, invoiceLines, invoicedHours, remainingHours };
       });
@@ -76,7 +91,7 @@ function buildView(rows: ElsapMirror['rows'], store: InvoicingStore): ViewMonth[
       const totalHours     = roles.reduce((s, r) => s + r.totalHours, 0);
       const invoicedHours  = roles.reduce((s, r) => s + r.invoicedHours, 0);
       const remainingHours = roles.reduce((s, r) => s + r.remainingHours, 0);
-      return { projectName, roles, totalHours, invoicedHours, remainingHours };
+      return { projectName, poNumber, roles, totalHours, invoicedHours, remainingHours };
     });
 
     return { month, label, projects, totalHours: projects.reduce((s, p) => s + p.totalHours, 0) };
@@ -116,8 +131,8 @@ function RateInput({ value, onSave }: { value: number; onSave: (v: number) => vo
 
 // ─── Per-role invoice lines ───────────────────────────────────────────────────
 
-function InvoiceLines({ month, projectName, role, members, rate, lines, onRefresh, isPending }: {
-  month: string; projectName: string; role: string; members: ViewMember[];
+function InvoiceLines({ month, projectName, poNumber, role, members, rate, lines, onRefresh, isPending }: {
+  month: string; projectName: string; poNumber: string; role: string; members: ViewMember[];
   rate: number; lines: InvoiceLineItem[]; onRefresh: () => void; isPending: boolean;
 }) {
   const [fakturaInput, setFakturaInput] = useState('');
@@ -170,7 +185,7 @@ function InvoiceLines({ month, projectName, role, members, rate, lines, onRefres
     const cappedHours = Math.min(hours, totalRemainingHours);
     setSaving(true);
     const invoicedMembers = selectedMembers.map(m => ({ sapUser: m.sapUser, name: m.name, hours: m.remainingH }));
-    await addInvoiceLine(month, projectName, role, fakturaInput.trim(), cappedHours, invoicedMembers);
+    await addInvoiceLine(month, projectName, role, fakturaInput.trim(), cappedHours, invoicedMembers, poNumber);
     setFakturaInput('');
     setSaving(false);
     onRefresh();
@@ -454,7 +469,7 @@ function MonthSection({ month, store, allRoles, expanded, onToggle, onRefresh, i
       {expanded && (
         <div className="border-t border-gray-100 divide-y divide-gray-100">
           {month.projects.map(project => (
-            <ProjectCard key={project.projectName} project={project} month={month.month}
+            <ProjectCard key={`${project.projectName}\x00${project.poNumber}`} project={project} month={month.month}
               store={store} allRoles={allRoles} onRefresh={onRefresh} isPending={isPending} />
           ))}
           <MonthTotals month={month} store={store} />
@@ -478,7 +493,12 @@ function ProjectCard({ project, month, store, allRoles, onRefresh, isPending }: 
   return (
     <div className="px-5 py-4">
       <div className="flex items-center justify-between mb-3">
-        <h3 className="font-semibold text-gray-800 text-sm">{project.projectName}</h3>
+        <div className="flex items-center gap-2">
+          <h3 className="font-semibold text-gray-800 text-sm">{project.projectName}</h3>
+          {project.poNumber && (
+            <span className="text-xs text-gray-400 font-mono bg-gray-100 px-1.5 py-0.5 rounded">{project.poNumber}</span>
+          )}
+        </div>
         <span className={`text-xs px-2 py-0.5 rounded font-medium ${fullyInvoiced ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
           {fullyInvoiced ? '✓ Fully invoiced' : `${fmtH(project.remainingHours)} remaining`}
         </span>
@@ -516,8 +536,8 @@ function ProjectCard({ project, month, store, allRoles, onRefresh, isPending }: 
               </div>
 
               <InvoiceLines
-                key={`${month}|${project.projectName}|${role.role}|${role.invoiceLines.length}|${role.invoicedHours}`}
-                month={month} projectName={project.projectName} role={role.role}
+                key={`${month}|${project.projectName}|${project.poNumber}|${role.role}|${role.invoiceLines.length}|${role.invoicedHours}`}
+                month={month} projectName={project.projectName} poNumber={project.poNumber} role={role.role}
                 members={role.members} rate={rate} lines={role.invoiceLines}
                 onRefresh={onRefresh} isPending={isPending} />
             </div>
@@ -720,11 +740,16 @@ async function generateFakturaPDF(faktura: FakturaGroup, store: InvoicingStore) 
 }
 
 function FakturaView({ store }: { store: InvoicingStore }) {
+  const router = useRouter();
+  const [isPending, startT] = useTransition();
   const fakturas = useMemo(() => buildFakturas(store), [store]);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [downloading, setDownloading] = useState(false);
   const [query, setQuery] = useState('');
+  const [renamingKey, setRenamingKey] = useState<string | null>(null);
+  const [renameInput, setRenameInput] = useState('');
+  const [deletingKey, setDeletingKey] = useState<string | null>(null);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -828,7 +853,35 @@ function FakturaView({ store }: { store: InvoicingStore }) {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
             </svg>
             <div className="flex-1 min-w-0">
-              <div className="font-semibold text-gray-800 text-sm">{f.fakturaNumber}</div>
+              {renamingKey === f.fakturaNumber ? (
+                <input autoFocus
+                  value={renameInput}
+                  onChange={e => setRenameInput(e.target.value)}
+                  onClick={e => e.stopPropagation()}
+                  onBlur={async () => {
+                    const trimmed = renameInput.trim();
+                    if (trimmed && trimmed !== f.fakturaNumber) {
+                      await renameFaktura(f.fakturaNumber, trimmed);
+                      startT(() => router.refresh());
+                    }
+                    setRenamingKey(null);
+                  }}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+                    if (e.key === 'Escape') setRenamingKey(null);
+                  }}
+                  className="font-semibold text-gray-800 text-sm border-b border-emerald-400 focus:outline-none bg-transparent w-full"
+                />
+              ) : (
+                <div
+                  className="font-semibold text-gray-800 text-sm flex items-center gap-1.5 group"
+                  onClick={e => { e.stopPropagation(); setRenamingKey(f.fakturaNumber); setRenameInput(f.fakturaNumber); }}
+                  title="Click to rename"
+                >
+                  {f.fakturaNumber}
+                  <span className="text-gray-300 text-xs opacity-0 group-hover:opacity-100 transition-opacity">✎</span>
+                </div>
+              )}
               <div className="text-xs text-gray-400 tabular-nums mt-0.5">{f.periodStart} – {f.periodEnd}</div>
             </div>
             <span className="text-xs text-gray-400 tabular-nums">{fmtDate(f.createdAt)}</span>
@@ -840,6 +893,32 @@ function FakturaView({ store }: { store: InvoicingStore }) {
               className="text-xs text-emerald-600 hover:text-emerald-800 border border-emerald-200 hover:border-emerald-400 rounded px-2 py-0.5 transition-colors shrink-0 ml-1">
               ↓ PDF
             </button>
+            {deletingKey === f.fakturaNumber ? (
+              <div className="flex items-center gap-1 shrink-0" onClick={e => e.stopPropagation()}>
+                <span className="text-xs text-red-600 font-medium">Delete?</span>
+                <button
+                  onClick={async e => {
+                    e.stopPropagation();
+                    await deleteFaktura(f.fakturaNumber);
+                    setDeletingKey(null);
+                    startT(() => router.refresh());
+                  }}
+                  className="text-xs text-red-600 hover:text-red-800 font-semibold border border-red-300 rounded px-1.5 py-0.5">
+                  Yes
+                </button>
+                <button
+                  onClick={e => { e.stopPropagation(); setDeletingKey(null); }}
+                  className="text-xs text-gray-500 hover:text-gray-700 border border-gray-200 rounded px-1.5 py-0.5">
+                  No
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={e => { e.stopPropagation(); setDeletingKey(f.fakturaNumber); }}
+                className="text-xs text-red-400 hover:text-red-600 border border-red-100 hover:border-red-300 rounded px-2 py-0.5 transition-colors shrink-0">
+                Delete
+              </button>
+            )}
           </div>
 
           {expanded.has(f.fakturaNumber) && (
@@ -853,7 +932,10 @@ function FakturaView({ store }: { store: InvoicingStore }) {
                       <span className="text-xs text-gray-400 w-14 shrink-0 tabular-nums">
                         {MONTHS_DE[parseInt(mo) - 1]} {y}
                       </span>
-                      <span className="font-medium text-gray-800 flex-1 truncate">{line.projectName}</span>
+                      <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                        <span className="font-medium text-gray-800 truncate">{line.projectName}</span>
+                        {line.poNumber && <span className="text-xs text-gray-400 font-mono shrink-0">{line.poNumber}</span>}
+                      </div>
                       <span className="text-xs text-gray-500 truncate">{line.role}</span>
                       <div className="flex items-center gap-3 shrink-0 text-xs">
                         <span className="tabular-nums text-gray-700 font-medium">{fmtH(line.invoicedHours)}</span>
