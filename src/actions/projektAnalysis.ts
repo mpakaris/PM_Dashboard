@@ -35,13 +35,18 @@ function parseLine(line: string): string[] {
   return fields;
 }
 
-// DD/MM/YYYY → YYYY-MM
+// Supports DD/MM/YYYY, DD.MM.YYYY, and YYYY-MM-DD → YYYY-MM
 function dateToMonth(dateStr: string): string {
-  const parts = dateStr.trim().split('/');
-  if (parts.length !== 3) return '';
-  const [, m, y] = parts;
-  if (!m || !y) return '';
-  return `${y}-${m.padStart(2, '0')}`;
+  const s = dateStr.trim();
+  // ISO: YYYY-MM-DD
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s.slice(0, 7);
+  // DD/MM/YYYY or DD.MM.YYYY
+  const parts = s.split(/[\/\.]/);
+  if (parts.length === 3 && parts[2].length === 4) {
+    const [, m, y] = parts;
+    if (m && y) return `${y}-${m.padStart(2, '0')}`;
+  }
+  return '';
 }
 
 async function parseCSV(file: File): Promise<ProjektAnalysisEntry[]> {

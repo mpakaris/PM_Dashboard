@@ -218,25 +218,53 @@ export default function ProjektAnalysisDetailClient({ project }: Props) {
   const [activeTab, setActiveTab] = useState<Tab>('Overview');
   const [isPending, startTransition] = useTransition();
 
+  // ── Period filter ──────────────────────────────────────────────────────────
+  const allMonthsSorted = useMemo(() => [...new Set(project.entries.map(e => e.month))].sort(), [project.entries]);
+  const dataMin = allMonthsSorted[0] ?? '';
+  const dataMax = allMonthsSorted[allMonthsSorted.length - 1] ?? '';
+  const [filterStart, setFilterStart] = useState('');
+  const [filterEnd, setFilterEnd] = useState('');
+
+  const filteredEntries = useMemo(() => {
+    const start = filterStart || dataMin;
+    const end = filterEnd || dataMax;
+    if (!start && !end) return project.entries;
+    return project.entries.filter(e => (!start || e.month >= start) && (!end || e.month <= end));
+  }, [project.entries, filterStart, filterEnd, dataMin, dataMax]);
+
   // ── Derived base data ──────────────────────────────────────────────────────
-  const months = useMemo(() => [...new Set(project.entries.map(e => e.month))].sort(), [project.entries]);
-  const users = useMemo(() => [...new Set(project.entries.map(e => e.user))].sort(), [project.entries]);
-  const tasks = useMemo(() => [...new Set(project.entries.map(e => e.task))].sort(), [project.entries]);
-  const totalHours = useMemo(() => project.entries.reduce((s, e) => s + e.spentTime, 0), [project.entries]);
-  const workHours = useMemo(() => project.entries.filter(e => e.activity === 'Work').reduce((s, e) => s + e.spentTime, 0), [project.entries]);
-  const opsHours = useMemo(() => project.entries.filter(e => e.activity === 'Operations').reduce((s, e) => s + e.spentTime, 0), [project.entries]);
+  const months = useMemo(() => [...new Set(filteredEntries.map(e => e.month))].sort(), [filteredEntries]);
+  const users = useMemo(() => [...new Set(filteredEntries.map(e => e.user))].sort(), [filteredEntries]);
+  const tasks = useMemo(() => [...new Set(filteredEntries.map(e => e.task))].sort(), [filteredEntries]);
+  const totalHours = useMemo(() => filteredEntries.reduce((s, e) => s + e.spentTime, 0), [filteredEntries]);
+  const workHours = useMemo(() => filteredEntries.filter(e => e.activity === 'Work').reduce((s, e) => s + e.spentTime, 0), [filteredEntries]);
+  const opsHours = useMemo(() => filteredEntries.filter(e => e.activity === 'Operations').reduce((s, e) => s + e.spentTime, 0), [filteredEntries]);
 
   const userTotalHours = useMemo(() => {
     const m: Record<string, number> = {};
-    for (const e of project.entries) m[e.user] = (m[e.user] || 0) + e.spentTime;
+    for (const e of filteredEntries) m[e.user] = (m[e.user] || 0) + e.spentTime;
     return m;
-  }, [project.entries]);
+  }, [filteredEntries]);
 
   const taskTotalHours = useMemo(() => {
     const m: Record<string, number> = {};
-    for (const e of project.entries) m[e.task] = (m[e.task] || 0) + e.spentTime;
+    for (const e of filteredEntries) m[e.task] = (m[e.task] || 0) + e.spentTime;
     return m;
-  }, [project.entries]);
+  }, [filteredEntries]);
+
+  const years = useMemo(() => [...new Set(filteredEntries.map(e => e.month.slice(0, 4)))].sort(), [filteredEntries]);
+
+  const taskYearHours = useMemo(() => {
+    const m: Record<string, Record<string, number>> = {};
+    for (const e of filteredEntries) {
+      const y = e.month.slice(0, 4);
+      if (!m[e.task]) m[e.task] = {};
+      m[e.task][y] = (m[e.task][y] || 0) + e.spentTime;
+    }
+    return m;
+  }, [filteredEntries]);
+
+  const isFiltered = !!filterStart || !!filterEnd;
 
   // ── Member settings (local editable state) ────────────────────────────────
   const [memberRates, setMemberRates] = useState<Record<string, { costRate: number; billingRate: number }>>(() => {
@@ -336,6 +364,16 @@ export default function ProjektAnalysisDetailClient({ project }: Props) {
     setForecastDraft(prev => ({
       ...prev,
       tickets: prev.tickets.map(t => t.task === task ? { ...t, [field]: value } : t),
+    }));
+  }
+
+  function setTicketPlanYear(task: string, year: string, value: number) {
+    setForecastDraft(prev => ({
+      ...prev,
+      tickets: prev.tickets.map(t => t.task === task
+        ? { ...t, planPerYear: { ...(t.planPerYear ?? {}), [year]: value } }
+        : t
+      ),
     }));
   }
 
@@ -467,6 +505,43 @@ export default function ProjektAnalysisDetailClient({ project }: Props) {
         )}
       </div>
 
+      {/* Period filter */}
+      <div className="bg-white rounded-lg ring-1 ring-gray-200 px-5 py-3 mb-5 flex flex-wrap items-center gap-4">
+        <span className="text-xs font-medium text-gray-500 uppercase tracking-wider">Period</span>
+        <div className="flex items-center gap-2">
+          <input
+            type="month"
+            value={filterStart}
+            min={dataMin}
+            max={filterEnd || dataMax}
+            onChange={(e) => setFilterStart(e.target.value)}
+            className="border border-gray-300 rounded-md px-2 py-1 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-slate-400"
+          />
+          <span className="text-gray-400 text-sm">→</span>
+          <input
+            type="month"
+            value={filterEnd}
+            min={filterStart || dataMin}
+            max={dataMax}
+            onChange={(e) => setFilterEnd(e.target.value)}
+            className="border border-gray-300 rounded-md px-2 py-1 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-slate-400"
+          />
+        </div>
+        {isFiltered && (
+          <button
+            onClick={() => { setFilterStart(''); setFilterEnd(''); }}
+            className="text-xs text-slate-500 hover:text-slate-700 border border-gray-200 rounded px-2.5 py-1 hover:border-gray-300 transition-colors"
+          >
+            Clear
+          </button>
+        )}
+        <span className="text-xs text-gray-400 ml-auto">
+          {isFiltered
+            ? `${months.length} of ${allMonthsSorted.length} months`
+            : `${allMonthsSorted.length} months`}
+        </span>
+      </div>
+
       {/* Tabs */}
       <div className="flex gap-1 mb-6 border-b border-gray-200">
         {TABS.map(tab => (
@@ -541,10 +616,10 @@ export default function ProjektAnalysisDetailClient({ project }: Props) {
           )}
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <MonthlyByTicketChart entries={project.entries} />
-            <MonthlyByUserChart entries={project.entries} />
+            <MonthlyByTicketChart entries={filteredEntries} />
+            <MonthlyByUserChart entries={filteredEntries} />
           </div>
-          <ActivitySplitChart entries={project.entries} />
+          <ActivitySplitChart entries={filteredEntries} />
         </div>
       )}
 
@@ -570,7 +645,7 @@ export default function ProjektAnalysisDetailClient({ project }: Props) {
                 </thead>
                 <tbody className="divide-y divide-gray-50">
                   {userEconomics.map((row) => {
-                    const workH = project.entries.filter(e => e.user === row.user && e.activity === 'Work').reduce((s, e) => s + e.spentTime, 0);
+                    const workH = filteredEntries.filter(e => e.user === row.user && e.activity === 'Work').reduce((s, e) => s + e.spentTime, 0);
                     const opsH = row.hours - workH;
                     const isExpanded = expandedUsers.has(row.user);
                     const rates = memberRates[row.user] ?? { costRate: 0, billingRate: 0 };
@@ -613,7 +688,7 @@ export default function ProjektAnalysisDetailClient({ project }: Props) {
                             <td colSpan={10} className="px-6 py-4">
                               <EmployeeDetailTable
                                 user={row.user}
-                                entries={project.entries}
+                                entries={filteredEntries}
                                 months={months}
                                 tasks={tasks}
                               />
@@ -655,7 +730,9 @@ export default function ProjektAnalysisDetailClient({ project }: Props) {
                 <thead>
                   <tr className="border-b border-gray-100 text-xs text-gray-400 font-medium">
                     <th className="text-left px-4 py-3">Ticket</th>
-                    <th className="text-right px-4 py-3">Total h</th>
+                    <th className="text-right px-4 py-3">Actual h</th>
+                    <th className="text-right px-4 py-3">Plan h</th>
+                    <th className="text-right px-4 py-3">Δ</th>
                     <th className="text-right px-4 py-3">Billing</th>
                     <th className="text-right px-4 py-3">Rate</th>
                     <th className="text-right px-4 py-3">Revenue</th>
@@ -668,6 +745,8 @@ export default function ProjektAnalysisDetailClient({ project }: Props) {
                     const fc = forecastDraft.tickets.find(t => t.task === task) ?? { task, expectedHours: 0, billable: false, rate: 0 };
                     const revenue = fc.billable ? hours * fc.rate : 0;
                     const isExpanded = expandedTasks.has(task);
+                    const planTotal = fc.expectedHours || 0;
+                    const delta = planTotal > 0 ? hours - planTotal : null;
                     return (
                       <Fragment key={task}>
                         <tr
@@ -678,12 +757,26 @@ export default function ProjektAnalysisDetailClient({ project }: Props) {
                             <span className="flex items-center gap-2">
                               <span className={`text-gray-300 text-xs transition-transform ${isExpanded ? 'rotate-90' : ''}`}>▶</span>
                               <span className="font-mono text-xs text-gray-400 shrink-0">{ticketId(task)}</span>
-                              <span className="text-gray-700 truncate max-w-[320px]" title={ticketLabel(task)}>
+                              <span className="text-gray-700 truncate max-w-[280px]" title={ticketLabel(task)}>
                                 {ticketLabel(task)}
                               </span>
                             </span>
                           </td>
                           <td className="px-4 py-3 text-right text-gray-600">{fmtH(hours)}</td>
+                          <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
+                            <RateInput
+                              value={planTotal}
+                              suffix="h"
+                              placeholder="—"
+                              onCommit={(v) => setTicketField(task, 'expectedHours', v)}
+                            />
+                          </td>
+                          <td className="px-4 py-3 text-right text-xs font-medium">
+                            {delta !== null
+                              ? <span className={delta > 0 ? 'text-red-500' : 'text-emerald-600'}>{delta >= 0 ? '+' : ''}{fmtH(delta)}</span>
+                              : <span className="text-gray-300">—</span>
+                            }
+                          </td>
                           <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
                             <button
                               type="button"
@@ -715,33 +808,82 @@ export default function ProjektAnalysisDetailClient({ project }: Props) {
                         </tr>
                         {isExpanded && (
                           <tr className="bg-gray-50">
-                            <td colSpan={6} className="px-8 py-3">
-                              <table className="text-xs w-full max-w-sm">
-                                <thead>
-                                  <tr className="text-gray-400">
-                                    <th className="text-left pr-4 py-1 font-medium">Employee</th>
-                                    <th className="text-right py-1 font-medium">Hours</th>
-                                    <th className="text-right py-1 font-medium">Share</th>
-                                  </tr>
-                                </thead>
-                                <tbody className="divide-y divide-gray-100">
-                                  {users.map(user => {
-                                    const h = project.entries
-                                      .filter(e => e.user === user && e.task === task)
-                                      .reduce((s, e) => s + e.spentTime, 0);
-                                    if (h === 0) return null;
-                                    return (
-                                      <tr key={user}>
-                                        <td className="pr-4 py-1 text-gray-600">{user}</td>
-                                        <td className="text-right py-1 text-gray-700">{fmtH(h)}</td>
-                                        <td className="text-right py-1 text-gray-400">
-                                          {hours > 0 ? `${Math.round((h / hours) * 100)}%` : '—'}
-                                        </td>
+                            <td colSpan={8} className="px-8 py-4">
+                              <div className="space-y-4">
+                                {/* Per-year breakdown */}
+                                {years.length > 0 && (
+                                  <div>
+                                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Yearly Breakdown</p>
+                                    <table className="text-xs w-full max-w-xs">
+                                      <thead>
+                                        <tr className="text-gray-400">
+                                          <th className="text-left pr-4 py-1 font-medium">Year</th>
+                                          <th className="text-right pr-4 py-1 font-medium">Actual h</th>
+                                          <th className="text-right pr-4 py-1 font-medium">Plan h</th>
+                                          <th className="text-right py-1 font-medium">Δ</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody className="divide-y divide-gray-100">
+                                        {years.map(year => {
+                                          const actual = taskYearHours[task]?.[year] || 0;
+                                          const plan = fc.planPerYear?.[year] || 0;
+                                          const d = plan > 0 ? actual - plan : null;
+                                          return (
+                                            <tr key={year}>
+                                              <td className="pr-4 py-1.5 font-medium text-gray-700">{year}</td>
+                                              <td className="text-right pr-4 py-1.5 text-gray-600">{fmtH(actual)}</td>
+                                              <td className="text-right pr-4 py-1.5" onClick={(e) => e.stopPropagation()}>
+                                                <RateInput
+                                                  value={plan}
+                                                  suffix="h"
+                                                  placeholder="—"
+                                                  onCommit={(v) => setTicketPlanYear(task, year, v)}
+                                                />
+                                              </td>
+                                              <td className="text-right py-1.5 font-medium">
+                                                {d !== null
+                                                  ? <span className={d > 0 ? 'text-red-500' : 'text-emerald-600'}>{d >= 0 ? '+' : ''}{fmtH(d)}</span>
+                                                  : <span className="text-gray-300">—</span>
+                                                }
+                                              </td>
+                                            </tr>
+                                          );
+                                        })}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                )}
+                                {/* Employee breakdown */}
+                                <div>
+                                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">By Employee</p>
+                                  <table className="text-xs w-full max-w-xs">
+                                    <thead>
+                                      <tr className="text-gray-400">
+                                        <th className="text-left pr-4 py-1 font-medium">Employee</th>
+                                        <th className="text-right py-1 font-medium">Hours</th>
+                                        <th className="text-right py-1 font-medium">Share</th>
                                       </tr>
-                                    );
-                                  })}
-                                </tbody>
-                              </table>
+                                    </thead>
+                                    <tbody className="divide-y divide-gray-100">
+                                      {users.map(user => {
+                                        const h = filteredEntries
+                                          .filter(e => e.user === user && e.task === task)
+                                          .reduce((s, e) => s + e.spentTime, 0);
+                                        if (h === 0) return null;
+                                        return (
+                                          <tr key={user}>
+                                            <td className="pr-4 py-1 text-gray-600">{user}</td>
+                                            <td className="text-right py-1 text-gray-700">{fmtH(h)}</td>
+                                            <td className="text-right py-1 text-gray-400">
+                                              {hours > 0 ? `${Math.round((h / hours) * 100)}%` : '—'}
+                                            </td>
+                                          </tr>
+                                        );
+                                      })}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              </div>
                             </td>
                           </tr>
                         )}
@@ -769,20 +911,20 @@ export default function ProjektAnalysisDetailClient({ project }: Props) {
         <div className="space-y-4">
           {/* Universal */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <VelocityChart entries={project.entries} />
-            <TeamCompositionChart entries={project.entries} />
+            <VelocityChart entries={filteredEntries} />
+            <TeamCompositionChart entries={filteredEntries} />
           </div>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <MonthlyByTicketChart entries={project.entries} />
-            <MonthlyByUserChart entries={project.entries} />
+            <MonthlyByTicketChart entries={filteredEntries} />
+            <MonthlyByUserChart entries={filteredEntries} />
           </div>
-          <ActivitySplitChart entries={project.entries} />
+          <ActivitySplitChart entries={filteredEntries} />
 
           {/* T&M specific */}
           {projectSettings.projectType === 'time-and-material' && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              <MonthlyBillingChart entries={project.entries} memberSettings={project.memberSettings} />
-              <EconomicsChart entries={project.entries} memberSettings={project.memberSettings} />
+              <MonthlyBillingChart entries={filteredEntries} memberSettings={project.memberSettings} />
+              <EconomicsChart entries={filteredEntries} memberSettings={project.memberSettings} />
             </div>
           )}
 
@@ -790,7 +932,7 @@ export default function ProjektAnalysisDetailClient({ project }: Props) {
           {projectSettings.projectType === 'festpreis' && (
             <>
               <FestpreisKalkulationChart
-                entries={project.entries}
+                entries={filteredEntries}
                 contractHours={projectSettings.contractHours}
                 contractValue={projectSettings.contractValue}
                 changes={changes}
@@ -798,21 +940,21 @@ export default function ProjektAnalysisDetailClient({ project }: Props) {
               />
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 <FestpreisHoursBurndownChart
-                  entries={project.entries}
+                  entries={filteredEntries}
                   contractHours={projectSettings.contractHours}
                 />
                 <FestpreisCostChart
-                  entries={project.entries}
+                  entries={filteredEntries}
                   memberSettings={project.memberSettings}
                   contractValue={projectSettings.contractValue + changes.reduce((s, c) => s + c.value, 0)}
                   monthsRemaining={forecastDraft.monthsRemaining}
                 />
               </div>
-              <EconomicsChart entries={project.entries} memberSettings={project.memberSettings} />
+              <EconomicsChart entries={filteredEntries} memberSettings={project.memberSettings} />
             </>
           )}
 
-          <CumulativeChart entries={project.entries} totalExpectedHours={forecastDraft.totalExpectedHours} />
+          <CumulativeChart entries={filteredEntries} totalExpectedHours={forecastDraft.totalExpectedHours} />
         </div>
       )}
 
@@ -900,12 +1042,12 @@ export default function ProjektAnalysisDetailClient({ project }: Props) {
           {/* Forecast charts */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <ForecastBurnupChart
-              entries={project.entries}
+              entries={filteredEntries}
               monthsRemaining={forecastDraft.monthsRemaining}
               totalExpectedHours={forecastDraft.totalExpectedHours}
             />
             <TicketProgressChart
-              entries={project.entries}
+              entries={filteredEntries}
               ticketForecasts={forecastDraft.tickets}
             />
           </div>

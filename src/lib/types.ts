@@ -223,6 +223,7 @@ export interface ProjektAnalysisTicketForecast {
   expectedHours: number;
   billable: boolean;
   rate: number; // €/h billing rate
+  planPerYear?: Record<string, number>; // year (e.g. "2025") → planned hours
 }
 
 export interface ProjektAnalysisForecast {
