@@ -222,8 +222,10 @@ export default function ProjektAnalysisDetailClient({ project }: Props) {
   const allMonthsSorted = useMemo(() => [...new Set(project.entries.map(e => e.month))].sort(), [project.entries]);
   const dataMin = allMonthsSorted[0] ?? '';
   const dataMax = allMonthsSorted[allMonthsSorted.length - 1] ?? '';
-  const [filterStart, setFilterStart] = useState('');
-  const [filterEnd, setFilterEnd] = useState('');
+  const currentYear = new Date().getFullYear();
+  const currentMonth = new Date().toISOString().slice(0, 7);
+  const [filterStart, setFilterStart] = useState(`${currentYear}-01`);
+  const [filterEnd, setFilterEnd] = useState(currentMonth);
 
   const filteredEntries = useMemo(() => {
     const start = filterStart || dataMin;
