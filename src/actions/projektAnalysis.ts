@@ -200,6 +200,14 @@ export async function updateProjektAnalysisChanges(
 
 // ─── Excel Upload for Employee ────────────────────────────────────────────────
 
+function excelSerialToMonth(serial: number): string {
+  // Excel serial date: days since 1899-12-30
+  const date = new Date(Math.round((serial - 25569) * 86400 * 1000));
+  const y = date.getUTCFullYear();
+  const m = String(date.getUTCMonth() + 1).padStart(2, '0');
+  return `${y}-${m}`;
+}
+
 function parseEmployeeExcel(buffer: ArrayBuffer): { task: string; month: string; spentTime: number }[] {
   const workbook = XLSX.read(buffer, { type: 'array', cellDates: false });
   const sheet = workbook.Sheets[workbook.SheetNames[0]];
@@ -207,35 +215,51 @@ function parseEmployeeExcel(buffer: ArrayBuffer): { task: string; month: string;
   if (raw.length < 2) return [];
 
   const headers = (raw[0] as unknown[]).map(h => String(h ?? '').trim().toLowerCase());
-  const iId    = headers.findIndex(h => h.includes('ticket-id') || h === 'ticket_id' || h === 'ticketid' || h.startsWith('ticket-id'));
-  const iTitle = headers.findIndex(h => h.includes('titel') || h.includes('title'));
-  const iDate  = headers.findIndex(h => h.includes('datum') || h === 'date');
-  const iHours = headers.findIndex(h => h.includes('stunden') || h.includes('dauer') || h.includes('hours'));
 
-  if ([iId, iTitle, iDate, iHours].some(x => x < 0)) return [];
+  // Try to detect columns by header name; fall back to fixed positions (the format is always the same)
+  let iId    = headers.findIndex(h => h.includes('ticket-id') || h.includes('ticketid') || h.includes('ticket_id'));
+  let iTitle = headers.findIndex(h => h.includes('titel') || h.includes('title'));
+  let iDate  = headers.findIndex(h => h === 'datum' || h.includes('datum') || h === 'date');
+  let iHours = headers.findIndex(h => h.includes('stunden') || h.includes('dauer') || h.includes('hours'));
+
+  // Fall back to positional (Ticket-ID=0, Ticket Titel=1, Datum=2, Dauer=3)
+  if (iId    < 0) iId    = 0;
+  if (iTitle < 0) iTitle = 1;
+  if (iDate  < 0) iDate  = 2;
+  if (iHours < 0) iHours = 3;
 
   const result: { task: string; month: string; spentTime: number }[] = [];
 
   for (let i = 1; i < raw.length; i++) {
     const row = raw[i] as unknown[];
-    const ticketId   = String(row[iId]   ?? '').trim();
+    const ticketId    = String(row[iId]    ?? '').trim();
     const ticketTitle = String(row[iTitle] ?? '').trim();
-    const dateStr    = String(row[iDate]  ?? '').trim();
-    const hoursRaw   = String(row[iHours] ?? '').trim().replace(',', '.');
-    const spentTime  = parseFloat(hoursRaw) || 0;
+    const dateCell    = row[iDate];
+    const hoursCell   = row[iHours];
 
-    if (!ticketId || !dateStr || spentTime <= 0) continue;
+    if (!ticketId) continue;
 
-    // Build task key matching existing format: "#40111 - IDM.ONe..."
+    // Hours: Excel stores numbers as JS numbers; string "1,25" needs comma→dot
+    const spentTime = typeof hoursCell === 'number'
+      ? hoursCell
+      : parseFloat(String(hoursCell ?? '').replace(',', '.')) || 0;
+    if (spentTime <= 0) continue;
+
+    // Task key matching existing format: "#40111 - IDM.ONe..."
     const task = ticketTitle ? `#${ticketId} - ${ticketTitle}` : `#${ticketId}`;
 
-    // Parse DD.MM.YYYY → YYYY-MM
-    const parts = dateStr.split(/[./]/);
+    // Date: Excel serial number OR string DD.MM.YYYY / YYYY-MM-DD
     let month = '';
-    if (parts.length === 3 && parts[2].length === 4) {
-      month = `${parts[2]}-${parts[1].padStart(2, '0')}`;
-    } else if (/^\d{4}-\d{2}/.test(dateStr)) {
-      month = dateStr.slice(0, 7);
+    if (typeof dateCell === 'number') {
+      month = excelSerialToMonth(dateCell);
+    } else {
+      const s = String(dateCell ?? '').trim();
+      const parts = s.split(/[./]/);
+      if (parts.length === 3 && parts[2].length === 4) {
+        month = `${parts[2]}-${parts[1].padStart(2, '0')}`;
+      } else if (/^\d{4}-\d{2}/.test(s)) {
+        month = s.slice(0, 7);
+      }
     }
     if (!month) continue;
 
