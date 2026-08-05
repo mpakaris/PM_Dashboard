@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { Profile } from '@/lib/types';
+import { useRole } from '@/components/RoleProvider';
 import Modal from '@/components/Modal';
 import { createProfile, updateProfile, deleteProfile } from '@/actions/profiles';
 
@@ -49,6 +50,7 @@ function ProfileForm({
 }
 
 export default function ProfilesClient({ profiles }: Props) {
+  const isAdmin = useRole() === 'admin';
   const [showCreate, setShowCreate] = useState(false);
   const [editProfile, setEditProfile] = useState<Profile | null>(null);
 
@@ -56,12 +58,14 @@ export default function ProfilesClient({ profiles }: Props) {
     <div>
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Profiles</h1>
-        <button
-          onClick={() => setShowCreate(true)}
-          className="bg-slate-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-slate-700 transition-colors"
-        >
-          Add Profile
-        </button>
+        {isAdmin && (
+          <button
+            onClick={() => setShowCreate(true)}
+            className="bg-slate-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-slate-700 transition-colors"
+          >
+            Add Profile
+          </button>
+        )}
       </div>
 
       {profiles.length === 0 ? (
@@ -90,31 +94,27 @@ export default function ProfilesClient({ profiles }: Props) {
                   <td className="px-4 py-3 text-gray-500 max-w-sm truncate">
                     {profile.definition || '—'}
                   </td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-2 justify-end">
-                      <button
-                        onClick={() => setEditProfile(profile)}
-                        className="text-xs text-slate-600 hover:text-slate-800 font-medium"
-                      >
-                        Edit
-                      </button>
-                      <form
-                        action={async () => {
-                          await deleteProfile(profile.id);
-                        }}
-                      >
+                  {isAdmin && (
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2 justify-end">
                         <button
-                          type="submit"
-                          className="text-xs text-red-500 hover:text-red-700 font-medium"
-                          onClick={(e) => {
-                            if (!confirm('Delete this profile?')) e.preventDefault();
-                          }}
+                          onClick={() => setEditProfile(profile)}
+                          className="text-xs text-slate-600 hover:text-slate-800 font-medium"
                         >
-                          Delete
+                          Edit
                         </button>
-                      </form>
-                    </div>
-                  </td>
+                        <form action={async () => { await deleteProfile(profile.id); }}>
+                          <button
+                            type="submit"
+                            className="text-xs text-red-500 hover:text-red-700 font-medium"
+                            onClick={(e) => { if (!confirm('Delete this profile?')) e.preventDefault(); }}
+                          >
+                            Delete
+                          </button>
+                        </form>
+                      </div>
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>
@@ -122,7 +122,7 @@ export default function ProfilesClient({ profiles }: Props) {
         </div>
       )}
 
-      {showCreate && (
+      {isAdmin && showCreate && (
         <Modal title="Create Profile" onClose={() => setShowCreate(false)}>
           <ProfileForm
             onSubmit={async (fd) => {
@@ -133,7 +133,7 @@ export default function ProfilesClient({ profiles }: Props) {
         </Modal>
       )}
 
-      {editProfile && (
+      {isAdmin && editProfile && (
         <Modal title="Edit Profile" onClose={() => setEditProfile(null)}>
           <ProfileForm
             initial={editProfile}

@@ -2,6 +2,7 @@
 
 import { useState, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
+import { useRole } from '@/components/RoleProvider';
 import {
   Forecast, ForecastProject, ForecastAssignment, GhostMember,
   TeamMember, Role, Profile,
@@ -438,6 +439,7 @@ function AssignmentMatrix({
   forecastId: string;
   onRefresh: () => void;
 }) {
+  const isAdmin = useRole() === 'admin';
   const months = getMonthsBetween(project.startMonth, project.endMonth);
   const projectAssignments = forecast.assignments.filter((a) => a.projectId === project.id);
 
@@ -533,21 +535,25 @@ function AssignmentMatrix({
                   const over = avail > 0 && val > avail;
                   return (
                     <td key={m} className="px-2 py-2 text-right">
-                      <input
-                        type="number"
-                        value={editedHours[a.id]?.[m] ?? ''}
-                        data-assignment-id={a.id}
-                        onChange={(e) => {
-                          setEditedHours((prev) => ({
-                            ...prev, [a.id]: { ...prev[a.id], [m]: e.target.value },
-                          }));
-                          setIsDirty((prev) => ({ ...prev, [a.id]: true }));
-                        }}
-                        onBlur={(e) => handleBlur(a, e)}
-                        min={0}
-                        placeholder="0"
-                        className={`w-16 border rounded px-1.5 py-1 text-sm text-right focus:outline-none focus:ring-1 ${a.isGhost ? 'border-violet-200 focus:ring-violet-400' : 'border-slate-200 focus:ring-slate-400'} ${over ? 'bg-red-50 border-red-300' : 'bg-white'}`}
-                      />
+                      {isAdmin ? (
+                        <input
+                          type="number"
+                          value={editedHours[a.id]?.[m] ?? ''}
+                          data-assignment-id={a.id}
+                          onChange={(e) => {
+                            setEditedHours((prev) => ({
+                              ...prev, [a.id]: { ...prev[a.id], [m]: e.target.value },
+                            }));
+                            setIsDirty((prev) => ({ ...prev, [a.id]: true }));
+                          }}
+                          onBlur={(e) => handleBlur(a, e)}
+                          min={0}
+                          placeholder="0"
+                          className={`w-16 border rounded px-1.5 py-1 text-sm text-right focus:outline-none focus:ring-1 ${a.isGhost ? 'border-violet-200 focus:ring-violet-400' : 'border-slate-200 focus:ring-slate-400'} ${over ? 'bg-red-50 border-red-300' : 'bg-white'}`}
+                        />
+                      ) : (
+                        <span className={`text-sm ${a.isGhost ? 'text-violet-600' : 'text-slate-600'}`}>{(Number(editedHours[a.id]?.[m]) || 0) || '—'}</span>
+                      )}
                     </td>
                   );
                 })}
@@ -563,10 +569,12 @@ function AssignmentMatrix({
                     ) : isDirty[a.id] ? (
                       <span className="text-xs text-amber-400" title="Unsaved changes">●</span>
                     ) : null}
-                    <button onClick={() => handleRemove(a)} disabled={removing[a.id]}
-                      className="text-xs text-red-400 hover:text-red-600 disabled:opacity-40">
-                      {removing[a.id] ? '…' : '✕'}
-                    </button>
+                    {isAdmin && (
+                      <button onClick={() => handleRemove(a)} disabled={removing[a.id]}
+                        className="text-xs text-red-400 hover:text-red-600 disabled:opacity-40">
+                        {removing[a.id] ? '…' : '✕'}
+                      </button>
+                    )}
                   </div>
                 </td>
               </tr>
@@ -621,6 +629,7 @@ function ProjectCard({
   onRefresh: () => void;
 }) {
   const router = useRouter();
+  const isAdmin = useRole() === 'admin';
   const [isOpen, setIsOpen] = useState(false);
   const [showAddMember, setShowAddMember] = useState(false);
 
@@ -699,10 +708,12 @@ function ProjectCard({
               ) : null}
             </div>
           </div>
-          <div className="flex gap-2">
-            <button type="button" onClick={onEdit} className="text-slate-500 hover:text-slate-700 font-medium">Edit</button>
-            <button type="button" onClick={onDelete} className="text-red-400 hover:text-red-600 font-medium">Delete</button>
-          </div>
+          {isAdmin && (
+            <div className="flex gap-2">
+              <button type="button" onClick={onEdit} className="text-slate-500 hover:text-slate-700 font-medium">Edit</button>
+              <button type="button" onClick={onDelete} className="text-red-400 hover:text-red-600 font-medium">Delete</button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -716,18 +727,20 @@ function ProjectCard({
             forecastId={forecastId}
             onRefresh={onRefresh}
           />
-          <div className="px-5 py-3 border-t border-gray-100 bg-gray-50/40">
-            <button
-              onClick={() => setShowAddMember(true)}
-              className="text-xs px-3 py-1.5 rounded border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors font-medium"
-            >
-              + Add Member
-            </button>
-          </div>
+          {isAdmin && (
+            <div className="px-5 py-3 border-t border-gray-100 bg-gray-50/40">
+              <button
+                onClick={() => setShowAddMember(true)}
+                className="text-xs px-3 py-1.5 rounded border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors font-medium"
+              >
+                + Add Member
+              </button>
+            </div>
+          )}
         </>
       )}
 
-      {showAddMember && (
+      {isAdmin && showAddMember && (
         <AddMemberModal
           project={project}
           forecast={forecast}
@@ -1022,6 +1035,7 @@ function MemberForecastMatrix({
   monthlyAvailability: number;
   onRefresh: () => void;
 }) {
+  const isAdmin = useRole() === 'admin';
   const allMonths = useMemo(() => {
     const set = new Set<string>();
     for (const a of assignments) {
@@ -1137,7 +1151,7 @@ function MemberForecastMatrix({
                 <td className="px-4 py-2 sticky left-0 bg-white">
                   <div className="flex flex-col gap-1.5">
                     <span className="font-medium text-gray-700 leading-tight">{project.name}</span>
-                    <div className="flex items-center gap-1">
+                    {isAdmin && <div className="flex items-center gap-1">
                       <input
                         type="number"
                         min={0}
@@ -1157,7 +1171,7 @@ function MemberForecastMatrix({
                         }}
                       />
                       <span className="text-xs text-gray-300">h/mo</span>
-                    </div>
+                    </div>}
                   </div>
                 </td>
 
@@ -1165,16 +1179,20 @@ function MemberForecastMatrix({
                 {allMonths.map((m) => (
                   <td key={m} className="px-2 py-2 text-right">
                     {pMonths.has(m) ? (
-                      <input
-                        type="number"
-                        value={editedHours[a.id]?.[m] ?? ''}
-                        min={0}
-                        placeholder="0"
-                        data-assignment-id={a.id}
-                        onChange={(e) => handleChange(a.id, m, e.target.value)}
-                        onBlur={(e) => handleBlur(a, e)}
-                        className={`w-16 border rounded px-1.5 py-1 text-sm text-right focus:outline-none focus:ring-1 bg-white ${accentBorder}`}
-                      />
+                      isAdmin ? (
+                        <input
+                          type="number"
+                          value={editedHours[a.id]?.[m] ?? ''}
+                          min={0}
+                          placeholder="0"
+                          data-assignment-id={a.id}
+                          onChange={(e) => handleChange(a.id, m, e.target.value)}
+                          onBlur={(e) => handleBlur(a, e)}
+                          className={`w-16 border rounded px-1.5 py-1 text-sm text-right focus:outline-none focus:ring-1 bg-white ${accentBorder}`}
+                        />
+                      ) : (
+                        <span className={`text-sm ${accentText}`}>{(Number(editedHours[a.id]?.[m]) || 0) || '—'}</span>
+                      )
                     ) : (
                       <span className="text-gray-200 text-xs">—</span>
                     )}
@@ -1362,6 +1380,7 @@ function GhostMembersPanel({
   forecastId: string;
   onRefresh: () => void;
 }) {
+  const isAdmin = useRole() === 'admin';
   const [showAdd, setShowAdd] = useState(false);
   const [editing, setEditing] = useState<GhostMember | null>(null);
   const getRoleName = (roleId: string) => roles.find((r) => r.id === roleId)?.name ?? '—';
@@ -1373,10 +1392,12 @@ function GhostMembersPanel({
           <h3 className="text-sm font-semibold text-violet-900">Ghost Members</h3>
           <p className="text-xs text-violet-500 mt-0.5">Hypothetical hires — model future capacity without affecting real data</p>
         </div>
-        <button onClick={() => setShowAdd(true)}
-          className="text-xs px-2.5 py-1 rounded border border-violet-300 text-violet-700 hover:bg-violet-100 transition-colors font-medium">
-          + Add Ghost
-        </button>
+        {isAdmin && (
+          <button onClick={() => setShowAdd(true)}
+            className="text-xs px-2.5 py-1 rounded border border-violet-300 text-violet-700 hover:bg-violet-100 transition-colors font-medium">
+            + Add Ghost
+          </button>
+        )}
       </div>
 
       {forecast.ghostMembers.length === 0 ? (
@@ -1390,20 +1411,22 @@ function GhostMembersPanel({
                 <span className="font-medium text-gray-800">{g.name}</span>
                 <span className="text-gray-400 ml-1">· {getRoleName(g.roleId)} · {g.monthlyAvailability}h/mo</span>
               </div>
-              <div className="flex gap-1.5 ml-1">
-                <button onClick={() => setEditing(g)} className="text-violet-500 hover:text-violet-700">Edit</button>
-                <button onClick={async () => {
-                  if (!confirm(`Remove ghost member "${g.name}"?`)) return;
-                  await deleteGhostMember(forecastId, g.id);
-                  onRefresh();
-                }} className="text-red-400 hover:text-red-600">✕</button>
-              </div>
+              {isAdmin && (
+                <div className="flex gap-1.5 ml-1">
+                  <button onClick={() => setEditing(g)} className="text-violet-500 hover:text-violet-700">Edit</button>
+                  <button onClick={async () => {
+                    if (!confirm(`Remove ghost member "${g.name}"?`)) return;
+                    await deleteGhostMember(forecastId, g.id);
+                    onRefresh();
+                  }} className="text-red-400 hover:text-red-600">✕</button>
+                </div>
+              )}
             </div>
           ))}
         </div>
       )}
 
-      {showAdd && (
+      {isAdmin && showAdd && (
         <Modal title="Add Ghost Member" onClose={() => setShowAdd(false)}>
           <GhostMemberForm roles={roles} profiles={profiles}
             onSubmit={async (data) => {
@@ -1414,7 +1437,7 @@ function GhostMembersPanel({
         </Modal>
       )}
 
-      {editing && (
+      {isAdmin && editing && (
         <Modal title="Edit Ghost Member" onClose={() => setEditing(null)}>
           <GhostMemberForm initial={editing} roles={roles} profiles={profiles}
             onSubmit={async (data) => {
@@ -1432,6 +1455,7 @@ function GhostMembersPanel({
 
 export default function ForecastClient({ forecast, teamMembers, roles, profiles }: Props) {
   const router = useRouter();
+  const isAdmin = useRole() === 'admin';
   const [tab, setTab]           = useState<'plan' | 'charts'>('plan');
   const [planView, setPlanView] = useState<'project' | 'member'>('project');
   const [renaming, setRenaming] = useState(false);
@@ -1462,7 +1486,7 @@ export default function ForecastClient({ forecast, teamMembers, roles, profiles 
           <div className="flex items-center gap-2 mb-1">
             <a href="/planning" className="text-xs text-gray-400 hover:text-gray-600">Planning</a>
             <span className="text-gray-300 text-xs">/</span>
-            {renaming ? (
+            {isAdmin && renaming ? (
               <input
                 autoFocus
                 value={newName}
@@ -1472,15 +1496,11 @@ export default function ForecastClient({ forecast, teamMembers, roles, profiles 
                 className="text-2xl font-bold text-gray-900 border-b border-slate-400 outline-none bg-transparent"
               />
             ) : (
-              <h1
-                className="text-2xl font-bold text-gray-900 cursor-pointer hover:text-slate-700 transition-colors"
-                onClick={() => setRenaming(true)}
-                title="Click to rename"
-              >
+              <h1 className="text-2xl font-bold text-gray-900">
                 {forecast.name}
               </h1>
             )}
-            {!renaming && (
+            {isAdmin && !renaming && (
               <button onClick={() => setRenaming(true)} className="text-xs text-gray-400 hover:text-slate-500 transition-colors">
                 ✎
               </button>
@@ -1490,9 +1510,11 @@ export default function ForecastClient({ forecast, teamMembers, roles, profiles 
             Forecast · {forecast.projects.length} project{forecast.projects.length !== 1 ? 's' : ''} · {forecast.ghostMembers.length} ghost member{forecast.ghostMembers.length !== 1 ? 's' : ''}
           </p>
         </div>
-        <button onClick={handleDeleteForecast} className="text-xs text-red-400 hover:text-red-600 font-medium transition-colors">
-          Delete Forecast
-        </button>
+        {isAdmin && (
+          <button onClick={handleDeleteForecast} className="text-xs text-red-400 hover:text-red-600 font-medium transition-colors">
+            Delete Forecast
+          </button>
+        )}
       </div>
 
       {/* Tabs */}
@@ -1533,7 +1555,7 @@ export default function ForecastClient({ forecast, teamMembers, roles, profiles 
                 By Member
               </button>
             </div>
-            {planView === 'project' && (
+            {isAdmin && planView === 'project' && (
               <button onClick={() => setShowAddProject(true)}
                 className="text-xs px-3 py-1.5 rounded border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors font-medium bg-white">
                 + Add Project
@@ -1591,7 +1613,7 @@ export default function ForecastClient({ forecast, teamMembers, roles, profiles 
       )}
 
       {/* Modals */}
-      {showAddProject && (
+      {isAdmin && showAddProject && (
         <Modal title="Add Project" onClose={() => setShowAddProject(false)}>
           <ProjectForm
             onSubmit={async (data) => {
@@ -1603,7 +1625,7 @@ export default function ForecastClient({ forecast, teamMembers, roles, profiles 
         </Modal>
       )}
 
-      {editingProject && (
+      {isAdmin && editingProject && (
         <Modal title="Edit Project" onClose={() => setEditingProject(null)}>
           <ProjectForm
             initial={editingProject}

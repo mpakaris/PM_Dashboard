@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Forecast } from '@/lib/types';
 import { createForecast, deleteForecast } from '@/actions/forecasts';
+import { useRole } from '@/components/RoleProvider';
 
 interface Props {
   forecasts: Forecast[];
@@ -11,6 +12,7 @@ interface Props {
 
 export default function PlanningClient({ forecasts }: Props) {
   const router = useRouter();
+  const isAdmin = useRole() === 'admin';
   const [showCreate, setShowCreate] = useState(false);
   const [newName, setNewName] = useState('');
   const [creating, setCreating] = useState(false);
@@ -29,23 +31,27 @@ export default function PlanningClient({ forecasts }: Props) {
           <h1 className="text-2xl font-bold text-gray-900">Planning</h1>
           <p className="text-sm text-gray-400 mt-0.5">Forecast resource demand — independent from real project data</p>
         </div>
-        <button
-          onClick={() => setShowCreate(true)}
-          className="bg-slate-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-slate-700 transition-colors"
-        >
-          New Forecast
-        </button>
+        {isAdmin && (
+          <button
+            onClick={() => setShowCreate(true)}
+            className="bg-slate-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-slate-700 transition-colors"
+          >
+            New Forecast
+          </button>
+        )}
       </div>
 
       {forecasts.length === 0 ? (
         <div className="bg-white rounded-lg ring-1 ring-gray-200 px-6 py-16 text-center">
           <p className="text-gray-400 text-sm mb-4">No forecasts yet. Create one to start planning.</p>
-          <button
-            onClick={() => setShowCreate(true)}
-            className="bg-slate-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-slate-700 transition-colors"
-          >
-            Create First Forecast
-          </button>
+          {isAdmin && (
+            <button
+              onClick={() => setShowCreate(true)}
+              className="bg-slate-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-slate-700 transition-colors"
+            >
+              Create First Forecast
+            </button>
+          )}
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -53,6 +59,7 @@ export default function PlanningClient({ forecasts }: Props) {
             <ForecastCard
               key={f.id}
               forecast={f}
+              isAdmin={isAdmin}
               onDelete={async () => {
                 if (!confirm(`Delete "${f.name}"? This cannot be undone.`)) return;
                 await deleteForecast(f.id);
@@ -63,7 +70,7 @@ export default function PlanningClient({ forecasts }: Props) {
         </div>
       )}
 
-      {showCreate && (
+      {isAdmin && showCreate && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg shadow-xl w-full max-w-sm p-6">
             <h2 className="text-base font-semibold text-gray-900 mb-4">New Forecast</h2>
@@ -95,7 +102,7 @@ export default function PlanningClient({ forecasts }: Props) {
   );
 }
 
-function ForecastCard({ forecast, onDelete }: { forecast: Forecast; onDelete: () => void }) {
+function ForecastCard({ forecast, isAdmin, onDelete }: { forecast: Forecast; isAdmin: boolean; onDelete: () => void }) {
   const router = useRouter();
   const created = new Date(forecast.createdAt).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
   const totalAllocated = forecast.assignments.reduce(
@@ -111,12 +118,14 @@ function ForecastCard({ forecast, onDelete }: { forecast: Forecast; onDelete: ()
         <h3 className="font-semibold text-gray-800 group-hover:text-slate-700 transition-colors leading-tight">
           {forecast.name}
         </h3>
-        <button
-          onClick={(e) => { e.stopPropagation(); onDelete(); }}
-          className="text-xs text-red-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity ml-2 shrink-0"
-        >
-          Delete
-        </button>
+        {isAdmin && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onDelete(); }}
+            className="text-xs text-red-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity ml-2 shrink-0"
+          >
+            Delete
+          </button>
+        )}
       </div>
       <div className="space-y-1 text-xs text-gray-400">
         <div className="flex justify-between">

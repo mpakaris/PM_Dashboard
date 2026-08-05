@@ -2,6 +2,7 @@
 
 import { useState, useMemo, useEffect, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
+import { useRole } from '@/components/RoleProvider';
 import {
   SubContractorStore, SubContractor, SubMember, SubInvoice, SubInvoiceLine,
   ElsapMirror, AppData, InvoicingStore,
@@ -26,6 +27,7 @@ function fmtDate(iso: string) { return new Date(iso).toLocaleDateString('de-DE',
 
 export default function SubInvoicesClient({ subStore, mirror, appData, invoicingStore }: Props) {
   const router = useRouter();
+  const isAdmin = useRole() === 'admin';
   const [, startT] = useTransition();
   const [activeTab, setActiveTab] = useState<'match' | 'references'>('match');
   const [selectedSubId, setSelectedSubId] = useState(subStore.subContractors[0]?.id ?? '');
@@ -251,6 +253,7 @@ function PersonSection({ person, member, invoicingStore, invoices, referencedKey
   referencedKeys: Set<string>; checked: Set<string>;
   onToggle: (key: string) => void; onToggleAll: (keys: string[]) => void;
 }) {
+  const isAdmin = useRole() === 'admin';
   const set1Rates = invoicingStore.defaultRates;
   const factor    = getFactor(member, person.entries, set1Rates);
   const hasConv   = factor !== 1;
@@ -322,8 +325,8 @@ function PersonSection({ person, member, invoicingStore, invoices, referencedKey
         );
       })}
 
-      {/* Available entries — checkboxes */}
-      {available.map(entry => {
+      {/* Available entries — checkboxes (admin only) */}
+      {isAdmin && available.map(entry => {
         const isChecked = checked.has(entry.key);
         const subH = hasConv ? Math.round(entry.hours / factor * 10) / 10 : null;
         return (
@@ -349,7 +352,7 @@ function PersonSection({ person, member, invoicingStore, invoices, referencedKey
       })}
 
       {/* Selected subtotal */}
-      {available.length > 0 && (
+      {isAdmin && available.length > 0 && (
         <div className={`grid items-center gap-2 px-2 py-1.5 bg-slate-100 rounded text-xs font-semibold border border-slate-200 ${cols}`}>
           <div className="flex items-center gap-2">
             <input type="checkbox" checked={allChecked}
@@ -377,6 +380,7 @@ function ReferencePanel({ month, sub, persons, checked, invoicingStore, invoices
   checked: Record<string, Set<string>>; invoicingStore: InvoicingStore;
   invoices: SubInvoice[]; onRefresh: () => void;
 }) {
+  const isAdmin = useRole() === 'admin';
   const set1Rates = invoicingStore.defaultRates;
   const [saving, setSaving] = useState(false);
   const [invoiceNumber, setInvoiceNumber] = useState('');
@@ -424,7 +428,7 @@ function ReferencePanel({ month, sub, persons, checked, invoicingStore, invoices
       </div>
 
       {/* Invoice number + create button — own row */}
-      <div className="px-5 pb-3 flex items-center gap-2 border-b-2 border-gray-200">
+      {isAdmin && <div className="px-5 pb-3 flex items-center gap-2 border-b-2 border-gray-200">
         <input
           type="text"
           value={invoiceNumber}
@@ -436,7 +440,7 @@ function ReferencePanel({ month, sub, persons, checked, invoicingStore, invoices
           className="bg-emerald-600 text-white px-4 py-1.5 rounded text-sm font-medium hover:bg-emerald-700 transition-colors disabled:opacity-40 whitespace-nowrap">
           {saving ? '…' : '+ Reference'}
         </button>
-      </div>
+      </div>}
 
       {/* Reference list */}
       {invoices.map(inv => {
@@ -477,12 +481,14 @@ function ReferencePanel({ month, sub, persons, checked, invoicingStore, invoices
                   Margin {fmtEur(totMargin)} ({totRevenue > 0 ? Math.round(totMargin / totRevenue * 100) : 0}%)
                 </span>
               )}
-              <button onClick={async () => {
-                if (!confirm(`Delete ${inv.label}?`)) return;
-                await deleteSubInvoice(inv.id); onRefresh();
-              }} className="ml-auto text-xs text-red-400 hover:text-red-600 border border-red-200 hover:border-red-400 rounded px-2 py-0.5 transition-colors">
-                Delete
-              </button>
+              {isAdmin && (
+                <button onClick={async () => {
+                  if (!confirm(`Delete ${inv.label}?`)) return;
+                  await deleteSubInvoice(inv.id); onRefresh();
+                }} className="ml-auto text-xs text-red-400 hover:text-red-600 border border-red-200 hover:border-red-400 rounded px-2 py-0.5 transition-colors">
+                  Delete
+                </button>
+              )}
             </div>
 
             {/* Per-member rows with financials */}
@@ -604,6 +610,7 @@ function ReferencesView({ subStore, mirror, invoicingStore }: {
   subStore: SubContractorStore; mirror: ElsapMirror; invoicingStore: InvoicingStore;
 }) {
   const router = useRouter();
+  const isAdmin = useRole() === 'admin';
   const [, startT] = useTransition();
   const [query, setQuery]       = useState('');
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -682,8 +689,8 @@ function ReferencesView({ subStore, mirror, invoicingStore }: {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
               </svg>
 
-              {/* Label — inline rename on click */}
-              {renamingId === ref.inv.id ? (
+              {/* Label — inline rename on click (admin only) */}
+              {isAdmin && renamingId === ref.inv.id ? (
                 <input autoFocus
                   value={renameInput}
                   onChange={e => setRenameInput(e.target.value)}
@@ -704,12 +711,12 @@ function ReferencesView({ subStore, mirror, invoicingStore }: {
                 />
               ) : (
                 <span
-                  className="font-semibold text-gray-800 text-sm shrink-0 group flex items-center gap-1 cursor-pointer"
-                  onClick={e => { e.stopPropagation(); setRenamingId(ref.inv.id); setRenameInput(ref.inv.label); }}
-                  title="Click to rename"
+                  className={`font-semibold text-gray-800 text-sm shrink-0 flex items-center gap-1 ${isAdmin ? 'group cursor-pointer' : ''}`}
+                  onClick={isAdmin ? e => { e.stopPropagation(); setRenamingId(ref.inv.id); setRenameInput(ref.inv.label); } : undefined}
+                  title={isAdmin ? 'Click to rename' : undefined}
                 >
                   {ref.inv.label}
-                  <span className="text-gray-300 text-xs opacity-0 group-hover:opacity-100 transition-opacity">✎</span>
+                  {isAdmin && <span className="text-gray-300 text-xs opacity-0 group-hover:opacity-100 transition-opacity">✎</span>}
                 </span>
               )}
 
@@ -726,8 +733,8 @@ function ReferencesView({ subStore, mirror, invoicingStore }: {
                   </span>
                 )}
 
-                {/* Delete with inline confirmation */}
-                {deletingId === ref.inv.id ? (
+                {/* Delete with inline confirmation (admin only) */}
+                {isAdmin && (deletingId === ref.inv.id ? (
                   <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
                     <span className="text-xs text-red-600 font-medium">Delete?</span>
                     <button
@@ -752,7 +759,7 @@ function ReferencesView({ subStore, mirror, invoicingStore }: {
                     className="text-xs text-red-400 hover:text-red-600 border border-red-100 hover:border-red-300 rounded px-2 py-0.5 transition-colors">
                     Delete
                   </button>
-                )}
+                ))}
               </div>
             </div>
 

@@ -2,6 +2,7 @@
 
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
+import { useRole } from '@/components/RoleProvider';
 import { Project, TeamMember, Role, Assignment } from '@/lib/types';
 import Modal from '@/components/Modal';
 import { createProject, updateProject, deleteProject } from '@/actions/projects';
@@ -276,6 +277,7 @@ function ProjectForm({
 
 export default function ProjectsClient({ projects, members, roles, assignments }: Props) {
   const router = useRouter();
+  const isAdmin = useRole() === 'admin';
   const [showCreate, setShowCreate] = useState(false);
   const [editProject, setEditProject] = useState<Project | null>(null);
 
@@ -286,12 +288,14 @@ export default function ProjectsClient({ projects, members, roles, assignments }
     <div>
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Projects</h1>
-        <button
-          onClick={() => setShowCreate(true)}
-          className="bg-slate-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-slate-700 transition-colors"
-        >
-          Add Project
-        </button>
+        {isAdmin && (
+          <button
+            onClick={() => setShowCreate(true)}
+            className="bg-slate-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-slate-700 transition-colors"
+          >
+            Add Project
+          </button>
+        )}
       </div>
 
       {projects.length === 0 ? (
@@ -353,32 +357,30 @@ export default function ProjectsClient({ projects, members, roles, assignments }
                     >
                       {formatNumber(remaining)}h
                     </td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2 justify-end">
-                        <button
-                          onClick={() => setEditProject(project)}
-                          className="text-xs text-slate-600 hover:text-slate-800 font-medium"
-                        >
-                          Edit
-                        </button>
-                        <form
-                          action={async () => {
-                            await deleteProject(project.id);
-                          }}
-                        >
+                    {isAdmin && (
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2 justify-end">
                           <button
-                            type="submit"
-                            className="text-xs text-red-500 hover:text-red-700 font-medium"
-                            onClick={(e) => {
-                              if (!confirm('Delete this project? All assignments will also be deleted.'))
-                                e.preventDefault();
-                            }}
+                            onClick={() => setEditProject(project)}
+                            className="text-xs text-slate-600 hover:text-slate-800 font-medium"
                           >
-                            Delete
+                            Edit
                           </button>
-                        </form>
-                      </div>
-                    </td>
+                          <form action={async () => { await deleteProject(project.id); }}>
+                            <button
+                              type="submit"
+                              className="text-xs text-red-500 hover:text-red-700 font-medium"
+                              onClick={(e) => {
+                                if (!confirm('Delete this project? All assignments will also be deleted.'))
+                                  e.preventDefault();
+                              }}
+                            >
+                              Delete
+                            </button>
+                          </form>
+                        </div>
+                      </td>
+                    )}
                   </tr>
                 );
               })}
@@ -387,7 +389,7 @@ export default function ProjectsClient({ projects, members, roles, assignments }
         </div>
       )}
 
-      {showCreate && (
+      {isAdmin && showCreate && (
         <Modal title="Create Project" onClose={() => setShowCreate(false)}>
           <ProjectForm
             members={members}
@@ -401,7 +403,7 @@ export default function ProjectsClient({ projects, members, roles, assignments }
         </Modal>
       )}
 
-      {editProject && (
+      {isAdmin && editProject && (
         <Modal title="Edit Project" onClose={() => setEditProject(null)}>
           <ProjectForm
             initial={editProject}

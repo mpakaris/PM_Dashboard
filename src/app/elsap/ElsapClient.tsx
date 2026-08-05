@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { ElsapMirror, ElsapRow } from '@/lib/types';
 import { importElsapCsv, applyElsapToDb, inspectElsapFile } from '@/actions/elsap';
 import Modal from '@/components/Modal';
+import { useRole } from '@/components/RoleProvider';
 
 interface Props {
   mirror: ElsapMirror;
@@ -23,6 +24,7 @@ type SortKey = 'periode' | 'name' | 'posText' | 'stunden' | 'status';
 
 export default function ElsapClient({ mirror }: Props) {
   const router = useRouter();
+  const isAdmin = useRole() === 'admin';
   const fileRef = useRef<HTMLInputElement>(null);
   const [isPending, startTransition] = useTransition();
   const [importing, setImporting] = useState(false);
@@ -202,7 +204,7 @@ export default function ElsapClient({ mirror }: Props) {
       </div>
 
       {/* Action Bar */}
-      <div className="flex flex-wrap items-start gap-4 mb-6">
+      {isAdmin && <div className="flex flex-wrap items-start gap-4 mb-6">
         {/* Upload Form */}
         <form onSubmit={handleImport} className="flex flex-col gap-2">
           <div className="flex items-center gap-2">
@@ -240,7 +242,7 @@ export default function ElsapClient({ mirror }: Props) {
         >
           {applying ? 'Applying…' : 'Apply to Dashboard'}
         </button>
-      </div>
+      </div>}
 
       {/* Result Banners */}
       {importResult && (

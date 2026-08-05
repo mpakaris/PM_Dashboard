@@ -75,7 +75,7 @@ export default async function DashboardPage() {
     <div>
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-gray-900 mb-1">Dashboard</h1>
-        <p className="text-gray-500 text-sm">Resource management overview for 2026</p>
+        <p className="text-gray-500 text-sm">Ressource management overview for 2026</p>
       </div>
 
       {/* Summary Cards */}

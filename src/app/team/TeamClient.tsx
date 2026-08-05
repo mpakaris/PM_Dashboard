@@ -2,6 +2,7 @@
 
 import { useState, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
+import { useRole } from '@/components/RoleProvider';
 import { TeamMember, Role, Profile, Assignment, Project } from '@/lib/types';
 import Modal from '@/components/Modal';
 import Badge from '@/components/Badge';
@@ -149,11 +150,13 @@ function MemberAssignments({
   member,
   memberAssignments,
   projects,
+  isAdmin,
   onSaved,
 }: {
   member: TeamMember;
   memberAssignments: Assignment[];
   projects: Project[];
+  isAdmin: boolean;
   onSaved: () => void;
 }) {
   const allMonths = useMemo(() => {
@@ -279,16 +282,20 @@ function MemberAssignments({
                 {allMonths.map((m) => (
                   <td key={m} className="px-2 py-2 text-right">
                     {projectMonths.has(m) ? (
-                      <input
-                        type="number"
-                        value={editedHours[a.id]?.[m] ?? ''}
-                        data-assignment-id={a.id}
-                        onChange={(e) => handleChange(a.id, m, e.target.value)}
-                        onBlur={(e) => handleBlur(a.id, e)}
-                        min={0}
-                        placeholder="0"
-                        className="w-16 border border-slate-200 rounded px-1.5 py-1 text-sm text-right focus:outline-none focus:ring-1 focus:ring-slate-400 bg-white"
-                      />
+                      isAdmin ? (
+                        <input
+                          type="number"
+                          value={editedHours[a.id]?.[m] ?? ''}
+                          data-assignment-id={a.id}
+                          onChange={(e) => handleChange(a.id, m, e.target.value)}
+                          onBlur={(e) => handleBlur(a.id, e)}
+                          min={0}
+                          placeholder="0"
+                          className="w-16 border border-slate-200 rounded px-1.5 py-1 text-sm text-right focus:outline-none focus:ring-1 focus:ring-slate-400 bg-white"
+                        />
+                      ) : (
+                        <span className="text-sm text-slate-600">{editedHours[a.id]?.[m] || '—'}</span>
+                      )
                     ) : (
                       <span className="text-gray-200 text-xs">—</span>
                     )}
@@ -361,6 +368,7 @@ function MemberAssignments({
 
 export default function TeamClient({ members, roles, profiles, assignments, projects }: Props) {
   const router = useRouter();
+  const isAdmin = useRole() === 'admin';
   const [showCreate, setShowCreate] = useState(false);
   const [editMember, setEditMember] = useState<TeamMember | null>(null);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
@@ -388,12 +396,14 @@ export default function TeamClient({ members, roles, profiles, assignments, proj
     <div>
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Team Members</h1>
-        <button
-          onClick={() => setShowCreate(true)}
-          className="bg-slate-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-slate-700 transition-colors"
-        >
-          Add Member
-        </button>
+        {isAdmin && (
+          <button
+            onClick={() => setShowCreate(true)}
+            className="bg-slate-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-slate-700 transition-colors"
+          >
+            Add Member
+          </button>
+        )}
       </div>
 
       {members.length === 0 ? (
@@ -472,6 +482,7 @@ export default function TeamClient({ members, roles, profiles, assignments, proj
                           )}
                         </div>
                       </td>
+                      {isAdmin && (
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2 justify-end">
                           <button
@@ -497,6 +508,7 @@ export default function TeamClient({ members, roles, profiles, assignments, proj
                           </form>
                         </div>
                       </td>
+                      )}
                     </tr>
                     {isExpanded && (
                       <tr key={`${member.id}-expanded`}>
@@ -505,6 +517,7 @@ export default function TeamClient({ members, roles, profiles, assignments, proj
                             member={member}
                             memberAssignments={memberAssignments}
                             projects={projects}
+                            isAdmin={isAdmin}
                             onSaved={() => router.refresh()}
                           />
                         </td>
@@ -518,7 +531,7 @@ export default function TeamClient({ members, roles, profiles, assignments, proj
         </div>
       )}
 
-      {showCreate && (
+      {isAdmin && showCreate && (
         <Modal title="Add Team Member" onClose={() => setShowCreate(false)}>
           <MemberForm
             roles={roles}
@@ -531,7 +544,7 @@ export default function TeamClient({ members, roles, profiles, assignments, proj
         </Modal>
       )}
 
-      {editMember && (
+      {isAdmin && editMember && (
         <Modal title="Edit Team Member" onClose={() => setEditMember(null)}>
           <MemberForm
             initial={editMember}

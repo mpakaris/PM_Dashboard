@@ -2,6 +2,7 @@
 
 import { useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
+import { useRole } from '@/components/RoleProvider';
 import { Assignment, Project, TeamMember, Role } from '@/lib/types';
 import { getMonthsBetween, formatMonth } from '@/lib/utils';
 import { updatePlannedHours } from '@/actions/assignments';
@@ -201,6 +202,7 @@ function ByMemberView({ assignments, projects, members, roles }: Props) {
 
 function ByProjectView({ assignments, projects, members }: Props) {
   const router = useRouter();
+  const isAdmin = useRole() === 'admin';
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 
   const [editedHours, setEditedHours] = useState<Record<string, Record<string, string>>>(() => {
@@ -322,46 +324,52 @@ function ByProjectView({ assignments, projects, members }: Props) {
                               <td className="px-4 py-1.5 text-gray-700">
                                 <div className="flex flex-col gap-1">
                                   <span className="font-medium">{member?.name ?? 'Unknown'}</span>
-                                  <div className="flex items-center gap-1">
-                                    <input
-                                      type="number"
-                                      min={0}
-                                      placeholder="fill all…"
-                                      data-assignment-id={id}
-                                      className="w-20 border border-dashed border-slate-300 rounded px-1.5 py-0.5 text-xs text-right font-normal focus:outline-none focus:border-slate-500 focus:ring-1 focus:ring-slate-200 placeholder:text-slate-200"
-                                      onKeyDown={(e) => {
-                                        if (e.key !== 'Enter') return;
-                                        e.preventDefault();
-                                        const val = (e.target as HTMLInputElement).value.trim();
-                                        if (!val) return;
-                                        setEditedHours((prev) => ({
-                                          ...prev,
-                                          [id]: {
-                                            ...prev[id],
-                                            ...Object.fromEntries([...projectMonthsSet].map((m) => [m, val])),
-                                          },
-                                        }));
-                                        setIsDirty((prev) => ({ ...prev, [id]: false }));
-                                        (e.target as HTMLInputElement).value = '';
-                                        handleSave(id);
-                                      }}
-                                    />
-                                    {saving[id] && <span className="text-xs text-gray-300">…</span>}
-                                  </div>
+                                  {isAdmin && (
+                                    <div className="flex items-center gap-1">
+                                      <input
+                                        type="number"
+                                        min={0}
+                                        placeholder="fill all…"
+                                        data-assignment-id={id}
+                                        className="w-20 border border-dashed border-slate-300 rounded px-1.5 py-0.5 text-xs text-right font-normal focus:outline-none focus:border-slate-500 focus:ring-1 focus:ring-slate-200 placeholder:text-slate-200"
+                                        onKeyDown={(e) => {
+                                          if (e.key !== 'Enter') return;
+                                          e.preventDefault();
+                                          const val = (e.target as HTMLInputElement).value.trim();
+                                          if (!val) return;
+                                          setEditedHours((prev) => ({
+                                            ...prev,
+                                            [id]: {
+                                              ...prev[id],
+                                              ...Object.fromEntries([...projectMonthsSet].map((m) => [m, val])),
+                                            },
+                                          }));
+                                          setIsDirty((prev) => ({ ...prev, [id]: false }));
+                                          (e.target as HTMLInputElement).value = '';
+                                          handleSave(id);
+                                        }}
+                                      />
+                                      {saving[id] && <span className="text-xs text-gray-300">…</span>}
+                                    </div>
+                                  )}
                                 </div>
                               </td>
                               {months.map((m) => (
                                 <td key={m} className="text-center px-1 py-1.5">
-                                  <input
-                                    type="number"
-                                    value={editedHours[id]?.[m] ?? ''}
-                                    data-assignment-id={id}
-                                    onChange={(e) => handleChange(id, m, e.target.value)}
-                                    onBlur={(e) => handleBlur(id, e)}
-                                    min={0}
-                                    placeholder="0"
-                                    className="w-14 border border-slate-200 rounded px-1 py-0.5 text-xs text-right focus:outline-none focus:ring-1 focus:ring-slate-400 bg-white"
-                                  />
+                                  {isAdmin ? (
+                                    <input
+                                      type="number"
+                                      value={editedHours[id]?.[m] ?? ''}
+                                      data-assignment-id={id}
+                                      onChange={(e) => handleChange(id, m, e.target.value)}
+                                      onBlur={(e) => handleBlur(id, e)}
+                                      min={0}
+                                      placeholder="0"
+                                      className="w-14 border border-slate-200 rounded px-1 py-0.5 text-xs text-right focus:outline-none focus:ring-1 focus:ring-slate-400 bg-white"
+                                    />
+                                  ) : (
+                                    <span className="text-xs text-slate-600">{editedHours[id]?.[m] || '—'}</span>
+                                  )}
                                 </td>
                               ))}
                               <td className="text-right px-4 py-1.5 text-slate-600 font-medium">{totalP}h</td>

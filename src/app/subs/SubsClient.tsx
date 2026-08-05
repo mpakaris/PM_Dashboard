@@ -4,6 +4,7 @@ import { useState, useMemo, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { SubContractorStore, SubContractor, SubMember, ElsapMirror, InvoicingStore } from '@/lib/types';
 import { upsertSubContractor, deleteSubContractor } from '@/actions/subcontractors';
+import { useRole } from '@/components/RoleProvider';
 
 interface Props {
   subStore: SubContractorStore;
@@ -17,6 +18,7 @@ function fmtEur(n: number) {
 
 export default function SubsClient({ subStore, mirror, invoicingStore }: Props) {
   const router = useRouter();
+  const isAdmin = useRole() === 'admin';
   const [, startT] = useTransition();
   const [editingId, setEditingId] = useState<string | null>(null);
 
@@ -39,14 +41,16 @@ export default function SubsClient({ subStore, mirror, invoicingStore }: Props) 
           <h1 className="text-2xl font-bold text-gray-900 mb-1">Sub Contractors</h1>
           <p className="text-gray-500 text-sm">Manage external sub contractors, their rate cards, and member assignments.</p>
         </div>
-        <button onClick={() => setEditingId('new')}
-          className="bg-emerald-600 text-white px-4 py-1.5 rounded text-sm font-medium hover:bg-emerald-700 transition-colors">
-          + Add Sub Contractor
-        </button>
+        {isAdmin && (
+          <button onClick={() => setEditingId('new')}
+            className="bg-emerald-600 text-white px-4 py-1.5 rounded text-sm font-medium hover:bg-emerald-700 transition-colors">
+            + Add Sub Contractor
+          </button>
+        )}
       </div>
 
       <div className="space-y-3">
-        {editingId === 'new' && (
+        {isAdmin && editingId === 'new' && (
           <SubContractorForm
             allRoles={allRoles} elsapUsers={elsapUsers}
             onSave={async data => { await upsertSubContractor(data); refresh(); setEditingId(null); }}
@@ -70,12 +74,12 @@ export default function SubsClient({ subStore, mirror, invoicingStore }: Props) 
           ) : (
             <SubContractorCard key={sub.id} sub={sub}
               invoiceCount={subStore.invoices.filter(i => i.subContractorId === sub.id).length}
-              onEdit={() => setEditingId(sub.id)}
-              onDelete={async () => {
+              onEdit={isAdmin ? () => setEditingId(sub.id) : undefined}
+              onDelete={isAdmin ? async () => {
                 if (!confirm(`Delete ${sub.name}? All their invoices will also be removed.`)) return;
                 await deleteSubContractor(sub.id);
                 refresh();
-              }}
+              } : undefined}
             />
           )
         )}
@@ -87,7 +91,7 @@ export default function SubsClient({ subStore, mirror, invoicingStore }: Props) 
 // ─── Card ─────────────────────────────────────────────────────────────────────
 
 function SubContractorCard({ sub, invoiceCount, onEdit, onDelete }: {
-  sub: SubContractor; invoiceCount: number; onEdit: () => void; onDelete: () => void;
+  sub: SubContractor; invoiceCount: number; onEdit?: () => void; onDelete?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   return (
@@ -104,8 +108,8 @@ function SubContractorCard({ sub, invoiceCount, onEdit, onDelete }: {
         </div>
         <span className="text-xs text-gray-400">{sub.members.length} member{sub.members.length !== 1 ? 's' : ''}</span>
         <span className="text-xs text-gray-400">{invoiceCount} invoice{invoiceCount !== 1 ? 's' : ''}</span>
-        <button onClick={onEdit} className="text-xs text-sky-600 hover:text-sky-800 border border-sky-200 hover:border-sky-400 rounded px-2 py-0.5 transition-colors">Edit</button>
-        <button onClick={onDelete} className="text-xs text-red-400 hover:text-red-600 border border-red-200 hover:border-red-400 rounded px-2 py-0.5 transition-colors">Delete</button>
+        {onEdit && <button onClick={onEdit} className="text-xs text-sky-600 hover:text-sky-800 border border-sky-200 hover:border-sky-400 rounded px-2 py-0.5 transition-colors">Edit</button>}
+        {onDelete && <button onClick={onDelete} className="text-xs text-red-400 hover:text-red-600 border border-red-200 hover:border-red-400 rounded px-2 py-0.5 transition-colors">Delete</button>}
       </div>
 
       {open && (

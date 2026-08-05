@@ -2,6 +2,7 @@
 
 import { useState, useMemo, useEffect, useTransition, Fragment } from 'react';
 import { useRouter } from 'next/navigation';
+import { useRole } from '@/components/RoleProvider';
 import {
   ProjektAnalysisProject,
   ProjektAnalysisMemberSettings,
@@ -215,6 +216,7 @@ interface Props {
 
 export default function ProjektAnalysisDetailClient({ project }: Props) {
   const router = useRouter();
+  const isAdmin = useRole() === 'admin';
   const [activeTab, setActiveTab] = useState<Tab>('Overview');
   const [isPending, startTransition] = useTransition();
 
@@ -228,11 +230,11 @@ export default function ProjektAnalysisDetailClient({ project }: Props) {
   const [filterEnd, setFilterEnd] = useState(currentMonth);
 
   const filteredEntries = useMemo(() => {
-    const start = filterStart || dataMin;
-    const end = filterEnd || dataMax;
-    if (!start && !end) return project.entries;
-    return project.entries.filter(e => (!start || e.month >= start) && (!end || e.month <= end));
-  }, [project.entries, filterStart, filterEnd, dataMin, dataMax]);
+    if (!filterStart && !filterEnd) return project.entries;
+    return project.entries.filter(e =>
+      (!filterStart || e.month >= filterStart) && (!filterEnd || e.month <= filterEnd)
+    );
+  }, [project.entries, filterStart, filterEnd]);
 
   // ── Derived base data ──────────────────────────────────────────────────────
   const months = useMemo(() => [...new Set(filteredEntries.map(e => e.month))].sort(), [filteredEntries]);
@@ -266,7 +268,7 @@ export default function ProjektAnalysisDetailClient({ project }: Props) {
     return m;
   }, [filteredEntries]);
 
-  const isFiltered = !!filterStart || !!filterEnd;
+  const isFiltered = (!!dataMin && filterStart > dataMin) || (!!dataMax && filterEnd < dataMax);
 
   // ── Member settings (local editable state) ────────────────────────────────
   const [memberRates, setMemberRates] = useState<Record<string, { costRate: number; billingRate: number }>>(() => {
@@ -414,11 +416,11 @@ export default function ProjektAnalysisDetailClient({ project }: Props) {
             {(['time-and-material', 'festpreis'] as ProjektAnalysisType[]).map((type) => (
               <button
                 key={type}
-                onClick={() => saveProjectSettings({ ...projectSettings, projectType: type })}
+                onClick={isAdmin ? () => saveProjectSettings({ ...projectSettings, projectType: type }) : undefined}
                 className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors border ${
                   projectSettings.projectType === type
                     ? 'bg-slate-700 text-white border-slate-700'
-                    : 'bg-white text-gray-500 border-gray-200 hover:border-gray-300 hover:text-gray-700'
+                    : 'bg-white text-gray-500 border-gray-200' + (isAdmin ? ' hover:border-gray-300 hover:text-gray-700' : ' cursor-default')
                 }`}
               >
                 {type === 'time-and-material' ? 'Time & Material' : 'Festpreis'}
@@ -431,21 +433,25 @@ export default function ProjektAnalysisDetailClient({ project }: Props) {
           <>
             <div>
               <p className="text-xs text-gray-400 mb-1.5 font-medium uppercase tracking-wider">Contract Hours</p>
-              <RateInput
-                value={projectSettings.contractHours}
-                suffix="h"
-                placeholder="e.g. 2000"
-                onCommit={(v) => saveProjectSettings({ ...projectSettings, contractHours: v })}
-              />
+              {isAdmin ? (
+                <RateInput
+                  value={projectSettings.contractHours}
+                  suffix="h"
+                  placeholder="e.g. 2000"
+                  onCommit={(v) => saveProjectSettings({ ...projectSettings, contractHours: v })}
+                />
+              ) : <span className="text-sm text-gray-700">{projectSettings.contractHours || '—'}h</span>}
             </div>
             <div>
               <p className="text-xs text-gray-400 mb-1.5 font-medium uppercase tracking-wider">Contract Value</p>
-              <RateInput
-                value={projectSettings.contractValue}
-                suffix="€"
-                placeholder="e.g. 250000"
-                onCommit={(v) => saveProjectSettings({ ...projectSettings, contractValue: v })}
-              />
+              {isAdmin ? (
+                <RateInput
+                  value={projectSettings.contractValue}
+                  suffix="€"
+                  placeholder="e.g. 250000"
+                  onCommit={(v) => saveProjectSettings({ ...projectSettings, contractValue: v })}
+                />
+              ) : <span className="text-sm text-gray-700">{projectSettings.contractValue ? fmtEur(projectSettings.contractValue) : '—'}</span>}
             </div>
 
             {/* Nachträge */}
@@ -457,27 +463,31 @@ export default function ProjektAnalysisDetailClient({ project }: Props) {
                     +{fmtEur(changes.reduce((s, c) => s + c.value, 0))}
                   </span>
                 )}
-                <button
-                  onClick={() => setAddingChange(true)}
-                  className="text-xs text-slate-500 hover:text-slate-700 border border-gray-200 rounded px-2 py-0.5 hover:border-gray-300 transition-colors"
-                >
-                  + Add
-                </button>
+                {isAdmin && (
+                  <button
+                    onClick={() => setAddingChange(true)}
+                    className="text-xs text-slate-500 hover:text-slate-700 border border-gray-200 rounded px-2 py-0.5 hover:border-gray-300 transition-colors"
+                  >
+                    + Add
+                  </button>
+                )}
               </div>
               <div className="space-y-1">
                 {changes.map(c => (
                   <div key={c.id} className="flex items-center gap-2 text-xs">
                     <span className="text-emerald-600 font-medium shrink-0">+{fmtEur(c.value)}</span>
                     <span className="text-gray-500 truncate max-w-[180px]" title={c.description}>{c.description}</span>
-                    <button
-                      onClick={() => handleRemoveChange(c.id)}
-                      className="text-gray-300 hover:text-red-400 transition-colors shrink-0 ml-auto"
-                    >
-                      ×
-                    </button>
+                    {isAdmin && (
+                      <button
+                        onClick={() => handleRemoveChange(c.id)}
+                        className="text-gray-300 hover:text-red-400 transition-colors shrink-0 ml-auto"
+                      >
+                        ×
+                      </button>
+                    )}
                   </div>
                 ))}
-                {addingChange && (
+                {isAdmin && addingChange && (
                   <div className="flex items-center gap-2 mt-2">
                     <input
                       autoFocus
@@ -531,7 +541,7 @@ export default function ProjektAnalysisDetailClient({ project }: Props) {
         </div>
         {isFiltered && (
           <button
-            onClick={() => { setFilterStart(''); setFilterEnd(''); }}
+            onClick={() => { setFilterStart(dataMin); setFilterEnd(dataMax); }}
             className="text-xs text-slate-500 hover:text-slate-700 border border-gray-200 rounded px-2.5 py-1 hover:border-gray-300 transition-colors"
           >
             Clear
@@ -667,16 +677,14 @@ export default function ProjektAnalysisDetailClient({ project }: Props) {
                           <td className="px-4 py-3 text-right text-gray-400">{fmtH(workH)}</td>
                           <td className="px-4 py-3 text-right text-gray-400">{fmtH(opsH)}</td>
                           <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
-                            <RateInput
-                              value={rates.costRate}
-                              onCommit={(v) => saveMemberRate(row.user, 'costRate', v)}
-                            />
+                            {isAdmin ? (
+                              <RateInput value={rates.costRate} onCommit={(v) => saveMemberRate(row.user, 'costRate', v)} />
+                            ) : <span className="text-sm text-gray-600">{rates.costRate > 0 ? `${rates.costRate} €/h` : '—'}</span>}
                           </td>
                           <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
-                            <RateInput
-                              value={rates.billingRate}
-                              onCommit={(v) => saveMemberRate(row.user, 'billingRate', v)}
-                            />
+                            {isAdmin ? (
+                              <RateInput value={rates.billingRate} onCommit={(v) => saveMemberRate(row.user, 'billingRate', v)} />
+                            ) : <span className="text-sm text-gray-600">{rates.billingRate > 0 ? `${rates.billingRate} €/h` : '—'}</span>}
                           </td>
                           <td className="px-4 py-3 text-right text-gray-600">{row.cost > 0 ? fmtEur(row.cost) : <span className="text-gray-300">—</span>}</td>
                           <td className="px-4 py-3 text-right text-gray-600">{row.revenue > 0 ? fmtEur(row.revenue) : <span className="text-gray-300">—</span>}</td>
@@ -896,7 +904,7 @@ export default function ProjektAnalysisDetailClient({ project }: Props) {
               </table>
             </div>
           </div>
-          <div className="flex justify-end">
+          {isAdmin && <div className="flex justify-end">
             <button
               onClick={handleSaveForecast}
               disabled={forecastSaving}
@@ -904,7 +912,7 @@ export default function ProjektAnalysisDetailClient({ project }: Props) {
             >
               {forecastSaving ? 'Saving…' : 'Save Billing Settings'}
             </button>
-          </div>
+          </div>}
         </div>
       )}
 
@@ -964,7 +972,7 @@ export default function ProjektAnalysisDetailClient({ project }: Props) {
       {activeTab === 'Forecast' && (
         <div className="space-y-6">
           {/* Inputs */}
-          <div className="bg-white rounded-lg ring-1 ring-gray-200 p-5">
+          {isAdmin && <div className="bg-white rounded-lg ring-1 ring-gray-200 p-5">
             <h3 className="text-sm font-semibold text-gray-800 mb-4">Forecast Settings</h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 mb-6">
               <div>
@@ -1039,7 +1047,7 @@ export default function ProjektAnalysisDetailClient({ project }: Props) {
                 {forecastSaving ? 'Saving…' : 'Save Forecast'}
               </button>
             </div>
-          </div>
+          </div>}
 
           {/* Forecast charts */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">

@@ -2,6 +2,7 @@
 
 import { useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useRole } from '@/components/RoleProvider';
 import { ProjektAnalysisProject } from '@/lib/types';
 import { uploadProjektAnalysisCSV, deleteProjektAnalysisProject } from '@/actions/projektAnalysis';
 
@@ -11,6 +12,7 @@ interface Props {
 
 export default function ProjektAnalysisClient({ projects }: Props) {
   const router = useRouter();
+  const isAdmin = useRole() === 'admin';
   const fileRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState('');
@@ -36,16 +38,18 @@ export default function ProjektAnalysisClient({ projects }: Props) {
           <h1 className="text-2xl font-bold text-gray-900">Projekt Analysis</h1>
           <p className="text-sm text-gray-400 mt-0.5">Upload SecTrack CSV exports to analyse project performance</p>
         </div>
-        <div>
-          <input ref={fileRef} type="file" accept=".csv" className="hidden" onChange={handleUpload} />
-          <button
-            onClick={() => fileRef.current?.click()}
-            disabled={uploading}
-            className="bg-slate-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-slate-700 transition-colors disabled:opacity-50"
-          >
-            {uploading ? 'Uploading…' : 'Upload CSV'}
-          </button>
-        </div>
+        {isAdmin && (
+          <div>
+            <input ref={fileRef} type="file" accept=".csv" className="hidden" onChange={handleUpload} />
+            <button
+              onClick={() => fileRef.current?.click()}
+              disabled={uploading}
+              className="bg-slate-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-slate-700 transition-colors disabled:opacity-50"
+            >
+              {uploading ? 'Uploading…' : 'Upload CSV'}
+            </button>
+          </div>
+        )}
       </div>
 
       {error && (
@@ -59,13 +63,15 @@ export default function ProjektAnalysisClient({ projects }: Props) {
           <p className="text-gray-400 text-sm mb-4">
             No projects yet. Upload a CSV file named after your project (e.g. <span className="font-mono">Barmer.csv</span>).
           </p>
-          <button
-            onClick={() => fileRef.current?.click()}
-            disabled={uploading}
-            className="bg-slate-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-slate-700 transition-colors"
-          >
-            Upload First CSV
-          </button>
+          {isAdmin && (
+            <button
+              onClick={() => fileRef.current?.click()}
+              disabled={uploading}
+              className="bg-slate-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-slate-700 transition-colors"
+            >
+              Upload First CSV
+            </button>
+          )}
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -73,11 +79,11 @@ export default function ProjektAnalysisClient({ projects }: Props) {
             <ProjectCard
               key={p.id}
               project={p}
-              onDelete={async () => {
+              onDelete={isAdmin ? async () => {
                 if (!confirm(`Delete "${p.name}"? This cannot be undone.`)) return;
                 await deleteProjektAnalysisProject(p.id);
                 router.refresh();
-              }}
+              } : undefined}
             />
           ))}
         </div>
@@ -86,7 +92,7 @@ export default function ProjektAnalysisClient({ projects }: Props) {
   );
 }
 
-function ProjectCard({ project, onDelete }: { project: ProjektAnalysisProject; onDelete: () => void }) {
+function ProjectCard({ project, onDelete }: { project: ProjektAnalysisProject; onDelete?: () => void }) {
   const router = useRouter();
   const totalHours = project.entries.reduce((s, e) => s + e.spentTime, 0);
   const users = [...new Set(project.entries.map(e => e.user))];
@@ -108,12 +114,14 @@ function ProjectCard({ project, onDelete }: { project: ProjektAnalysisProject; o
         <h3 className="font-semibold text-gray-800 group-hover:text-slate-700 transition-colors leading-tight">
           {project.name}
         </h3>
-        <button
-          onClick={(e) => { e.stopPropagation(); onDelete(); }}
-          className="text-xs text-red-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity ml-2 shrink-0"
-        >
-          Delete
-        </button>
+        {onDelete && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onDelete(); }}
+            className="text-xs text-red-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity ml-2 shrink-0"
+          >
+            Delete
+          </button>
+        )}
       </div>
       <div className="space-y-1 text-xs text-gray-400">
         <div className="flex justify-between">

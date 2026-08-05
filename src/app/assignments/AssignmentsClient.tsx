@@ -2,6 +2,7 @@
 
 import { useState, useMemo, Fragment } from 'react';
 import { useRouter } from 'next/navigation';
+import { useRole } from '@/components/RoleProvider';
 import { Assignment, Project, TeamMember, Role } from '@/lib/types';
 import Modal from '@/components/Modal';
 import { createBulkAssignments, updateAssignment, deleteAssignment } from '@/actions/assignments';
@@ -373,6 +374,7 @@ function EditAssignmentForm({
 
 export default function AssignmentsClient({ assignments, projects, members, roles }: Props) {
   const router = useRouter();
+  const isAdmin = useRole() === 'admin';
   const [showCreate, setShowCreate] = useState(false);
   const [editAssignment, setEditAssignment] = useState<Assignment | null>(null);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
@@ -393,9 +395,11 @@ export default function AssignmentsClient({ assignments, projects, members, role
     <div>
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Assignments</h1>
-        <button onClick={() => setShowCreate(true)} className="bg-slate-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-slate-700 transition-colors">
-          Add Assignments
-        </button>
+        {isAdmin && (
+          <button onClick={() => setShowCreate(true)} className="bg-slate-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-slate-700 transition-colors">
+            Add Assignments
+          </button>
+        )}
       </div>
 
       {assignments.length === 0 ? (
@@ -480,16 +484,18 @@ export default function AssignmentsClient({ assignments, projects, members, role
                                     <td className={`px-4 py-2.5 text-right text-xs font-medium ${delta > 0 ? 'text-red-500' : delta < 0 ? 'text-emerald-600' : 'text-gray-300'}`}>
                                       {p === 0 && b === 0 ? '—' : delta > 0 ? `+${delta}h` : delta < 0 ? `${delta}h` : '±0'}
                                     </td>
-                                    <td className="px-4 py-2.5">
-                                      <div className="flex items-center gap-2 justify-end">
-                                        <button onClick={() => setEditAssignment(a)} className="text-xs text-slate-600 hover:text-slate-800 font-medium">Edit</button>
-                                        <form action={async () => { await deleteAssignment(a.id); router.refresh(); }}>
-                                          <button type="submit" className="text-xs text-red-500 hover:text-red-700 font-medium" onClick={(e) => { if (!confirm('Delete this assignment?')) e.preventDefault(); }}>
-                                            Delete
-                                          </button>
-                                        </form>
-                                      </div>
-                                    </td>
+                                    {isAdmin && (
+                                      <td className="px-4 py-2.5">
+                                        <div className="flex items-center gap-2 justify-end">
+                                          <button onClick={() => setEditAssignment(a)} className="text-xs text-slate-600 hover:text-slate-800 font-medium">Edit</button>
+                                          <form action={async () => { await deleteAssignment(a.id); router.refresh(); }}>
+                                            <button type="submit" className="text-xs text-red-500 hover:text-red-700 font-medium" onClick={(e) => { if (!confirm('Delete this assignment?')) e.preventDefault(); }}>
+                                              Delete
+                                            </button>
+                                          </form>
+                                        </div>
+                                      </td>
+                                    )}
                                   </tr>
                                 );
                               })}
@@ -517,7 +523,7 @@ export default function AssignmentsClient({ assignments, projects, members, role
         </div>
       )}
 
-      {showCreate && (
+      {isAdmin && showCreate && (
         <Modal title="Add Assignments" onClose={() => setShowCreate(false)}>
           <BulkAssignmentForm
             projects={projects} members={members} roles={roles} allAssignments={assignments}
@@ -532,7 +538,7 @@ export default function AssignmentsClient({ assignments, projects, members, role
         </Modal>
       )}
 
-      {editAssignment && (
+      {isAdmin && editAssignment && (
         <Modal title="Edit Assignment — Plan & Billed Hours" onClose={() => setEditAssignment(null)}>
           <EditAssignmentForm
             initial={editAssignment} projects={projects} members={members}

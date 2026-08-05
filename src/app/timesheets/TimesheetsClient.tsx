@@ -2,6 +2,7 @@
 
 import { useState, useRef, useMemo, useEffect, useTransition, Fragment } from 'react';
 import { useRouter } from 'next/navigation';
+import { useRole } from '@/components/RoleProvider';
 import { TimesheetEntry, TimesheetStore, TicketRate } from '@/lib/types';
 import {
   uploadTimesheetFiles,
@@ -55,8 +56,15 @@ function RateEditor({
   value: TicketRate;
   onChange: (billable: boolean, rate: number) => void;
 }) {
+  const isAdmin = useRole() === 'admin';
   const [rateInput, setRateInput] = useState(value.rate ? String(value.rate) : '');
   useEffect(() => { setRateInput(value.rate ? String(value.rate) : ''); }, [value.rate]);
+
+  if (!isAdmin) return (
+    <span className={`text-xs px-2 py-0.5 rounded-full ${value.billable ? 'bg-emerald-50 text-emerald-700' : 'text-gray-400'}`}>
+      {value.billable ? `Billable${value.rate ? ` · ${value.rate} €/h` : ''}` : 'Internal'}
+    </span>
+  );
 
   return (
     <div className="flex items-center gap-2 shrink-0">
@@ -103,6 +111,7 @@ function PersonTable({ entries, baseline, onBaselineChange }: {
   baseline: number;
   onBaselineChange: (h: number) => void;
 }) {
+  const isAdmin = useRole() === 'admin';
   const [baselineInput, setBaselineInput] = useState(String(baseline));
   useEffect(() => { setBaselineInput(String(baseline)); }, [baseline]);
   const [hidden, setHidden] = useState<Set<string>>(new Set());
@@ -234,21 +243,23 @@ function PersonTable({ entries, baseline, onBaselineChange }: {
               <td className="sticky left-0 bg-gray-50" />
               <td className="px-3 py-1.5 text-gray-400 text-xs sticky left-8 bg-gray-50 font-normal">
                 <span>utilization vs. </span>
-                <input
-                  type="number"
-                  min={1}
-                  value={baselineInput}
-                  onChange={e => setBaselineInput(e.target.value)}
-                  onBlur={() => {
-                    const h = Math.max(1, Math.round(Number(baselineInput) || 160));
-                    setBaselineInput(String(h));
-                    if (h !== baseline) onBaselineChange(h);
-                  }}
-                  onKeyDown={e => {
-                    if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
-                  }}
-                  className="w-12 text-center border-0 border-b border-gray-300 bg-transparent text-gray-600 font-semibold focus:outline-none focus:border-slate-500 text-xs"
-                />
+                {isAdmin ? (
+                  <input
+                    type="number"
+                    min={1}
+                    value={baselineInput}
+                    onChange={e => setBaselineInput(e.target.value)}
+                    onBlur={() => {
+                      const h = Math.max(1, Math.round(Number(baselineInput) || 160));
+                      setBaselineInput(String(h));
+                      if (h !== baseline) onBaselineChange(h);
+                    }}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+                    }}
+                    className="w-12 text-center border-0 border-b border-gray-300 bg-transparent text-gray-600 font-semibold focus:outline-none focus:border-slate-500 text-xs"
+                  />
+                ) : <span className="font-semibold text-gray-600">{baseline}</span>}
                 <span>h baseline</span>
               </td>
               {months.map(m => {
@@ -302,6 +313,7 @@ function MemberCard({ user, entries, baseline, costRate, onDeletePerson, onBasel
   onBaselineChange: (h: number) => void;
   onCostRateChange: (rate: number) => void;
 }) {
+  const isAdmin = useRole() === 'admin';
   const [isOpen, setIsOpen] = useState(false);
   const [costInput, setCostInput] = useState(costRate ? String(costRate) : '');
   useEffect(() => { setCostInput(costRate ? String(costRate) : ''); }, [costRate]);
@@ -331,28 +343,30 @@ function MemberCard({ user, entries, baseline, costRate, onDeletePerson, onBasel
             <span className="text-slate-600 font-bold">{fmtH(total)}</span>
           </div>
         </button>
-        <div
-          className="flex items-center gap-1.5 px-3 py-3.5 border-l border-gray-100"
-          title="Internal cost rate per hour"
-        >
-          <span className="text-xs text-gray-400">Cost:</span>
-          <input
-            type="number"
-            min={0}
-            value={costInput}
-            onChange={e => setCostInput(e.target.value)}
-            onBlur={() => {
-              const r = Math.max(0, Number(costInput) || 0);
-              setCostInput(r ? String(r) : '');
-              if (r !== costRate) onCostRateChange(r);
-            }}
-            onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
-            className="w-14 text-right border-0 border-b border-gray-300 bg-transparent text-gray-600 font-semibold focus:outline-none focus:border-slate-500 text-xs"
-            placeholder="0"
-          />
-          <span className="text-xs text-gray-400">€/h</span>
-        </div>
-        <button
+        {isAdmin && (
+          <div
+            className="flex items-center gap-1.5 px-3 py-3.5 border-l border-gray-100"
+            title="Internal cost rate per hour"
+          >
+            <span className="text-xs text-gray-400">Cost:</span>
+            <input
+              type="number"
+              min={0}
+              value={costInput}
+              onChange={e => setCostInput(e.target.value)}
+              onBlur={() => {
+                const r = Math.max(0, Number(costInput) || 0);
+                setCostInput(r ? String(r) : '');
+                if (r !== costRate) onCostRateChange(r);
+              }}
+              onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+              className="w-14 text-right border-0 border-b border-gray-300 bg-transparent text-gray-600 font-semibold focus:outline-none focus:border-slate-500 text-xs"
+              placeholder="0"
+            />
+            <span className="text-xs text-gray-400">€/h</span>
+          </div>
+        )}
+        {isAdmin && <button
           type="button"
           onClick={() => {
             if (confirm(`Delete all timesheet data for ${user}?`)) onDeletePerson();
@@ -361,7 +375,7 @@ function MemberCard({ user, entries, baseline, costRate, onDeletePerson, onBasel
           title="Delete this person's timesheets"
         >
           Delete
-        </button>
+        </button>}
       </div>
       {isOpen && (
         <div className="border-t border-gray-100">
@@ -1087,6 +1101,7 @@ function EconomicsView({ entries, billingRates, costRates }: {
 
 export default function TimesheetsClient({ store }: { store: TimesheetStore }) {
   const router = useRouter();
+  const isAdmin = useRole() === 'admin';
   const [isPending, startTransition] = useTransition();
   const [uploading, setUploading] = useState(false);
   const [uploadMsg, setUploadMsg] = useState<string | null>(null);
@@ -1159,7 +1174,7 @@ export default function TimesheetsClient({ store }: { store: TimesheetStore }) {
 
       <div className="bg-white rounded-lg border border-gray-200 p-5 mb-6">
         <div className="flex flex-wrap items-end gap-4">
-          <form onSubmit={handleUpload} className="flex items-center gap-3">
+          {isAdmin && <form onSubmit={handleUpload} className="flex items-center gap-3">
             <div>
               <label className="block text-xs text-gray-500 mb-1">CSV files (one per team member)</label>
               <input
@@ -1177,14 +1192,16 @@ export default function TimesheetsClient({ store }: { store: TimesheetStore }) {
             >
               {uploading ? 'Importing…' : 'Upload'}
             </button>
-          </form>
-          <button
-            onClick={handleClear}
-            disabled={isPending}
-            className="self-end text-xs text-red-500 hover:text-red-700 border border-red-200 px-3 py-1.5 rounded hover:bg-red-50 transition-colors disabled:opacity-40"
-          >
-            Clear all
-          </button>
+          </form>}
+          {isAdmin && (
+            <button
+              onClick={handleClear}
+              disabled={isPending}
+              className="self-end text-xs text-red-500 hover:text-red-700 border border-red-200 px-3 py-1.5 rounded hover:bg-red-50 transition-colors disabled:opacity-40"
+            >
+              Clear all
+            </button>
+          )}
         </div>
 
         {uploadMsg && (

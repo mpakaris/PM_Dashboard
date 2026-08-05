@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { Role } from '@/lib/types';
+import { useRole } from '@/components/RoleProvider';
 import Modal from '@/components/Modal';
 import Badge from '@/components/Badge';
 import { createRole, updateRole, deleteRole } from '@/actions/roles';
@@ -71,6 +72,7 @@ function RoleForm({
 }
 
 export default function RolesClient({ roles }: Props) {
+  const isAdmin = useRole() === 'admin';
   const [showCreate, setShowCreate] = useState(false);
   const [editRole, setEditRole] = useState<Role | null>(null);
 
@@ -78,12 +80,14 @@ export default function RolesClient({ roles }: Props) {
     <div>
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Roles</h1>
-        <button
-          onClick={() => setShowCreate(true)}
-          className="bg-slate-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-slate-700 transition-colors"
-        >
-          Add Role
-        </button>
+        {isAdmin && (
+          <button
+            onClick={() => setShowCreate(true)}
+            className="bg-slate-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-slate-700 transition-colors"
+          >
+            Add Role
+          </button>
+        )}
       </div>
 
       {roles.length === 0 ? (
@@ -121,31 +125,27 @@ export default function RolesClient({ roles }: Props) {
                     />
                   </td>
 
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-2 justify-end">
-                      <button
-                        onClick={() => setEditRole(role)}
-                        className="text-xs text-slate-600 hover:text-slate-800 font-medium"
-                      >
-                        Edit
-                      </button>
-                      <form
-                        action={async () => {
-                          await deleteRole(role.id);
-                        }}
-                      >
+                  {isAdmin && (
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2 justify-end">
                         <button
-                          type="submit"
-                          className="text-xs text-red-500 hover:text-red-700 font-medium"
-                          onClick={(e) => {
-                            if (!confirm('Delete this role?')) e.preventDefault();
-                          }}
+                          onClick={() => setEditRole(role)}
+                          className="text-xs text-slate-600 hover:text-slate-800 font-medium"
                         >
-                          Delete
+                          Edit
                         </button>
-                      </form>
-                    </div>
-                  </td>
+                        <form action={async () => { await deleteRole(role.id); }}>
+                          <button
+                            type="submit"
+                            className="text-xs text-red-500 hover:text-red-700 font-medium"
+                            onClick={(e) => { if (!confirm('Delete this role?')) e.preventDefault(); }}
+                          >
+                            Delete
+                          </button>
+                        </form>
+                      </div>
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>
@@ -153,7 +153,7 @@ export default function RolesClient({ roles }: Props) {
         </div>
       )}
 
-      {showCreate && (
+      {isAdmin && showCreate && (
         <Modal title="Create Role" onClose={() => setShowCreate(false)}>
           <RoleForm
             onSubmit={async (fd) => {
@@ -164,7 +164,7 @@ export default function RolesClient({ roles }: Props) {
         </Modal>
       )}
 
-      {editRole && (
+      {isAdmin && editRole && (
         <Modal title="Edit Role" onClose={() => setEditRole(null)}>
           <RoleForm
             initial={editRole}

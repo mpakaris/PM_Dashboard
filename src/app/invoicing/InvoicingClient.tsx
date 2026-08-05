@@ -2,6 +2,7 @@
 
 import { useState, useMemo, useTransition, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { useRole } from '@/components/RoleProvider';
 import { ElsapMirror, InvoicingStore, InvoiceLineItem } from '@/lib/types';
 import {
   setDefaultRate, setRateOverride, setRoleOverride, removeRoleOverride,
@@ -111,8 +112,10 @@ function fmtDate(iso: string) {
 // ─── Rate input ───────────────────────────────────────────────────────────────
 
 function RateInput({ value, onSave }: { value: number; onSave: (v: number) => void }) {
+  const isAdmin = useRole() === 'admin';
   const [editing, setEditing] = useState(false);
   const [raw, setRaw] = useState('');
+  if (!isAdmin) return <span className="text-slate-600 text-sm tabular-nums">{value ? value.toFixed(2) : '—'} €/h</span>;
   if (editing) return (
     <input autoFocus
       className="w-20 text-right border border-slate-400 rounded px-1 py-0.5 text-sm tabular-nums"
@@ -135,6 +138,7 @@ function InvoiceLines({ month, projectName, poNumber, role, members, rate, lines
   month: string; projectName: string; poNumber: string; role: string; members: ViewMember[];
   rate: number; lines: InvoiceLineItem[]; onRefresh: () => void; isPending: boolean;
 }) {
+  const isAdmin = useRole() === 'admin';
   const [fakturaInput, setFakturaInput] = useState('');
   const [saving, setSaving]             = useState(false);
 
@@ -206,8 +210,8 @@ function InvoiceLines({ month, projectName, poNumber, role, members, rate, lines
             <div className="flex items-center gap-2">
               <span className="text-emerald-700 font-semibold">{line.fakturaNumber}</span>
               <span className="text-gray-400">{fmtDate(line.invoicedAt)}</span>
-              <button onClick={async () => { await removeInvoiceLine(line.id); onRefresh(); }}
-                className="text-gray-300 hover:text-red-400 transition-colors font-bold ml-1">×</button>
+              {isAdmin && <button onClick={async () => { await removeInvoiceLine(line.id); onRefresh(); }}
+                className="text-gray-300 hover:text-red-400 transition-colors font-bold ml-1">×</button>}
             </div>
           </div>
           {line.members && line.members.length > 0 && (
@@ -224,7 +228,7 @@ function InvoiceLines({ month, projectName, poNumber, role, members, rate, lines
       ))}
 
       {/* Remaining members with checkboxes */}
-      {remainingMembers.length > 0 && (
+      {isAdmin && remainingMembers.length > 0 && (
         <div className="space-y-2">
           {isPostInvoice && (
             <div className="flex items-center gap-2 bg-amber-50 border border-amber-300 rounded-md px-3 py-2">
@@ -295,6 +299,7 @@ function InvoiceLines({ month, projectName, poNumber, role, members, rate, lines
 
 export default function InvoicingClient({ mirror, store }: Props) {
   const router = useRouter();
+  const isAdmin = useRole() === 'admin';
   const [isPending, startT] = useTransition();
   const [expandedMonths, setExpandedMonths] = useState<Set<string>>(new Set());
   const [showRates, setShowRates] = useState(false);
@@ -331,7 +336,7 @@ export default function InvoicingClient({ mirror, store }: Props) {
           <h1 className="text-2xl font-bold text-gray-900 mb-1">Invoicing</h1>
           <p className="text-gray-500 text-sm">Per role — exact invoiced hours per Faktura, remaining tracked automatically.</p>
         </div>
-        {activeTab === 'invoice' && (
+        {isAdmin && activeTab === 'invoice' && (
           <button onClick={() => setShowRates(v => !v)}
             className="text-sm border border-gray-300 rounded px-3 py-1.5 text-gray-600 hover:bg-gray-50 transition-colors">
             {showRates ? 'Hide' : 'Edit'} default rates
@@ -567,6 +572,7 @@ function MemberRow({ member, month, projectName, allRoles, rate, store, onRefres
   member: ViewMember; month: string; projectName: string; allRoles: string[];
   rate: number; store: InvoicingStore; onRefresh: () => void;
 }) {
+  const isAdmin = useRole() === 'admin';
   const override = store.roleOverrides.find(o => o.sapUser === member.sapUser && o.month === month && o.projectName === projectName);
 
   async function handleRoleChange(e: React.ChangeEvent<HTMLSelectElement>) {
@@ -583,10 +589,14 @@ function MemberRow({ member, month, projectName, allRoles, rate, store, onRefres
         {override && <span className="text-xs text-sky-500 shrink-0">↪ overridden</span>}
       </div>
       <div className="flex items-center gap-3 shrink-0">
-        <select value={override?.role ?? member.originalRole} onChange={handleRoleChange}
-          className="text-xs border border-gray-200 rounded px-1.5 py-0.5 text-gray-500 focus:outline-none focus:ring-1 focus:ring-slate-300 bg-white">
-          {allRoles.map(r => <option key={r} value={r}>{r}</option>)}
-        </select>
+        {isAdmin ? (
+          <select value={override?.role ?? member.originalRole} onChange={handleRoleChange}
+            className="text-xs border border-gray-200 rounded px-1.5 py-0.5 text-gray-500 focus:outline-none focus:ring-1 focus:ring-slate-300 bg-white">
+            {allRoles.map(r => <option key={r} value={r}>{r}</option>)}
+          </select>
+        ) : (
+          <span className="text-xs text-gray-500">{override?.role ?? member.originalRole}</span>
+        )}
         <span className="font-medium text-gray-700 tabular-nums w-16 text-right">{fmtH(member.hours)}</span>
         {rate > 0 && <span className="text-slate-500 tabular-nums w-28 text-right text-xs">{fmtEur(member.hours * rate)}</span>}
       </div>
@@ -741,6 +751,7 @@ async function generateFakturaPDF(faktura: FakturaGroup, store: InvoicingStore) 
 
 function FakturaView({ store }: { store: InvoicingStore }) {
   const router = useRouter();
+  const isAdmin = useRole() === 'admin';
   const [isPending, startT] = useTransition();
   const fakturas = useMemo(() => buildFakturas(store), [store]);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -853,7 +864,7 @@ function FakturaView({ store }: { store: InvoicingStore }) {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
             </svg>
             <div className="flex-1 min-w-0">
-              {renamingKey === f.fakturaNumber ? (
+              {isAdmin && renamingKey === f.fakturaNumber ? (
                 <input autoFocus
                   value={renameInput}
                   onChange={e => setRenameInput(e.target.value)}
@@ -874,12 +885,12 @@ function FakturaView({ store }: { store: InvoicingStore }) {
                 />
               ) : (
                 <div
-                  className="font-semibold text-gray-800 text-sm flex items-center gap-1.5 group"
-                  onClick={e => { e.stopPropagation(); setRenamingKey(f.fakturaNumber); setRenameInput(f.fakturaNumber); }}
-                  title="Click to rename"
+                  className={`font-semibold text-gray-800 text-sm flex items-center gap-1.5 ${isAdmin ? 'group cursor-pointer' : ''}`}
+                  onClick={isAdmin ? e => { e.stopPropagation(); setRenamingKey(f.fakturaNumber); setRenameInput(f.fakturaNumber); } : undefined}
+                  title={isAdmin ? 'Click to rename' : undefined}
                 >
                   {f.fakturaNumber}
-                  <span className="text-gray-300 text-xs opacity-0 group-hover:opacity-100 transition-opacity">✎</span>
+                  {isAdmin && <span className="text-gray-300 text-xs opacity-0 group-hover:opacity-100 transition-opacity">✎</span>}
                 </div>
               )}
               <div className="text-xs text-gray-400 tabular-nums mt-0.5">{f.periodStart} – {f.periodEnd}</div>
@@ -893,7 +904,7 @@ function FakturaView({ store }: { store: InvoicingStore }) {
               className="text-xs text-emerald-600 hover:text-emerald-800 border border-emerald-200 hover:border-emerald-400 rounded px-2 py-0.5 transition-colors shrink-0 ml-1">
               ↓ PDF
             </button>
-            {deletingKey === f.fakturaNumber ? (
+            {isAdmin && (deletingKey === f.fakturaNumber ? (
               <div className="flex items-center gap-1 shrink-0" onClick={e => e.stopPropagation()}>
                 <span className="text-xs text-red-600 font-medium">Delete?</span>
                 <button
@@ -918,7 +929,7 @@ function FakturaView({ store }: { store: InvoicingStore }) {
                 className="text-xs text-red-400 hover:text-red-600 border border-red-100 hover:border-red-300 rounded px-2 py-0.5 transition-colors shrink-0">
                 Delete
               </button>
-            )}
+            ))}
           </div>
 
           {expanded.has(f.fakturaNumber) && (

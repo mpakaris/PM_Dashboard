@@ -2,8 +2,10 @@
 
 import { useState, useEffect } from 'react';
 import Sidebar from './Sidebar';
+import type { Role } from '@/lib/auth';
+import { RoleProvider } from './RoleProvider';
 
-export default function LayoutShell({ children }: { children: React.ReactNode }) {
+export default function LayoutShell({ children, role }: { children: React.ReactNode; role: Role }) {
   const [open, setOpen] = useState(true);
 
   useEffect(() => {
@@ -20,9 +22,8 @@ export default function LayoutShell({ children }: { children: React.ReactNode })
 
   return (
     <>
-      <Sidebar open={open} onToggle={toggle} />
+      <Sidebar open={open} onToggle={toggle} role={role} />
 
-      {/* Re-open tab shown when sidebar is hidden */}
       {!open && (
         <button
           onClick={toggle}
@@ -36,7 +37,7 @@ export default function LayoutShell({ children }: { children: React.ReactNode })
       )}
 
       <main className={`min-h-screen p-8 transition-[margin-left] duration-200 ${open ? 'ml-60' : 'ml-0'}`}>
-        {children}
+        <RoleProvider role={role}>{children}</RoleProvider>
       </main>
     </>
   );

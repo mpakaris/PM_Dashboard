@@ -1,9 +1,11 @@
 "use client";
 
 import { pushDevToProd, pushProdToDev } from "@/actions/devTools";
+import { logout } from "@/actions/auth";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
+import type { Role } from "@/lib/auth";
 
 const sections = [
   {
@@ -48,9 +50,11 @@ const sections = [
 export default function Sidebar({
   open = true,
   onToggle,
+  role,
 }: {
   open?: boolean;
   onToggle?: () => void;
+  role?: Role;
 }) {
   const pathname = usePathname();
 
@@ -60,7 +64,7 @@ export default function Sidebar({
     >
       <div className="px-6 py-5 border-b border-slate-700 flex items-center justify-between">
         <h1 className="text-lg font-bold text-white leading-tight">
-          Resource Dashboard
+          Ressource Dashboard
         </h1>
         <button
           onClick={onToggle}
@@ -114,7 +118,27 @@ export default function Sidebar({
         ))}
       </nav>
 
-      {process.env.NODE_ENV === "development" && <DevToolsPanel />}
+      {role && (
+        <div className="px-3 py-3 border-t border-slate-700 flex items-center justify-between">
+          <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
+            role === 'admin'
+              ? 'bg-amber-500/20 text-amber-300'
+              : 'bg-slate-600 text-slate-300'
+          }`}>
+            {role === 'admin' ? 'Admin' : 'Viewer'}
+          </span>
+          <form action={logout}>
+            <button
+              type="submit"
+              className="text-xs text-slate-400 hover:text-white transition-colors px-2 py-1 rounded hover:bg-slate-700"
+            >
+              Sign out
+            </button>
+          </form>
+        </div>
+      )}
+
+      {process.env.NODE_ENV === "development" && role === "admin" && <DevToolsPanel />}
     </aside>
   );
 }
