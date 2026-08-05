@@ -16,6 +16,7 @@ import {
   updateProjektAnalysisForecast,
   updateProjektAnalysisProjectSettings,
   updateProjektAnalysisChanges,
+  uploadEmployeeExcel,
 } from '@/actions/projektAnalysis';
 import {
   MonthlyByTicketChart,
@@ -193,6 +194,49 @@ function EmployeeDetailTable({
         </tfoot>
       </table>
     </div>
+  );
+}
+
+// ─── Employee Excel Upload ─────────────────────────────────────────────────────
+
+function EmployeeExcelUpload({ projectId, userName, onDone }: { projectId: string; userName: string; onDone: () => void }) {
+  const [status, setStatus] = useState<'idle' | 'loading' | 'ok' | 'error'>('idle');
+  const [msg, setMsg] = useState('');
+
+  async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setStatus('loading');
+    setMsg('');
+    const fd = new FormData();
+    fd.append('file', file);
+    const res = await uploadEmployeeExcel(fd, projectId, userName);
+    if (res.ok) {
+      setStatus('ok');
+      setMsg(`+${res.added} entries`);
+      onDone();
+    } else {
+      setStatus('error');
+      setMsg(res.error ?? 'Upload failed');
+    }
+    e.target.value = '';
+  }
+
+  return (
+    <label className="flex items-center gap-1.5 cursor-pointer group" title="Upload Excel for this employee">
+      <input type="file" accept=".xlsx,.xls" className="sr-only" onChange={handleFile} disabled={status === 'loading'} />
+      {status === 'loading' ? (
+        <span className="text-xs text-gray-400">Uploading…</span>
+      ) : status === 'ok' ? (
+        <span className="text-xs text-emerald-600">{msg}</span>
+      ) : status === 'error' ? (
+        <span className="text-xs text-red-500" title={msg}>Error</span>
+      ) : (
+        <span className="text-xs text-gray-300 group-hover:text-slate-500 transition-colors px-2 py-1 border border-transparent group-hover:border-gray-200 rounded">
+          ↑ Excel
+        </span>
+      )}
+    </label>
   );
 }
 
@@ -691,7 +735,15 @@ export default function ProjektAnalysisDetailClient({ project }: Props) {
                           <td className={`px-4 py-3 text-right font-medium ${row.pl >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
                             {row.cost > 0 || row.revenue > 0 ? fmtEur(row.pl) : <span className="text-gray-300">—</span>}
                           </td>
-                          <td className="px-4 py-3" />
+                          <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
+                            {isAdmin && (
+                              <EmployeeExcelUpload
+                                projectId={project.id}
+                                userName={row.user}
+                                onDone={() => router.refresh()}
+                              />
+                            )}
+                          </td>
                         </tr>
                         {isExpanded && (
                           <tr className="bg-slate-50 border-b border-gray-100">

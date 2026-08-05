@@ -12,6 +12,7 @@ import {
   ProjektAnalysisChange,
 } from '@/lib/types';
 import { generateId } from '@/lib/utils';
+import * as XLSX from 'xlsx';
 
 // ─── CSV Parser ───────────────────────────────────────────────────────────────
 
@@ -195,4 +196,111 @@ export async function updateProjektAnalysisChanges(
   projects[idx] = { ...projects[idx], changes };
   await writeProjektAnalysis(projects);
   revalidatePath(`/projekt-analysis/${id}`);
+}
+
+// ─── Excel Upload for Employee ────────────────────────────────────────────────
+
+function parseEmployeeExcel(buffer: ArrayBuffer): { task: string; month: string; spentTime: number }[] {
+  const workbook = XLSX.read(buffer, { type: 'array', cellDates: false });
+  const sheet = workbook.Sheets[workbook.SheetNames[0]];
+  const raw = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: '' });
+  if (raw.length < 2) return [];
+
+  const headers = (raw[0] as unknown[]).map(h => String(h ?? '').trim().toLowerCase());
+  const iId    = headers.findIndex(h => h.includes('ticket-id') || h === 'ticket_id' || h === 'ticketid' || h.startsWith('ticket-id'));
+  const iTitle = headers.findIndex(h => h.includes('titel') || h.includes('title'));
+  const iDate  = headers.findIndex(h => h.includes('datum') || h === 'date');
+  const iHours = headers.findIndex(h => h.includes('stunden') || h.includes('dauer') || h.includes('hours'));
+
+  if ([iId, iTitle, iDate, iHours].some(x => x < 0)) return [];
+
+  const result: { task: string; month: string; spentTime: number }[] = [];
+
+  for (let i = 1; i < raw.length; i++) {
+    const row = raw[i] as unknown[];
+    const ticketId   = String(row[iId]   ?? '').trim();
+    const ticketTitle = String(row[iTitle] ?? '').trim();
+    const dateStr    = String(row[iDate]  ?? '').trim();
+    const hoursRaw   = String(row[iHours] ?? '').trim().replace(',', '.');
+    const spentTime  = parseFloat(hoursRaw) || 0;
+
+    if (!ticketId || !dateStr || spentTime <= 0) continue;
+
+    // Build task key matching existing format: "#40111 - IDM.ONe..."
+    const task = ticketTitle ? `#${ticketId} - ${ticketTitle}` : `#${ticketId}`;
+
+    // Parse DD.MM.YYYY → YYYY-MM
+    const parts = dateStr.split(/[./]/);
+    let month = '';
+    if (parts.length === 3 && parts[2].length === 4) {
+      month = `${parts[2]}-${parts[1].padStart(2, '0')}`;
+    } else if (/^\d{4}-\d{2}/.test(dateStr)) {
+      month = dateStr.slice(0, 7);
+    }
+    if (!month) continue;
+
+    result.push({ task, month, spentTime });
+  }
+
+  return result;
+}
+
+export async function uploadEmployeeExcel(
+  formData: FormData,
+  projectId: string,
+  userName: string
+): Promise<{ ok: boolean; error?: string; added: number }> {
+  const file = formData.get('file') as File | null;
+  if (!file) return { ok: false, error: 'No file provided', added: 0 };
+
+  const buffer = await file.arrayBuffer();
+  const rows = parseEmployeeExcel(buffer);
+  if (rows.length === 0) return { ok: false, error: 'No valid entries found in file', added: 0 };
+
+  // Aggregate by task + month
+  const incoming = new Map<string, number>();
+  for (const r of rows) {
+    const key = `${r.task}|||${r.month}`;
+    incoming.set(key, (incoming.get(key) ?? 0) + r.spentTime);
+  }
+
+  const projects = await readProjektAnalysis();
+  const idx = projects.findIndex(p => p.id === projectId);
+  if (idx < 0) return { ok: false, error: 'Project not found', added: 0 };
+
+  const project = projects[idx];
+
+  // Keep entries from other users, drop this user's entries that overlap with new data
+  const otherEntries = project.entries.filter(e => e.user !== userName);
+  const userOldEntries = project.entries.filter(e => e.user === userName);
+  const nonOverlapping = userOldEntries.filter(e => !incoming.has(`${e.task}|||${e.month}`));
+
+  // Build new entries for this user
+  const newEntries: ProjektAnalysisEntry[] = [];
+  for (const [key, spentTime] of incoming) {
+    const [task, month] = key.split('|||');
+    newEntries.push({ task, month, user: userName, activity: 'Work', spentTime });
+  }
+
+  const mergedEntries = [...otherEntries, ...nonOverlapping, ...newEntries];
+
+  // Add new tickets to forecast if they don't exist yet
+  const existingTaskSet = new Set(project.forecast.tickets.map(t => t.task));
+  const newTasks = [...new Set(newEntries.map(e => e.task))].filter(t => !existingTaskSet.has(t));
+  const mergedForecastTickets: ProjektAnalysisTicketForecast[] = [
+    ...project.forecast.tickets,
+    ...newTasks.map(task => ({ task, expectedHours: 0, billable: true, rate: 0 })),
+  ];
+
+  projects[idx] = {
+    ...project,
+    uploadedAt: new Date().toISOString(),
+    entries: mergedEntries,
+    forecast: { ...project.forecast, tickets: mergedForecastTickets },
+  };
+
+  await writeProjektAnalysis(projects);
+  revalidatePath(`/projekt-analysis/${projectId}`);
+
+  return { ok: true, added: newEntries.length };
 }
