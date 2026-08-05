@@ -249,6 +249,7 @@ export interface ProjektAnalysisProject {
   contractHours: number;  // Festpreis: calculated hours (basis for price)
   contractValue: number;  // Festpreis: base contract value €
   changes: ProjektAnalysisChange[];  // Nachträge — increases to contract value
+  members: string[];      // explicit member list — persists even when entries are empty
   entries: ProjektAnalysisEntry[];
   memberSettings: ProjektAnalysisMemberSettings[];
   forecast: ProjektAnalysisForecast;

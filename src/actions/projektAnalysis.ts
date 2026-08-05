@@ -109,15 +109,18 @@ export async function uploadProjektAnalysisCSV(formData: FormData): Promise<{
       existingTicketMap.get(task) ?? { task, expectedHours: 0, billable: true, rate: 0 }
     );
     const activeUsers = new Set(entries.map(e => e.user));
+    const mergedMembers = [...new Set([...existing.members, ...activeUsers])];
     project = {
       ...existing,
       uploadedAt: new Date().toISOString(),
       entries,
+      members: mergedMembers,
       memberSettings: existing.memberSettings.filter(s => activeUsers.has(s.user)),
       forecast: { ...existing.forecast, tickets: mergedTickets },
     };
     projects[existingIdx] = project;
   } else {
+    const activeUsers = [...new Set(entries.map(e => e.user))];
     project = {
       id: generateId(),
       name,
@@ -127,6 +130,7 @@ export async function uploadProjektAnalysisCSV(formData: FormData): Promise<{
       contractHours: 0,
       contractValue: 0,
       changes: [],
+      members: activeUsers,
       entries,
       memberSettings: [],
       forecast: {
@@ -207,9 +211,47 @@ export async function deleteEmployeeEntries(
   const projects = await readProjektAnalysis();
   const idx = projects.findIndex(p => p.id === projectId);
   if (idx < 0) return { ok: false, error: 'Project not found' };
+  const project = projects[idx];
+  const members = project.members.includes(userName) ? project.members : [...project.members, userName];
   projects[idx] = {
-    ...projects[idx],
-    entries: projects[idx].entries.filter(e => e.user !== userName),
+    ...project,
+    members,
+    entries: project.entries.filter(e => e.user !== userName),
+  };
+  await writeProjektAnalysis(projects);
+  revalidatePath(`/projekt-analysis/${projectId}`);
+  return { ok: true };
+}
+
+export async function addProjectMember(
+  projectId: string,
+  userName: string
+): Promise<{ ok: boolean; error?: string }> {
+  const trimmed = userName.trim();
+  if (!trimmed) return { ok: false, error: 'Name required' };
+  const projects = await readProjektAnalysis();
+  const idx = projects.findIndex(p => p.id === projectId);
+  if (idx < 0) return { ok: false, error: 'Project not found' };
+  const project = projects[idx];
+  if (project.members.includes(trimmed)) return { ok: true };
+  projects[idx] = { ...project, members: [...project.members, trimmed] };
+  await writeProjektAnalysis(projects);
+  revalidatePath(`/projekt-analysis/${projectId}`);
+  return { ok: true };
+}
+
+export async function removeProjectMember(
+  projectId: string,
+  userName: string
+): Promise<{ ok: boolean; error?: string }> {
+  const projects = await readProjektAnalysis();
+  const idx = projects.findIndex(p => p.id === projectId);
+  if (idx < 0) return { ok: false, error: 'Project not found' };
+  const project = projects[idx];
+  projects[idx] = {
+    ...project,
+    members: project.members.filter(m => m !== userName),
+    entries: project.entries.filter(e => e.user !== userName),
   };
   await writeProjektAnalysis(projects);
   revalidatePath(`/projekt-analysis/${projectId}`);
@@ -334,9 +376,12 @@ export async function uploadEmployeeExcel(
     ...newTasks.map(task => ({ task, expectedHours: 0, billable: true, rate: 0 })),
   ];
 
+  const members = project.members.includes(userName) ? project.members : [...project.members, userName];
+
   projects[idx] = {
     ...project,
     uploadedAt: new Date().toISOString(),
+    members,
     entries: mergedEntries,
     forecast: { ...project.forecast, tickets: mergedForecastTickets },
   };

@@ -18,6 +18,8 @@ import {
   updateProjektAnalysisChanges,
   uploadEmployeeExcel,
   deleteEmployeeEntries,
+  addProjectMember,
+  removeProjectMember,
 } from '@/actions/projektAnalysis';
 import {
   MonthlyByTicketChart,
@@ -198,10 +200,59 @@ function EmployeeDetailTable({
   );
 }
 
+// ─── Add Employee Row ─────────────────────────────────────────────────────────
+
+function AddEmployeeRow({ projectId, onDone }: { projectId: string; onDone: () => void }) {
+  const [adding, setAdding] = useState(false);
+  const [name, setName] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  async function handleAdd() {
+    if (!name.trim()) return;
+    setBusy(true);
+    await addProjectMember(projectId, name.trim());
+    setName('');
+    setAdding(false);
+    setBusy(false);
+    onDone();
+  }
+
+  if (!adding) return (
+    <button
+      onClick={() => setAdding(true)}
+      className="text-xs text-gray-400 hover:text-slate-600 border border-dashed border-gray-200 hover:border-gray-300 rounded-md px-3 py-2 transition-colors"
+    >
+      + Add Employee
+    </button>
+  );
+
+  return (
+    <div className="flex items-center gap-2">
+      <input
+        autoFocus
+        type="text"
+        placeholder="Employee name"
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        onKeyDown={(e) => { if (e.key === 'Enter') handleAdd(); if (e.key === 'Escape') { setAdding(false); setName(''); } }}
+        className="border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
+      />
+      <button
+        onClick={handleAdd}
+        disabled={busy || !name.trim()}
+        className="text-xs text-white bg-slate-600 hover:bg-slate-700 px-3 py-1.5 rounded-md transition-colors disabled:opacity-50"
+      >
+        Add
+      </button>
+      <button onClick={() => { setAdding(false); setName(''); }} className="text-xs text-gray-400 hover:text-gray-600">Cancel</button>
+    </div>
+  );
+}
+
 // ─── Employee Excel Upload ─────────────────────────────────────────────────────
 
 function EmployeeExcelUpload({ projectId, userName, onDone }: { projectId: string; userName: string; onDone: () => void }) {
-  const [status, setStatus] = useState<'idle' | 'loading' | 'ok' | 'error' | 'confirm-delete'>('idle');
+  const [status, setStatus] = useState<'idle' | 'loading' | 'ok' | 'error' | 'confirm-clear' | 'confirm-remove'>('idle');
   const [msg, setMsg] = useState('');
 
   async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
@@ -223,32 +274,42 @@ function EmployeeExcelUpload({ projectId, userName, onDone }: { projectId: strin
     e.target.value = '';
   }
 
-  async function handleDelete() {
+  async function handleClear() {
     setStatus('loading');
     const res = await deleteEmployeeEntries(projectId, userName);
-    if (res.ok) {
-      onDone();
-      setStatus('idle');
-    } else {
-      setStatus('error');
-      setMsg(res.error ?? 'Delete failed');
-    }
+    if (res.ok) { onDone(); setStatus('idle'); }
+    else { setStatus('error'); setMsg(res.error ?? 'Failed'); }
+  }
+
+  async function handleRemove() {
+    setStatus('loading');
+    const res = await removeProjectMember(projectId, userName);
+    if (res.ok) { onDone(); setStatus('idle'); }
+    else { setStatus('error'); setMsg(res.error ?? 'Failed'); }
   }
 
   if (status === 'loading') return <span className="text-xs text-gray-400">Working…</span>;
   if (status === 'ok') return <span className="text-xs text-emerald-600">{msg}</span>;
   if (status === 'error') return <span className="text-xs text-red-500" title={msg}>Error</span>;
 
-  if (status === 'confirm-delete') return (
+  if (status === 'confirm-clear') return (
     <div className="flex items-center gap-1.5">
-      <span className="text-xs text-gray-500">Delete all entries?</span>
-      <button onClick={handleDelete} className="text-xs text-red-500 hover:text-red-700 font-medium">Yes</button>
+      <span className="text-xs text-gray-500">Clear entries?</span>
+      <button onClick={handleClear} className="text-xs text-red-500 hover:text-red-700 font-medium">Yes</button>
+      <button onClick={() => setStatus('idle')} className="text-xs text-gray-400 hover:text-gray-600">No</button>
+    </div>
+  );
+
+  if (status === 'confirm-remove') return (
+    <div className="flex items-center gap-1.5">
+      <span className="text-xs text-gray-500">Remove employee?</span>
+      <button onClick={handleRemove} className="text-xs text-red-500 hover:text-red-700 font-medium">Yes</button>
       <button onClick={() => setStatus('idle')} className="text-xs text-gray-400 hover:text-gray-600">No</button>
     </div>
   );
 
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-1">
       <label className="cursor-pointer group" title="Upload Excel for this employee">
         <input type="file" accept=".xlsx,.xls" className="sr-only" onChange={handleFile} />
         <span className="text-xs text-gray-300 group-hover:text-slate-500 transition-colors px-2 py-1 border border-transparent group-hover:border-gray-200 rounded">
@@ -256,9 +317,16 @@ function EmployeeExcelUpload({ projectId, userName, onDone }: { projectId: strin
         </span>
       </label>
       <button
-        onClick={() => setStatus('confirm-delete')}
+        onClick={() => setStatus('confirm-clear')}
+        className="text-xs text-gray-300 hover:text-amber-500 transition-colors px-1.5 py-1"
+        title="Clear entries (keep employee)"
+      >
+        Clear
+      </button>
+      <button
+        onClick={() => setStatus('confirm-remove')}
         className="text-xs text-gray-300 hover:text-red-400 transition-colors px-1"
-        title="Delete all entries for this employee"
+        title="Remove employee from project"
       >
         ✕
       </button>
@@ -308,7 +376,10 @@ export default function ProjektAnalysisDetailClient({ project }: Props) {
 
   // ── Derived base data ──────────────────────────────────────────────────────
   const months = useMemo(() => [...new Set(filteredEntries.map(e => e.month))].sort(), [filteredEntries]);
-  const users = useMemo(() => [...new Set(filteredEntries.map(e => e.user))].sort(), [filteredEntries]);
+  const users = useMemo(() => {
+    const fromEntries = filteredEntries.map(e => e.user);
+    return [...new Set([...project.members, ...fromEntries])].sort();
+  }, [filteredEntries, project.members]);
   const tasks = useMemo(() => [...new Set(filteredEntries.map(e => e.task))].sort(), [filteredEntries]);
   const totalHours = useMemo(() => filteredEntries.reduce((s, e) => s + e.spentTime, 0), [filteredEntries]);
   const workHours = useMemo(() => filteredEntries.filter(e => e.activity === 'Work').reduce((s, e) => s + e.spentTime, 0), [filteredEntries]);
@@ -806,6 +877,7 @@ export default function ProjektAnalysisDetailClient({ project }: Props) {
             </div>
           </div>
           {isPending && <p className="text-xs text-gray-400">Saving…</p>}
+          {isAdmin && <AddEmployeeRow projectId={project.id} onDone={() => router.refresh()} />}
         </div>
       )}
 
