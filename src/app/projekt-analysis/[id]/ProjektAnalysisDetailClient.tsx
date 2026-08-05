@@ -17,6 +17,7 @@ import {
   updateProjektAnalysisProjectSettings,
   updateProjektAnalysisChanges,
   uploadEmployeeExcel,
+  deleteEmployeeEntries,
 } from '@/actions/projektAnalysis';
 import {
   MonthlyByTicketChart,
@@ -200,7 +201,7 @@ function EmployeeDetailTable({
 // ─── Employee Excel Upload ─────────────────────────────────────────────────────
 
 function EmployeeExcelUpload({ projectId, userName, onDone }: { projectId: string; userName: string; onDone: () => void }) {
-  const [status, setStatus] = useState<'idle' | 'loading' | 'ok' | 'error'>('idle');
+  const [status, setStatus] = useState<'idle' | 'loading' | 'ok' | 'error' | 'confirm-delete'>('idle');
   const [msg, setMsg] = useState('');
 
   async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
@@ -222,21 +223,46 @@ function EmployeeExcelUpload({ projectId, userName, onDone }: { projectId: strin
     e.target.value = '';
   }
 
+  async function handleDelete() {
+    setStatus('loading');
+    const res = await deleteEmployeeEntries(projectId, userName);
+    if (res.ok) {
+      onDone();
+      setStatus('idle');
+    } else {
+      setStatus('error');
+      setMsg(res.error ?? 'Delete failed');
+    }
+  }
+
+  if (status === 'loading') return <span className="text-xs text-gray-400">Working…</span>;
+  if (status === 'ok') return <span className="text-xs text-emerald-600">{msg}</span>;
+  if (status === 'error') return <span className="text-xs text-red-500" title={msg}>Error</span>;
+
+  if (status === 'confirm-delete') return (
+    <div className="flex items-center gap-1.5">
+      <span className="text-xs text-gray-500">Delete all entries?</span>
+      <button onClick={handleDelete} className="text-xs text-red-500 hover:text-red-700 font-medium">Yes</button>
+      <button onClick={() => setStatus('idle')} className="text-xs text-gray-400 hover:text-gray-600">No</button>
+    </div>
+  );
+
   return (
-    <label className="flex items-center gap-1.5 cursor-pointer group" title="Upload Excel for this employee">
-      <input type="file" accept=".xlsx,.xls" className="sr-only" onChange={handleFile} disabled={status === 'loading'} />
-      {status === 'loading' ? (
-        <span className="text-xs text-gray-400">Uploading…</span>
-      ) : status === 'ok' ? (
-        <span className="text-xs text-emerald-600">{msg}</span>
-      ) : status === 'error' ? (
-        <span className="text-xs text-red-500" title={msg}>Error</span>
-      ) : (
+    <div className="flex items-center gap-2">
+      <label className="cursor-pointer group" title="Upload Excel for this employee">
+        <input type="file" accept=".xlsx,.xls" className="sr-only" onChange={handleFile} />
         <span className="text-xs text-gray-300 group-hover:text-slate-500 transition-colors px-2 py-1 border border-transparent group-hover:border-gray-200 rounded">
           ↑ Excel
         </span>
-      )}
-    </label>
+      </label>
+      <button
+        onClick={() => setStatus('confirm-delete')}
+        className="text-xs text-gray-300 hover:text-red-400 transition-colors px-1"
+        title="Delete all entries for this employee"
+      >
+        ✕
+      </button>
+    </div>
   );
 }
 

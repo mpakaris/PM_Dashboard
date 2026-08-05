@@ -198,6 +198,24 @@ export async function updateProjektAnalysisChanges(
   revalidatePath(`/projekt-analysis/${id}`);
 }
 
+// ─── Delete Employee Entries ──────────────────────────────────────────────────
+
+export async function deleteEmployeeEntries(
+  projectId: string,
+  userName: string
+): Promise<{ ok: boolean; error?: string }> {
+  const projects = await readProjektAnalysis();
+  const idx = projects.findIndex(p => p.id === projectId);
+  if (idx < 0) return { ok: false, error: 'Project not found' };
+  projects[idx] = {
+    ...projects[idx],
+    entries: projects[idx].entries.filter(e => e.user !== userName),
+  };
+  await writeProjektAnalysis(projects);
+  revalidatePath(`/projekt-analysis/${projectId}`);
+  return { ok: true };
+}
+
 // ─── Excel Upload for Employee ────────────────────────────────────────────────
 
 function excelSerialToMonth(serial: number): string {
