@@ -10,8 +10,7 @@ export default async function ProjektAnalysisDetailPage({ params }: { params: Pr
   return (
     <ProjektAnalysisDetailClient
       project={project}
-      planningProjects={appData.projects}
-      planningAssignments={appData.assignments}
+      forecasts={appData.forecasts}
       teamMembers={appData.teamMembers}
     />
   );

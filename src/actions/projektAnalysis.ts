@@ -202,16 +202,16 @@ export async function updateProjektAnalysisChanges(
   revalidatePath(`/projekt-analysis/${id}`);
 }
 
-// ─── Link Planning Project ────────────────────────────────────────────────────
+// ─── Link Forecast Scenario ───────────────────────────────────────────────────
 
-export async function linkPlanningProject(
+export async function linkForecast(
   projektAnalysisId: string,
-  planningProjectId: string | null
+  forecastId: string | null
 ): Promise<void> {
   const projects = await readProjektAnalysis();
   const idx = projects.findIndex(p => p.id === projektAnalysisId);
   if (idx < 0) return;
-  projects[idx] = { ...projects[idx], linkedPlanningProjectId: planningProjectId ?? undefined };
+  projects[idx] = { ...projects[idx], linkedForecastId: forecastId ?? undefined };
   await writeProjektAnalysis(projects);
   revalidatePath(`/projekt-analysis/${projektAnalysisId}`);
 }

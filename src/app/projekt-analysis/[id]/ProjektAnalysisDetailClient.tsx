@@ -11,8 +11,7 @@ import {
   ProjektAnalysisType,
   ProjektAnalysisChange,
   ProjektAnalysisEntry,
-  Project as PlanningProject,
-  Assignment as PlanningAssignment,
+  Forecast,
   TeamMember,
 } from '@/lib/types';
 import {
@@ -24,7 +23,7 @@ import {
   deleteEmployeeEntries,
   addProjectMember,
   removeProjectMember,
-  linkPlanningProject,
+  linkForecast,
 } from '@/actions/projektAnalysis';
 import {
   MonthlyByTicketChart,
@@ -355,12 +354,11 @@ function KpiCard({ label, value, sub }: { label: string; value: string; sub?: st
 
 interface Props {
   project: ProjektAnalysisProject;
-  planningProjects: PlanningProject[];
-  planningAssignments: PlanningAssignment[];
+  forecasts: Forecast[];
   teamMembers: TeamMember[];
 }
 
-export default function ProjektAnalysisDetailClient({ project, planningProjects, planningAssignments, teamMembers }: Props) {
+export default function ProjektAnalysisDetailClient({ project, forecasts, teamMembers }: Props) {
   const router = useRouter();
   const isAdmin = useRole() === 'admin';
   const [activeTab, setActiveTab] = useState<Tab>('Overview');
@@ -419,25 +417,29 @@ export default function ProjektAnalysisDetailClient({ project, planningProjects,
 
   const isFiltered = (!!dataMin && filterStart > dataMin) || (!!dataMax && filterEnd < dataMax);
 
-  // ── Linked planning data ───────────────────────────────────────────────────
-  const linkedPlanningProject = useMemo(
-    () => planningProjects.find(p => p.id === project.linkedPlanningProjectId) ?? null,
-    [planningProjects, project.linkedPlanningProjectId]
+  // ── Linked forecast data ───────────────────────────────────────────────────
+  const linkedForecast = useMemo(
+    () => forecasts.find(f => f.id === project.linkedForecastId) ?? null,
+    [forecasts, project.linkedForecastId]
   );
 
   const planningEntries = useMemo((): ProjektAnalysisEntry[] => {
-    if (!linkedPlanningProject) return [];
-    const memberMap = new Map(teamMembers.map(m => [m.id, m.name]));
+    if (!linkedForecast) return [];
+    const memberMap = new Map([
+      ...teamMembers.map(m => [m.id, m.name] as [string, string]),
+      ...linkedForecast.ghostMembers.map(g => [g.id, g.name] as [string, string]),
+    ]);
+    const projectMap = new Map(linkedForecast.projects.map(p => [p.id, p.name]));
     const entries: ProjektAnalysisEntry[] = [];
-    for (const a of planningAssignments) {
-      if (a.projectId !== linkedPlanningProject.id) continue;
+    for (const a of linkedForecast.assignments) {
+      const taskName = projectMap.get(a.projectId) ?? a.projectId;
       const userName = memberMap.get(a.memberId) ?? a.memberId;
       for (const [month, hours] of Object.entries(a.plannedHours)) {
-        if (hours > 0) entries.push({ task: linkedPlanningProject.name, month, user: userName, activity: 'Work', spentTime: hours });
+        if (hours > 0) entries.push({ task: taskName, month, user: userName, activity: 'Work', spentTime: hours });
       }
     }
     return entries;
-  }, [linkedPlanningProject, planningAssignments, teamMembers]);
+  }, [linkedForecast, teamMembers]);
 
   // ── Member settings (local editable state) ────────────────────────────────
   const [memberRates, setMemberRates] = useState<Record<string, { costRate: number; billingRate: number }>>(() => {
@@ -1156,16 +1158,16 @@ export default function ProjektAnalysisDetailClient({ project, planningProjects,
               <div className="flex items-center gap-2">
                 <span className="text-xs text-gray-400">Link Planning Project</span>
                 <select
-                  value={project.linkedPlanningProjectId ?? ''}
+                  value={project.linkedForecastId ?? ''}
                   onChange={async (e) => {
-                    await linkPlanningProject(project.id, e.target.value || null);
+                    await linkForecast(project.id, e.target.value || null);
                     router.refresh();
                   }}
                   className="text-xs border border-gray-200 rounded-md px-2 py-1 text-gray-600 focus:outline-none focus:ring-2 focus:ring-slate-400 max-w-[200px]"
                 >
                   <option value="">— None —</option>
-                  {planningProjects.map(p => (
-                    <option key={p.id} value={p.id}>{p.name}</option>
+                  {forecasts.map(f => (
+                    <option key={f.id} value={f.id}>{f.name}</option>
                   ))}
                 </select>
               </div>
@@ -1303,12 +1305,12 @@ export default function ProjektAnalysisDetailClient({ project, planningProjects,
           )}
 
           {/* ── Planning overlay ── */}
-          {linkedPlanningProject && planningEntries.length > 0 && (
+          {linkedForecast && planningEntries.length > 0 && (
             <>
               <div className="flex items-center gap-3 pt-2">
                 <div className="h-px flex-1 bg-slate-200" />
                 <span className="text-xs font-semibold text-slate-500 uppercase tracking-widest px-1">
-                  Plan · {linkedPlanningProject.name}
+                  Plan · {linkedForecast.name}
                 </span>
                 <div className="h-px flex-1 bg-slate-200" />
               </div>
@@ -1323,10 +1325,10 @@ export default function ProjektAnalysisDetailClient({ project, planningProjects,
               <CumulativeChart entries={planningEntries} totalExpectedHours={forecastDraft.totalExpectedHours} />
             </>
           )}
-          {linkedPlanningProject && planningEntries.length === 0 && (
+          {linkedForecast && planningEntries.length === 0 && (
             <div className="flex items-center gap-3 pt-2">
               <div className="h-px flex-1 bg-slate-200" />
-              <span className="text-xs text-slate-400 px-1">Plan · {linkedPlanningProject.name} · no entries</span>
+              <span className="text-xs text-slate-400 px-1">Plan · {linkedForecast.name} · no entries</span>
               <div className="h-px flex-1 bg-slate-200" />
             </div>
           )}
