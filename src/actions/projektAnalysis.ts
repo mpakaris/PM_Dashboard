@@ -202,6 +202,20 @@ export async function updateProjektAnalysisChanges(
   revalidatePath(`/projekt-analysis/${id}`);
 }
 
+// ─── Link Planning Project ────────────────────────────────────────────────────
+
+export async function linkPlanningProject(
+  projektAnalysisId: string,
+  planningProjectId: string | null
+): Promise<void> {
+  const projects = await readProjektAnalysis();
+  const idx = projects.findIndex(p => p.id === projektAnalysisId);
+  if (idx < 0) return;
+  projects[idx] = { ...projects[idx], linkedPlanningProjectId: planningProjectId ?? undefined };
+  await writeProjektAnalysis(projects);
+  revalidatePath(`/projekt-analysis/${projektAnalysisId}`);
+}
+
 // ─── Delete Employee Entries ──────────────────────────────────────────────────
 
 export async function deleteEmployeeEntries(

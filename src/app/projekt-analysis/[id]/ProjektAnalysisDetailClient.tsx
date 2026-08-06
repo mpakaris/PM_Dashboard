@@ -10,6 +10,10 @@ import {
   ProjektAnalysisTicketForecast,
   ProjektAnalysisType,
   ProjektAnalysisChange,
+  ProjektAnalysisEntry,
+  Project as PlanningProject,
+  Assignment as PlanningAssignment,
+  TeamMember,
 } from '@/lib/types';
 import {
   updateProjektAnalysisMemberSettings,
@@ -20,6 +24,7 @@ import {
   deleteEmployeeEntries,
   addProjectMember,
   removeProjectMember,
+  linkPlanningProject,
 } from '@/actions/projektAnalysis';
 import {
   MonthlyByTicketChart,
@@ -350,9 +355,12 @@ function KpiCard({ label, value, sub }: { label: string; value: string; sub?: st
 
 interface Props {
   project: ProjektAnalysisProject;
+  planningProjects: PlanningProject[];
+  planningAssignments: PlanningAssignment[];
+  teamMembers: TeamMember[];
 }
 
-export default function ProjektAnalysisDetailClient({ project }: Props) {
+export default function ProjektAnalysisDetailClient({ project, planningProjects, planningAssignments, teamMembers }: Props) {
   const router = useRouter();
   const isAdmin = useRole() === 'admin';
   const [activeTab, setActiveTab] = useState<Tab>('Overview');
@@ -410,6 +418,26 @@ export default function ProjektAnalysisDetailClient({ project }: Props) {
   }, [filteredEntries]);
 
   const isFiltered = (!!dataMin && filterStart > dataMin) || (!!dataMax && filterEnd < dataMax);
+
+  // ── Linked planning data ───────────────────────────────────────────────────
+  const linkedPlanningProject = useMemo(
+    () => planningProjects.find(p => p.id === project.linkedPlanningProjectId) ?? null,
+    [planningProjects, project.linkedPlanningProjectId]
+  );
+
+  const planningEntries = useMemo((): ProjektAnalysisEntry[] => {
+    if (!linkedPlanningProject) return [];
+    const memberMap = new Map(teamMembers.map(m => [m.id, m.name]));
+    const entries: ProjektAnalysisEntry[] = [];
+    for (const a of planningAssignments) {
+      if (a.projectId !== linkedPlanningProject.id) continue;
+      const userName = memberMap.get(a.memberId) ?? a.memberId;
+      for (const [month, hours] of Object.entries(a.plannedHours)) {
+        if (hours > 0) entries.push({ task: linkedPlanningProject.name, month, user: userName, activity: 'Work', spentTime: hours });
+      }
+    }
+    return entries;
+  }, [linkedPlanningProject, planningAssignments, teamMembers]);
 
   // ── Member settings (local editable state) ────────────────────────────────
   const [memberRates, setMemberRates] = useState<Record<string, { costRate: number; billingRate: number }>>(() => {
@@ -1123,7 +1151,25 @@ export default function ProjektAnalysisDetailClient({ project }: Props) {
         <div className="space-y-6">
           {/* Inputs */}
           {isAdmin && <div className="bg-white rounded-lg ring-1 ring-gray-200 p-5">
-            <h3 className="text-sm font-semibold text-gray-800 mb-4">Forecast Settings</h3>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-semibold text-gray-800">Forecast Settings</h3>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-gray-400">Link Planning Project</span>
+                <select
+                  value={project.linkedPlanningProjectId ?? ''}
+                  onChange={async (e) => {
+                    await linkPlanningProject(project.id, e.target.value || null);
+                    router.refresh();
+                  }}
+                  className="text-xs border border-gray-200 rounded-md px-2 py-1 text-gray-600 focus:outline-none focus:ring-2 focus:ring-slate-400 max-w-[200px]"
+                >
+                  <option value="">— None —</option>
+                  {planningProjects.map(p => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 mb-6">
               <div>
                 <label className="block text-xs text-gray-500 mb-1">Months remaining in project</label>
@@ -1211,6 +1257,79 @@ export default function ProjektAnalysisDetailClient({ project }: Props) {
               ticketForecasts={forecastDraft.tickets}
             />
           </div>
+
+          {/* Trend charts */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <VelocityChart entries={filteredEntries} />
+            <TeamCompositionChart entries={filteredEntries} />
+          </div>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <MonthlyByTicketChart entries={filteredEntries} />
+            <MonthlyByUserChart entries={filteredEntries} />
+          </div>
+          <ActivitySplitChart entries={filteredEntries} />
+          <CumulativeChart entries={filteredEntries} totalExpectedHours={forecastDraft.totalExpectedHours} />
+
+          {projectSettings.projectType === 'time-and-material' && (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <MonthlyBillingChart entries={filteredEntries} memberSettings={project.memberSettings} />
+              <EconomicsChart entries={filteredEntries} memberSettings={project.memberSettings} />
+            </div>
+          )}
+
+          {projectSettings.projectType === 'festpreis' && (
+            <>
+              <FestpreisKalkulationChart
+                entries={filteredEntries}
+                contractHours={projectSettings.contractHours}
+                contractValue={projectSettings.contractValue}
+                changes={changes}
+                monthsRemaining={forecastDraft.monthsRemaining}
+              />
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <FestpreisHoursBurndownChart
+                  entries={filteredEntries}
+                  contractHours={projectSettings.contractHours}
+                />
+                <FestpreisCostChart
+                  entries={filteredEntries}
+                  memberSettings={project.memberSettings}
+                  contractValue={projectSettings.contractValue + changes.reduce((s, c) => s + c.value, 0)}
+                  monthsRemaining={forecastDraft.monthsRemaining}
+                />
+              </div>
+              <EconomicsChart entries={filteredEntries} memberSettings={project.memberSettings} />
+            </>
+          )}
+
+          {/* ── Planning overlay ── */}
+          {linkedPlanningProject && planningEntries.length > 0 && (
+            <>
+              <div className="flex items-center gap-3 pt-2">
+                <div className="h-px flex-1 bg-slate-200" />
+                <span className="text-xs font-semibold text-slate-500 uppercase tracking-widest px-1">
+                  Plan · {linkedPlanningProject.name}
+                </span>
+                <div className="h-px flex-1 bg-slate-200" />
+              </div>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <VelocityChart entries={planningEntries} />
+                <TeamCompositionChart entries={planningEntries} />
+              </div>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <MonthlyByTicketChart entries={planningEntries} />
+                <MonthlyByUserChart entries={planningEntries} />
+              </div>
+              <CumulativeChart entries={planningEntries} totalExpectedHours={forecastDraft.totalExpectedHours} />
+            </>
+          )}
+          {linkedPlanningProject && planningEntries.length === 0 && (
+            <div className="flex items-center gap-3 pt-2">
+              <div className="h-px flex-1 bg-slate-200" />
+              <span className="text-xs text-slate-400 px-1">Plan · {linkedPlanningProject.name} · no entries</span>
+              <div className="h-px flex-1 bg-slate-200" />
+            </div>
+          )}
         </div>
       )}
     </div>
