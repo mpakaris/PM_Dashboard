@@ -9,11 +9,17 @@ import {
 import { ProjektAnalysisEntry, ProjektAnalysisMemberSettings, ProjektAnalysisTicketForecast, ProjektAnalysisChange, OperationContract } from '@/lib/types';
 import { formatMonth } from '@/lib/utils';
 
-const COLORS = [
-  '#6366f1', '#f59e0b', '#10b981', '#ef4444', '#3b82f6',
-  '#ec4899', '#14b8a6', '#f97316', '#8b5cf6', '#84cc16',
+const DEV_COLORS = [
+  '#6366f1', '#3b82f6', '#14b8a6', '#8b5cf6', '#0ea5e9',
+  '#84cc16', '#ec4899', '#10b981', '#a855f7', '#22d3ee',
 ];
+const OPS_COLORS = [
+  '#f59e0b', '#f97316', '#ef4444', '#b45309', '#dc2626',
+];
+const COLORS = DEV_COLORS;
 const getColor = (i: number) => COLORS[i % COLORS.length];
+const getDevColor = (i: number) => DEV_COLORS[i % DEV_COLORS.length];
+const getOpsColor = (i: number) => OPS_COLORS[i % OPS_COLORS.length];
 
 function fmtH(h: number) {
   return h.toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + 'h';
@@ -100,14 +106,31 @@ function LegendPills({
 
 // ─── Monthly Hours by Ticket ──────────────────────────────────────────────────
 
-export function MonthlyByTicketChart({ entries }: { entries: ProjektAnalysisEntry[] }) {
+export function MonthlyByTicketChart({
+  entries,
+  operationTicketSet,
+}: {
+  entries: ProjektAnalysisEntry[];
+  operationTicketSet?: Set<string>;
+}) {
   const months = [...new Set(entries.map(e => e.month))].sort();
-  const tasks = [...new Set(entries.map(e => e.task))].sort();
+  const allTasks = [...new Set(entries.map(e => e.task))].sort();
   const [hidden, setHidden] = useState<Set<string>>(new Set());
+  const hasOps = operationTicketSet && operationTicketSet.size > 0;
 
   if (months.length === 0) return <Empty label="No data available" />;
 
-  const items = tasks.map((t, i) => ({ id: t, label: ticketId(t) || t.slice(0, 12), color: getColor(i) }));
+  // Dev tickets first, ops tickets after — so stacked bars group them visually
+  const devTasks = hasOps ? allTasks.filter(t => !operationTicketSet!.has(t)) : allTasks;
+  const opsTasks = hasOps ? allTasks.filter(t => operationTicketSet!.has(t)) : [];
+  const tasks = [...devTasks, ...opsTasks];
+
+  let devIdx = 0, opsIdx = 0;
+  const items = tasks.map(t => {
+    const isOps = hasOps && operationTicketSet!.has(t);
+    const color = isOps ? getOpsColor(opsIdx++) : getDevColor(devIdx++);
+    return { id: t, label: (isOps ? '⚙ ' : '') + (ticketId(t) || t.slice(0, 12)), color };
+  });
 
   const data = months.map(month => {
     const row: Record<string, any> = { month: formatMonth(month) };
@@ -120,6 +143,8 @@ export function MonthlyByTicketChart({ entries }: { entries: ProjektAnalysisEntr
     }
     return row;
   });
+
+  const colorMap: Record<string, string> = Object.fromEntries(items.map(it => [it.id, it.color]));
 
   return (
     <ChartShell title="Hours per Month by Ticket">
@@ -136,12 +161,25 @@ export function MonthlyByTicketChart({ entries }: { entries: ProjektAnalysisEntr
           <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
           <XAxis dataKey="month" tick={{ fontSize: 11 }} />
           <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `${v}h`} />
-          <Tooltip formatter={(v, name) => [fmtH(Number(v)), ticketId(String(name)) || String(name)]} />
-          {tasks.filter(t => !hidden.has(t)).map((task, i) => (
-            <Bar key={task} dataKey={task} stackId="a" fill={getColor(tasks.indexOf(task))} name={task} />
+          <Tooltip formatter={(v, name) => {
+            const isOps = hasOps && operationTicketSet!.has(String(name));
+            return [fmtH(Number(v)), (isOps ? '[OPS] ' : '') + (ticketId(String(name)) || String(name))];
+          }} />
+          {tasks.filter(t => !hidden.has(t)).map(task => (
+            <Bar key={task} dataKey={task} stackId="a" fill={colorMap[task]} name={task} />
           ))}
         </BarChart>
       </ResponsiveContainer>
+      {hasOps && (
+        <div className="flex gap-4 mt-2">
+          <span className="flex items-center gap-1.5 text-xs text-gray-500">
+            <span className="w-2.5 h-2.5 rounded-sm bg-indigo-500 inline-block" /> Development
+          </span>
+          <span className="flex items-center gap-1.5 text-xs text-gray-500">
+            <span className="w-2.5 h-2.5 rounded-sm bg-amber-400 inline-block" /> Operations
+          </span>
+        </div>
+      )}
     </ChartShell>
   );
 }
@@ -210,7 +248,7 @@ export function ActivitySplitChart({ entries }: { entries: ProjektAnalysisEntry[
   });
 
   return (
-    <ChartShell title="Work vs Operations per Month">
+    <ChartShell title="Work vs Operations per Month (CSV Activity)">
       <ResponsiveContainer width="100%" height={220}>
         <BarChart data={data} margin={{ top: 4, right: 8, left: 0, bottom: 4 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
@@ -227,6 +265,74 @@ export function ActivitySplitChart({ entries }: { entries: ProjektAnalysisEntry[
         </span>
         <span className="flex items-center gap-1.5 text-xs text-gray-500">
           <span className="w-2.5 h-2.5 rounded-sm bg-amber-500 inline-block" /> Operations
+        </span>
+      </div>
+    </ChartShell>
+  );
+}
+
+// ─── Development vs Operations Hours (by contract assignment) ─────────────────
+
+export function DevOpsMonthlyChart({
+  entries,
+  operationTicketSet,
+}: {
+  entries: ProjektAnalysisEntry[];
+  operationTicketSet: Set<string>;
+}) {
+  const months = [...new Set(entries.map(e => e.month))].sort();
+  if (months.length === 0) return <Empty label="No data available" />;
+
+  const data = months.map(month => {
+    const monthEntries = entries.filter(e => e.month === month);
+    const dev = monthEntries.filter(e => !operationTicketSet.has(e.task)).reduce((s, e) => s + e.spentTime, 0);
+    const ops = monthEntries.filter(e => operationTicketSet.has(e.task)).reduce((s, e) => s + e.spentTime, 0);
+    const total = dev + ops;
+    return {
+      month: formatMonth(month),
+      Development: Math.round(dev * 10) / 10,
+      Operations: Math.round(ops * 10) / 10,
+      'Dev %': total > 0 ? Math.round((dev / total) * 100) : 0,
+    };
+  });
+
+  const totalDev = data.reduce((s, d) => s + d.Development, 0);
+  const totalOps = data.reduce((s, d) => s + d.Operations, 0);
+  const total = totalDev + totalOps;
+
+  return (
+    <ChartShell title="Development vs Operations Hours">
+      <div className="flex gap-6 mb-3">
+        <div className="text-center">
+          <p className="text-lg font-bold text-indigo-600">{fmtH(totalDev)}</p>
+          <p className="text-xs text-gray-400">Development {total > 0 ? `(${Math.round((totalDev / total) * 100)}%)` : ''}</p>
+        </div>
+        <div className="text-center">
+          <p className="text-lg font-bold text-amber-500">{fmtH(totalOps)}</p>
+          <p className="text-xs text-gray-400">Operations {total > 0 ? `(${Math.round((totalOps / total) * 100)}%)` : ''}</p>
+        </div>
+      </div>
+      <ResponsiveContainer width="100%" height={220}>
+        <ComposedChart data={data} margin={{ top: 4, right: 8, left: 0, bottom: 4 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+          <XAxis dataKey="month" tick={{ fontSize: 11 }} />
+          <YAxis yAxisId="left" tick={{ fontSize: 11 }} tickFormatter={(v) => `${v}h`} />
+          <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11 }} tickFormatter={(v) => `${v}%`} domain={[0, 100]} />
+          <Tooltip formatter={(v, name) => name === 'Dev %' ? [`${v}%`, 'Dev Share'] : [fmtH(Number(v)), String(name)]} />
+          <Bar yAxisId="left" dataKey="Development" stackId="a" fill="#6366f1" opacity={0.85} />
+          <Bar yAxisId="left" dataKey="Operations" stackId="a" fill="#f59e0b" opacity={0.85} radius={[3, 3, 0, 0]} />
+          <Line yAxisId="right" type="monotone" dataKey="Dev %" stroke="#6366f1" strokeWidth={1.5} strokeDasharray="4 2" dot={{ r: 2 }} />
+        </ComposedChart>
+      </ResponsiveContainer>
+      <div className="flex gap-4 mt-2">
+        <span className="flex items-center gap-1.5 text-xs text-gray-500">
+          <span className="w-2.5 h-2.5 rounded-sm bg-indigo-500 inline-block" /> Development
+        </span>
+        <span className="flex items-center gap-1.5 text-xs text-gray-500">
+          <span className="w-2.5 h-2.5 rounded-sm bg-amber-400 inline-block" /> Operations
+        </span>
+        <span className="flex items-center gap-1.5 text-xs text-gray-500">
+          <span className="w-4 border-t-2 border-dashed border-indigo-400 inline-block" /> Dev %
         </span>
       </div>
     </ChartShell>
@@ -480,22 +586,39 @@ export function TicketProgressChart({
 
 // ─── Velocity Chart (universal) ───────────────────────────────────────────────
 
-export function VelocityChart({ entries }: { entries: ProjektAnalysisEntry[] }) {
+export function VelocityChart({
+  entries,
+  operationTicketSet,
+}: {
+  entries: ProjektAnalysisEntry[];
+  operationTicketSet?: Set<string>;
+}) {
   const months = [...new Set(entries.map(e => e.month))].sort();
   if (months.length === 0) return <Empty label="No data available" />;
+  const hasOps = operationTicketSet && operationTicketSet.size > 0;
 
-  const monthHours: Record<string, number> = {};
-  for (const e of entries) monthHours[e.month] = (monthHours[e.month] || 0) + e.spentTime;
+  const devHours: Record<string, number> = {};
+  const opsHoursMap: Record<string, number> = {};
+  for (const e of entries) {
+    const isOps = hasOps && operationTicketSet!.has(e.task);
+    if (isOps) opsHoursMap[e.month] = (opsHoursMap[e.month] || 0) + e.spentTime;
+    else devHours[e.month] = (devHours[e.month] || 0) + e.spentTime;
+  }
 
   const data = months.map((month, i) => {
-    const h = monthHours[month] || 0;
+    const dev = devHours[month] || 0;
+    const ops = opsHoursMap[month] || 0;
+    const total = dev + ops;
     const window = months.slice(Math.max(0, i - 2), i + 1);
-    const avg = window.reduce((s, m) => s + (monthHours[m] || 0), 0) / window.length;
-    return {
-      month: formatMonth(month),
-      Hours: Math.round(h * 10) / 10,
-      'Ø 3-Month': Math.round(avg * 10) / 10,
-    };
+    const avg = window.reduce((s, m) => s + (devHours[m] || 0) + (opsHoursMap[m] || 0), 0) / window.length;
+    const row: Record<string, any> = { month: formatMonth(month), 'Ø 3-Month': Math.round(avg * 10) / 10 };
+    if (hasOps) {
+      row['Development'] = Math.round(dev * 10) / 10;
+      row['Operations'] = Math.round(ops * 10) / 10;
+    } else {
+      row['Hours'] = Math.round(total * 10) / 10;
+    }
+    return row;
   });
 
   return (
@@ -505,15 +628,33 @@ export function VelocityChart({ entries }: { entries: ProjektAnalysisEntry[] }) 
           <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
           <XAxis dataKey="month" tick={{ fontSize: 11 }} />
           <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `${v}h`} />
-          <Tooltip formatter={(v) => fmtH(Number(v))} />
-          <Bar dataKey="Hours" fill="#e0e7ff" radius={[3, 3, 0, 0]} />
+          <Tooltip formatter={(v, name) => [fmtH(Number(v)), String(name)]} />
+          {hasOps ? (
+            <>
+              <Bar dataKey="Development" stackId="v" fill="#e0e7ff" radius={[0, 0, 0, 0]} />
+              <Bar dataKey="Operations" stackId="v" fill="#fef3c7" radius={[3, 3, 0, 0]} />
+            </>
+          ) : (
+            <Bar dataKey="Hours" fill="#e0e7ff" radius={[3, 3, 0, 0]} />
+          )}
           <Line type="monotone" dataKey="Ø 3-Month" stroke="#6366f1" strokeWidth={2} dot={{ r: 3 }} />
         </ComposedChart>
       </ResponsiveContainer>
       <div className="flex gap-4 mt-2">
-        <span className="flex items-center gap-1.5 text-xs text-gray-500">
-          <span className="w-2.5 h-2.5 rounded-sm bg-indigo-100 inline-block" /> Hours
-        </span>
+        {hasOps ? (
+          <>
+            <span className="flex items-center gap-1.5 text-xs text-gray-500">
+              <span className="w-2.5 h-2.5 rounded-sm bg-indigo-100 inline-block" /> Development
+            </span>
+            <span className="flex items-center gap-1.5 text-xs text-gray-500">
+              <span className="w-2.5 h-2.5 rounded-sm bg-amber-100 inline-block" /> Operations
+            </span>
+          </>
+        ) : (
+          <span className="flex items-center gap-1.5 text-xs text-gray-500">
+            <span className="w-2.5 h-2.5 rounded-sm bg-indigo-100 inline-block" /> Hours
+          </span>
+        )}
         <span className="flex items-center gap-1.5 text-xs text-gray-500">
           <span className="w-4 border-t-2 border-indigo-500 inline-block" /> 3-Month Avg
         </span>

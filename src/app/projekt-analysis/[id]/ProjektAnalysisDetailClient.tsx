@@ -31,6 +31,7 @@ import {
   MonthlyByTicketChart,
   MonthlyByUserChart,
   ActivitySplitChart,
+  DevOpsMonthlyChart,
   CumulativeChart,
   EconomicsChart,
   ForecastBurnupChart,
@@ -638,8 +639,23 @@ function OperationsTab({
                           <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Assigned Tickets</p>
                           <div className="flex flex-wrap gap-1.5">
                             {c.ticketIds.map(task => (
-                              <span key={task} className="text-xs bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-full px-2.5 py-0.5">
+                              <span key={task} className="flex items-center gap-1 text-xs bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-full px-2.5 py-0.5">
                                 {ticketId(task)} {ticketLabel(task)}
+                                {isAdmin && (
+                                  <button
+                                    onClick={async () => {
+                                      const next = contracts.map(x => x.id === c.id
+                                        ? { ...x, ticketIds: x.ticketIds.filter(t => t !== task) }
+                                        : x
+                                      );
+                                      await onSave(next);
+                                    }}
+                                    className="text-indigo-300 hover:text-red-500 transition-colors ml-0.5 leading-none"
+                                    title="Remove ticket from this contract"
+                                  >
+                                    ×
+                                  </button>
+                                )}
                               </span>
                             ))}
                           </div>
@@ -833,14 +849,18 @@ export default function ProjektAnalysisDetailClient({ project, forecasts, teamMe
   }
 
   // ── Operation contracts ────────────────────────────────────────────────────
+  // Local state is used only for the Operations tab UI (optimistic editing).
+  // Financial calculations (operationTicketSet, totalOperationsIncome) always
+  // derive from the server-authoritative project prop so deletions instantly
+  // restore the previous revenue without waiting for a state re-sync.
   const [operationContracts, setOperationContracts] = useState<OperationContract[]>(
     project.operationContracts ?? []
   );
   useEffect(() => { setOperationContracts(project.operationContracts ?? []); }, [project.operationContracts]);
 
   const operationTicketSet = useMemo(
-    () => new Set(operationContracts.flatMap(c => c.ticketIds)),
-    [operationContracts]
+    () => new Set((project.operationContracts ?? []).flatMap(c => c.ticketIds)),
+    [project.operationContracts]
   );
 
   async function saveOperationContracts(next: OperationContract[]) {
@@ -853,10 +873,11 @@ export default function ProjektAnalysisDetailClient({ project, forecasts, teamMe
   const userEconomics = useMemo(() => users.map(user => {
     const allHours = userTotalHours[user] || 0;
     const r = memberRates[user] ?? { costRate: 0, billingRate: 0 };
-    // Hours on operation tickets are covered by fixed pricing, not billed at hourly rate
-    const tmHours = filteredEntries
-      .filter(e => e.user === user && !operationTicketSet.has(e.task))
-      .reduce((s, e) => s + e.spentTime, 0);
+    const tmHours = operationTicketSet.size === 0
+      ? allHours
+      : filteredEntries
+          .filter(e => e.user === user && !operationTicketSet.has(e.task))
+          .reduce((s, e) => s + e.spentTime, 0);
     const cost = allHours * r.costRate;
     const revenue = tmHours * r.billingRate;
     return { user, hours: allHours, tmHours, cost, revenue, pl: revenue - cost };
@@ -865,13 +886,14 @@ export default function ProjektAnalysisDetailClient({ project, forecasts, teamMe
   const totalCost = useMemo(() => userEconomics.reduce((s, e) => s + e.cost, 0), [userEconomics]);
   const totalTmRevenue = useMemo(() => userEconomics.reduce((s, e) => s + e.revenue, 0), [userEconomics]);
 
-  const totalOperationsIncome = useMemo(() =>
-    months.reduce((total, month) =>
-      total + operationContracts.reduce((s, c) =>
+  const totalOperationsIncome = useMemo(() => {
+    const serverContracts = project.operationContracts ?? [];
+    return months.reduce((total, month) =>
+      total + serverContracts.reduce((s, c) =>
         s + (c.monthlyOverrides[month] ?? c.defaultMonthlyAmount), 0
       ), 0
-    ), [months, operationContracts]
-  );
+    );
+  }, [months, project.operationContracts]);
 
   const totalRevenue = totalTmRevenue + totalOperationsIncome;
 
@@ -1534,13 +1556,17 @@ export default function ProjektAnalysisDetailClient({ project, forecasts, teamMe
       {/* ── Trends Tab ── */}
       {activeTab === 'Trends' && (
         <div className="space-y-4">
+          {/* Dev vs Operations split — only when ops contracts are configured */}
+          {operationTicketSet.size > 0 && (
+            <DevOpsMonthlyChart entries={filteredEntries} operationTicketSet={operationTicketSet} />
+          )}
           {/* Universal */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <VelocityChart entries={filteredEntries} />
+            <VelocityChart entries={filteredEntries} operationTicketSet={operationTicketSet} />
             <TeamCompositionChart entries={filteredEntries} />
           </div>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <MonthlyByTicketChart entries={filteredEntries} />
+            <MonthlyByTicketChart entries={filteredEntries} operationTicketSet={operationTicketSet} />
             <MonthlyByUserChart entries={filteredEntries} />
           </div>
           <ActivitySplitChart entries={filteredEntries} />
