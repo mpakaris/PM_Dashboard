@@ -157,6 +157,7 @@ export async function readProjektAnalysis(): Promise<ProjektAnalysisProject[]> {
     contractValue: 0,
     changes: [],
     members: [],
+    operationContracts: [],
     ...p,
   })) as ProjektAnalysisProject[];
 }

@@ -55,6 +55,7 @@ export interface ForecastProject {
   overallHours: number;
   startMonth: string;
   endMonth: string;
+  operationContracts?: OperationContract[];
 }
 
 export interface ForecastAssignment {
@@ -204,6 +205,14 @@ export interface SubContractorStore {
 
 // ─── Projekt Analysis ─────────────────────────────────────────────────────────
 
+export interface OperationContract {
+  id: string;
+  name: string;
+  defaultMonthlyAmount: number;             // € per month (baseline)
+  monthlyOverrides: Record<string, number>; // "YYYY-MM" → € override
+  ticketIds: string[];                      // task strings assigned to this contract
+}
+
 export interface ProjektAnalysisEntry {
   task: string;
   month: string;     // "YYYY-MM"
@@ -251,6 +260,7 @@ export interface ProjektAnalysisProject {
   changes: ProjektAnalysisChange[];  // Nachträge — increases to contract value
   members: string[];      // explicit member list — persists even when entries are empty
   linkedForecastId?: string; // optional link to a Forecast scenario (/planning/[id]) for overlay
+  operationContracts?: OperationContract[];
   entries: ProjektAnalysisEntry[];
   memberSettings: ProjektAnalysisMemberSettings[];
   forecast: ProjektAnalysisForecast;

@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { readData, writeData } from '@/lib/db';
 import { generateId } from '@/lib/utils';
-import { ForecastProject, GhostMember } from '@/lib/types';
+import { ForecastProject, GhostMember, OperationContract } from '@/lib/types';
 
 export async function createForecast(name: string): Promise<string> {
   const data = await readData();
@@ -59,7 +59,11 @@ export async function updateForecastProject(
   const f = data.forecasts.find((f) => f.id === forecastId);
   if (!f) return;
   const idx = f.projects.findIndex((p) => p.id === projectId);
-  if (idx !== -1) f.projects[idx] = { id: projectId, ...project };
+  if (idx !== -1) {
+    // Preserve operationContracts when updating other project fields
+    const existing = f.projects[idx];
+    f.projects[idx] = { id: projectId, ...project, operationContracts: existing.operationContracts };
+  }
   await writeData(data);
   revalidatePath('/planning', 'layout');
 }
@@ -161,6 +165,21 @@ export async function deleteForecastAssignment(
   const f = data.forecasts.find((f) => f.id === forecastId);
   if (!f) return;
   f.assignments = f.assignments.filter((a) => a.id !== assignmentId);
+  await writeData(data);
+  revalidatePath('/planning', 'layout');
+}
+
+export async function updateForecastProjectOperations(
+  forecastId: string,
+  projectId: string,
+  contracts: OperationContract[]
+): Promise<void> {
+  const data = await readData();
+  const f = data.forecasts.find((f) => f.id === forecastId);
+  if (!f) return;
+  const proj = f.projects.find((p) => p.id === projectId);
+  if (!proj) return;
+  proj.operationContracts = contracts;
   await writeData(data);
   revalidatePath('/planning', 'layout');
 }

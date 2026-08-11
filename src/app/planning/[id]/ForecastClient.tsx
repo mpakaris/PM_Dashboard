@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useRole } from '@/components/RoleProvider';
 import {
   Forecast, ForecastProject, ForecastAssignment, GhostMember,
-  TeamMember, Role, Profile,
+  TeamMember, Role, Profile, OperationContract,
 } from '@/lib/types';
 import { getMonthsBetween, formatMonth } from '@/lib/utils';
 import Modal from '@/components/Modal';
@@ -15,6 +15,7 @@ import {
   createForecastProject, updateForecastProject, deleteForecastProject,
   createGhostMember, updateGhostMember, deleteGhostMember,
   upsertForecastAssignment, bulkUpsertForecastAssignments, deleteForecastAssignment,
+  updateForecastProjectOperations,
 } from '@/actions/forecasts';
 
 interface Props {
@@ -614,6 +615,282 @@ function AssignmentMatrix({
   );
 }
 
+// ─── Operations helpers ───────────────────────────────────────────────────────
+
+function fmtEurFc(v: number) {
+  return v.toLocaleString('de-DE', { minimumFractionDigits: 0, maximumFractionDigits: 0 }) + ' €';
+}
+
+function opAmountFc(c: OperationContract, month: string): number {
+  return c.monthlyOverrides[month] ?? c.defaultMonthlyAmount;
+}
+
+// ─── Operations Contract Modal (Forecast) ─────────────────────────────────────
+
+function ForecastOpContractModal({
+  initial,
+  months,
+  onSave,
+  onClose,
+}: {
+  initial?: OperationContract;
+  months: string[];
+  onSave: (c: OperationContract) => void;
+  onClose: () => void;
+}) {
+  const [name, setName] = useState(initial?.name ?? '');
+  const [defaultAmt, setDefaultAmt] = useState(String(initial?.defaultMonthlyAmount ?? ''));
+  const [overrides, setOverrides] = useState<Record<string, string>>(
+    Object.fromEntries(Object.entries(initial?.monthlyOverrides ?? {}).map(([k, v]) => [k, String(v)]))
+  );
+
+  function handleSave() {
+    if (!name.trim()) return;
+    const defaultMonthlyAmount = Math.max(0, Number(defaultAmt) || 0);
+    const monthlyOverrides: Record<string, number> = {};
+    for (const [month, val] of Object.entries(overrides)) {
+      const n = Number(val);
+      if (!isNaN(n) && val.trim() !== '' && n !== defaultMonthlyAmount) {
+        monthlyOverrides[month] = n;
+      }
+    }
+    onSave({
+      id: initial?.id ?? crypto.randomUUID(),
+      name: name.trim(),
+      defaultMonthlyAmount,
+      monthlyOverrides,
+      ticketIds: initial?.ticketIds ?? [],
+    });
+  }
+
+  return (
+    <Modal title={initial ? 'Edit Operation Contract' : 'Add Operation Contract'} onClose={onClose}>
+      <div className="p-6 space-y-5 w-full max-w-lg">
+        <div>
+          <label className="block text-xs font-medium text-gray-500 mb-1">Contract Name</label>
+          <input
+            autoFocus
+            type="text"
+            value={name}
+            onChange={e => setName(e.target.value)}
+            placeholder="e.g. Operation Contract 1"
+            className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-500 mb-1">Default Monthly Amount (€)</label>
+          <input
+            type="text"
+            inputMode="numeric"
+            value={defaultAmt}
+            onChange={e => setDefaultAmt(e.target.value.replace(/[^0-9.]/g, ''))}
+            placeholder="e.g. 20000"
+            className="w-40 border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+          />
+        </div>
+        {months.length > 0 && (
+          <div>
+            <label className="block text-xs font-medium text-gray-500 mb-2">Per-Month Overrides (leave blank to use default)</label>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-48 overflow-y-auto">
+              {months.map(month => (
+                <div key={month} className="flex items-center gap-2">
+                  <span className="text-xs text-gray-500 w-14 shrink-0">{formatMonth(month)}</span>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={overrides[month] ?? ''}
+                    onChange={e => setOverrides(prev => ({ ...prev, [month]: e.target.value.replace(/[^0-9.]/g, '') }))}
+                    placeholder={defaultAmt || '0'}
+                    className="w-full border border-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                  />
+                  <span className="text-xs text-gray-400">€</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        <div className="flex justify-end gap-2 pt-2">
+          <button onClick={onClose} className="text-sm text-gray-500 hover:text-gray-700 px-4 py-2">Cancel</button>
+          <button
+            onClick={handleSave}
+            disabled={!name.trim()}
+            className="bg-indigo-600 text-white text-sm px-4 py-2 rounded-md hover:bg-indigo-700 transition-colors disabled:opacity-50"
+          >
+            Save
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+// ─── Operations Section inside ProjectCard ────────────────────────────────────
+
+function ProjectOperationsSection({
+  project,
+  forecastId,
+  onRefresh,
+}: {
+  project: ForecastProject;
+  forecastId: string;
+  onRefresh: () => void;
+}) {
+  const isAdmin = useRole() === 'admin';
+  const router = useRouter();
+  const months = getMonthsBetween(project.startMonth, project.endMonth);
+  const [contracts, setContracts] = useState<OperationContract[]>(project.operationContracts ?? []);
+  const [editingContract, setEditingContract] = useState<OperationContract | null | 'new'>(null);
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+
+  // Keep in sync with server refreshes
+  useState(() => { setContracts(project.operationContracts ?? []); });
+
+  function toggleExpand(id: string) {
+    setExpandedIds(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  }
+
+  async function handleSaveContract(c: OperationContract) {
+    const next = editingContract === 'new'
+      ? [...contracts, c]
+      : contracts.map(x => x.id === c.id ? c : x);
+    setContracts(next);
+    setEditingContract(null);
+    await updateForecastProjectOperations(forecastId, project.id, next);
+    router.refresh();
+    onRefresh();
+  }
+
+  async function handleDelete(id: string) {
+    const next = contracts.filter(c => c.id !== id);
+    setContracts(next);
+    await updateForecastProjectOperations(forecastId, project.id, next);
+    router.refresh();
+    onRefresh();
+  }
+
+  const totalIncome = months.reduce(
+    (sum, month) => sum + contracts.reduce((s, c) => s + opAmountFc(c, month), 0),
+    0
+  );
+
+  return (
+    <div className="border-t border-gray-100">
+      {editingContract !== null && (
+        <ForecastOpContractModal
+          initial={editingContract === 'new' ? undefined : editingContract}
+          months={months}
+          onSave={handleSaveContract}
+          onClose={() => setEditingContract(null)}
+        />
+      )}
+
+      <div className="px-5 py-3 bg-indigo-50/40">
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-3">
+            <span className="text-xs font-semibold text-indigo-700 uppercase tracking-wider">Operations</span>
+            {totalIncome > 0 && (
+              <span className="text-xs font-semibold text-indigo-600">{fmtEurFc(totalIncome)} total income</span>
+            )}
+          </div>
+          {isAdmin && (
+            <button
+              onClick={() => setEditingContract('new')}
+              className="text-xs text-indigo-600 hover:text-indigo-800 border border-indigo-200 hover:border-indigo-300 rounded px-2.5 py-1 transition-colors"
+            >
+              + Add Contract
+            </button>
+          )}
+        </div>
+
+        {contracts.length === 0 ? (
+          <p className="text-xs text-indigo-400">
+            {isAdmin ? 'No operation contracts. Click "+ Add Contract" to create one.' : 'No operation contracts.'}
+          </p>
+        ) : (
+          <div className="space-y-1">
+            {contracts.map(c => {
+              const contractTotal = months.reduce((s, m) => s + opAmountFc(c, m), 0);
+              const isExpanded = expandedIds.has(c.id);
+              return (
+                <div key={c.id} className="bg-white rounded-md border border-indigo-100 overflow-hidden">
+                  <div
+                    className="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-indigo-50/50"
+                    onClick={() => toggleExpand(c.id)}
+                  >
+                    <span className={`text-indigo-300 text-xs transition-transform ${isExpanded ? 'rotate-90' : ''}`}>▶</span>
+                    <span className="text-xs font-medium text-gray-700 flex-1">{c.name}</span>
+                    <span className="text-xs text-indigo-500">{fmtEurFc(c.defaultMonthlyAmount)}/mo</span>
+                    <span className="text-xs font-semibold text-indigo-700 ml-2">{fmtEurFc(contractTotal)} total</span>
+                    {isAdmin && (
+                      <div className="flex items-center gap-1 ml-2" onClick={e => e.stopPropagation()}>
+                        <button
+                          onClick={() => setEditingContract(c)}
+                          className="text-xs text-gray-400 hover:text-slate-600 px-1.5 py-0.5 border border-transparent hover:border-gray-200 rounded transition-colors"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          onClick={() => handleDelete(c.id)}
+                          className="text-xs text-gray-300 hover:text-red-400 px-1 transition-colors"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                  {isExpanded && months.length > 0 && (
+                    <div className="border-t border-indigo-100 overflow-x-auto">
+                      <table className="text-xs w-full min-w-max">
+                        <thead>
+                          <tr className="bg-indigo-50/50">
+                            {months.map(m => (
+                              <th key={m} className="text-right px-3 py-1.5 font-medium text-indigo-500">{formatMonth(m)}</th>
+                            ))}
+                            <th className="text-right px-3 py-1.5 font-medium text-indigo-700">Total</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <tr>
+                            {months.map(m => (
+                              <td key={m} className={`text-right px-3 py-1.5 ${c.monthlyOverrides[m] !== undefined ? 'text-indigo-600 font-medium' : 'text-gray-600'}`}>
+                                {fmtEurFc(opAmountFc(c, m))}
+                              </td>
+                            ))}
+                            <td className="text-right px-3 py-1.5 font-bold text-indigo-700">{fmtEurFc(contractTotal)}</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Monthly totals row when multiple contracts */}
+        {contracts.length > 1 && months.length > 0 && (
+          <div className="mt-2 overflow-x-auto">
+            <table className="text-xs w-full min-w-max">
+              <thead>
+                <tr>
+                  <td className="px-0 py-1 text-xs font-semibold text-indigo-700">Total Ops Income</td>
+                  {months.map(m => (
+                    <td key={m} className="text-right px-3 py-1 font-semibold text-indigo-700">
+                      {fmtEurFc(contracts.reduce((s, c) => s + opAmountFc(c, m), 0))}
+                    </td>
+                  ))}
+                  <td className="text-right px-3 py-1 font-bold text-indigo-700">{fmtEurFc(totalIncome)}</td>
+                </tr>
+              </thead>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── Project Card ─────────────────────────────────────────────────────────────
 
 function ProjectCard({
@@ -737,6 +1014,11 @@ function ProjectCard({
               </button>
             </div>
           )}
+          <ProjectOperationsSection
+            project={project}
+            forecastId={forecastId}
+            onRefresh={onRefresh}
+          />
         </>
       )}
 

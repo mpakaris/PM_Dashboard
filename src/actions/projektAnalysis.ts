@@ -10,6 +10,7 @@ import {
   ProjektAnalysisTicketForecast,
   ProjektAnalysisType,
   ProjektAnalysisChange,
+  OperationContract,
 } from '@/lib/types';
 import { generateId } from '@/lib/utils';
 import * as XLSX from 'xlsx';
@@ -404,4 +405,16 @@ export async function uploadEmployeeExcel(
   revalidatePath(`/projekt-analysis/${projectId}`);
 
   return { ok: true, added: newEntries.length };
+}
+
+export async function updateOperationContracts(
+  projectId: string,
+  contracts: OperationContract[]
+): Promise<void> {
+  const projects = await readProjektAnalysis();
+  const idx = projects.findIndex(p => p.id === projectId);
+  if (idx === -1) return;
+  projects[idx] = { ...projects[idx], operationContracts: contracts };
+  await writeProjektAnalysis(projects);
+  revalidatePath(`/projekt-analysis/${projectId}`);
 }

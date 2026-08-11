@@ -6,7 +6,7 @@ import {
   ResponsiveContainer, ComposedChart, Line, LineChart, ReferenceLine,
   PieChart, Pie, Cell,
 } from 'recharts';
-import { ProjektAnalysisEntry, ProjektAnalysisMemberSettings, ProjektAnalysisTicketForecast, ProjektAnalysisChange } from '@/lib/types';
+import { ProjektAnalysisEntry, ProjektAnalysisMemberSettings, ProjektAnalysisTicketForecast, ProjektAnalysisChange, OperationContract } from '@/lib/types';
 import { formatMonth } from '@/lib/utils';
 
 const COLORS = [
@@ -277,13 +277,19 @@ export function CumulativeChart({
 export function EconomicsChart({
   entries,
   memberSettings,
+  operationContracts = [],
+  operationTicketSet,
 }: {
   entries: ProjektAnalysisEntry[];
   memberSettings: ProjektAnalysisMemberSettings[];
+  operationContracts?: OperationContract[];
+  operationTicketSet?: Set<string>;
 }) {
   const months = [...new Set(entries.map(e => e.month))].sort();
   const rateMap: Record<string, { costRate: number; billingRate: number }> = {};
   for (const s of memberSettings) rateMap[s.user] = s;
+  const opsTickets = operationTicketSet ?? new Set(operationContracts.flatMap(c => c.ticketIds));
+  const hasOps = operationContracts.length > 0;
 
   if (months.length === 0 || memberSettings.length === 0) {
     return <Empty label="Set employee rates in the Employees tab to see economics" />;
@@ -291,13 +297,17 @@ export function EconomicsChart({
 
   const data = months.map(month => {
     const monthEntries = entries.filter(e => e.month === month);
-    let cost = 0, revenue = 0;
+    let cost = 0, tmRevenue = 0;
     for (const e of monthEntries) {
       const r = rateMap[e.user];
       if (!r) continue;
       cost += e.spentTime * r.costRate;
-      revenue += e.spentTime * r.billingRate;
+      if (!opsTickets.has(e.task)) tmRevenue += e.spentTime * r.billingRate;
     }
+    const opsIncome = operationContracts.reduce(
+      (s, c) => s + (c.monthlyOverrides[month] ?? c.defaultMonthlyAmount), 0
+    );
+    const revenue = tmRevenue + opsIncome;
     return {
       month: formatMonth(month),
       Cost: Math.round(cost),
@@ -307,7 +317,7 @@ export function EconomicsChart({
   });
 
   return (
-    <ChartShell title="Cost vs Revenue per Month">
+    <ChartShell title={`Cost vs Revenue per Month${hasOps ? ' (incl. Ops)' : ''}`}>
       <ResponsiveContainer width="100%" height={260}>
         <ComposedChart data={data} margin={{ top: 4, right: 8, left: 0, bottom: 4 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
@@ -324,7 +334,7 @@ export function EconomicsChart({
           <span className="w-2.5 h-2.5 rounded-sm bg-red-400 inline-block" /> Cost
         </span>
         <span className="flex items-center gap-1.5 text-xs text-gray-500">
-          <span className="w-2.5 h-2.5 rounded-sm bg-emerald-500 inline-block" /> Revenue
+          <span className="w-2.5 h-2.5 rounded-sm bg-emerald-500 inline-block" /> Revenue{hasOps ? ' (T&M + Ops)' : ''}
         </span>
         <span className="flex items-center gap-1.5 text-xs text-gray-500">
           <span className="w-2.5 h-2.5 rounded-full bg-indigo-500 inline-block" /> P&L
@@ -568,32 +578,43 @@ export function TeamCompositionChart({ entries }: { entries: ProjektAnalysisEntr
 export function MonthlyBillingChart({
   entries,
   memberSettings,
+  operationContracts = [],
+  operationTicketSet,
 }: {
   entries: ProjektAnalysisEntry[];
   memberSettings: ProjektAnalysisMemberSettings[];
+  operationContracts?: OperationContract[];
+  operationTicketSet?: Set<string>;
 }) {
   const months = [...new Set(entries.map(e => e.month))].sort();
   const rateMap: Record<string, number> = {};
   for (const s of memberSettings) rateMap[s.user] = s.billingRate;
+  const opsTickets = operationTicketSet ?? new Set(operationContracts.flatMap(c => c.ticketIds));
+  const hasOps = operationContracts.length > 0;
 
-  const hasRates = memberSettings.some(s => s.billingRate > 0);
+  const hasRates = memberSettings.some(s => s.billingRate > 0) || hasOps;
   if (!hasRates) return <Empty label="Set billing rates in the Employees tab to see monthly revenue" />;
 
   let cumRevenue = 0;
   const data = months.map(month => {
-    const revenue = entries
-      .filter(e => e.month === month)
+    const tmRevenue = entries
+      .filter(e => e.month === month && !opsTickets.has(e.task))
       .reduce((s, e) => s + e.spentTime * (rateMap[e.user] || 0), 0);
-    cumRevenue += revenue;
+    const opsIncome = operationContracts.reduce(
+      (s, c) => s + (c.monthlyOverrides[month] ?? c.defaultMonthlyAmount), 0
+    );
+    const total = tmRevenue + opsIncome;
+    cumRevenue += total;
     return {
       month: formatMonth(month),
-      Revenue: Math.round(revenue),
+      'T&M Revenue': Math.round(tmRevenue),
+      'Ops Income': Math.round(opsIncome),
       Cumulative: Math.round(cumRevenue),
     };
   });
 
   return (
-    <ChartShell title="Monthly Billing Revenue (T&M)">
+    <ChartShell title="Monthly Revenue">
       <ResponsiveContainer width="100%" height={240}>
         <ComposedChart data={data} margin={{ top: 4, right: 8, left: 0, bottom: 4 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
@@ -601,16 +622,22 @@ export function MonthlyBillingChart({
           <YAxis yAxisId="left" tick={{ fontSize: 11 }} tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`} />
           <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11 }} tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`} />
           <Tooltip formatter={(v, name) => [fmtEur(Number(v)), String(name)]} />
-          <Bar yAxisId="left" dataKey="Revenue" fill="#10b981" opacity={0.85} radius={[3, 3, 0, 0]} />
-          <Line yAxisId="right" type="monotone" dataKey="Cumulative" stroke="#6366f1" strokeWidth={2} dot={{ r: 3 }} />
+          <Bar yAxisId="left" dataKey="T&M Revenue" stackId="rev" fill="#10b981" opacity={0.85} radius={hasOps ? [0, 0, 0, 0] : [3, 3, 0, 0]} />
+          {hasOps && <Bar yAxisId="left" dataKey="Ops Income" stackId="rev" fill="#6366f1" opacity={0.85} radius={[3, 3, 0, 0]} />}
+          <Line yAxisId="right" type="monotone" dataKey="Cumulative" stroke="#f59e0b" strokeWidth={2} dot={{ r: 3 }} />
         </ComposedChart>
       </ResponsiveContainer>
       <div className="flex gap-4 mt-2">
         <span className="flex items-center gap-1.5 text-xs text-gray-500">
-          <span className="w-2.5 h-2.5 rounded-sm bg-emerald-500 inline-block" /> Monthly
+          <span className="w-2.5 h-2.5 rounded-sm bg-emerald-500 inline-block" /> T&M Revenue
         </span>
+        {hasOps && (
+          <span className="flex items-center gap-1.5 text-xs text-gray-500">
+            <span className="w-2.5 h-2.5 rounded-sm bg-indigo-500 inline-block" /> Ops Income
+          </span>
+        )}
         <span className="flex items-center gap-1.5 text-xs text-gray-500">
-          <span className="w-4 border-t-2 border-indigo-500 inline-block" /> Cumulative
+          <span className="w-4 border-t-2 border-amber-500 inline-block" /> Cumulative
         </span>
       </div>
     </ChartShell>

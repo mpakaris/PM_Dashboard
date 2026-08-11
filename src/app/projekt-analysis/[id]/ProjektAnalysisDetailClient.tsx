@@ -11,6 +11,7 @@ import {
   ProjektAnalysisType,
   ProjektAnalysisChange,
   ProjektAnalysisEntry,
+  OperationContract,
   Forecast,
   TeamMember,
 } from '@/lib/types';
@@ -19,6 +20,7 @@ import {
   updateProjektAnalysisForecast,
   updateProjektAnalysisProjectSettings,
   updateProjektAnalysisChanges,
+  updateOperationContracts,
   uploadEmployeeExcel,
   deleteEmployeeEntries,
   addProjectMember,
@@ -43,7 +45,7 @@ import {
   ticketLabel,
 } from './ProjektAnalysisCharts';
 
-const TABS = ['Overview', 'Employees', 'Tickets', 'Trends', 'Forecast'] as const;
+const TABS = ['Overview', 'Employees', 'Tickets', 'Operations', 'Trends', 'Forecast'] as const;
 type Tab = (typeof TABS)[number];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -338,6 +340,369 @@ function EmployeeExcelUpload({ projectId, userName, onDone }: { projectId: strin
   );
 }
 
+// ─── Operations Tab ───────────────────────────────────────────────────────────
+
+function opAmount(c: OperationContract, month: string): number {
+  return c.monthlyOverrides[month] ?? c.defaultMonthlyAmount;
+}
+
+function OperationContractModal({
+  initial,
+  months,
+  tasks,
+  onSave,
+  onClose,
+}: {
+  initial?: OperationContract;
+  months: string[];
+  tasks: string[];
+  onSave: (c: OperationContract) => void;
+  onClose: () => void;
+}) {
+  const [name, setName] = useState(initial?.name ?? '');
+  const [defaultAmt, setDefaultAmt] = useState(String(initial?.defaultMonthlyAmount ?? ''));
+  const [overrides, setOverrides] = useState<Record<string, string>>(
+    Object.fromEntries(Object.entries(initial?.monthlyOverrides ?? {}).map(([k, v]) => [k, String(v)]))
+  );
+  const [selectedTickets, setSelectedTickets] = useState<string[]>(initial?.ticketIds ?? []);
+
+  function handleSave() {
+    if (!name.trim()) return;
+    const defaultMonthlyAmount = Math.max(0, Number(defaultAmt) || 0);
+    const monthlyOverrides: Record<string, number> = {};
+    for (const [month, val] of Object.entries(overrides)) {
+      const n = Number(val);
+      if (!isNaN(n) && val.trim() !== '' && n !== defaultMonthlyAmount) {
+        monthlyOverrides[month] = n;
+      }
+    }
+    onSave({
+      id: initial?.id ?? crypto.randomUUID(),
+      name: name.trim(),
+      defaultMonthlyAmount,
+      monthlyOverrides,
+      ticketIds: selectedTickets,
+    });
+  }
+
+  function toggleTicket(task: string) {
+    setSelectedTickets(prev =>
+      prev.includes(task) ? prev.filter(t => t !== task) : [...prev, task]
+    );
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+          <h2 className="text-base font-semibold text-gray-800">
+            {initial ? 'Edit Operation Contract' : 'Add Operation Contract'}
+          </h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-lg leading-none">×</button>
+        </div>
+        <div className="overflow-y-auto flex-1 px-6 py-5 space-y-5">
+          <div>
+            <label className="block text-xs font-medium text-gray-500 mb-1">Contract Name</label>
+            <input
+              autoFocus
+              type="text"
+              value={name}
+              onChange={e => setName(e.target.value)}
+              placeholder="e.g. Operation Contract 1"
+              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-500 mb-1">Default Monthly Amount (€)</label>
+            <input
+              type="text"
+              inputMode="numeric"
+              value={defaultAmt}
+              onChange={e => setDefaultAmt(e.target.value.replace(/[^0-9.]/g, ''))}
+              placeholder="e.g. 20000"
+              className="w-40 border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+            />
+          </div>
+          {months.length > 0 && (
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-2">Per-Month Overrides (leave blank to use default)</label>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {months.map(month => (
+                  <div key={month} className="flex items-center gap-2">
+                    <span className="text-xs text-gray-500 w-14 shrink-0">{fmtMonth(month)}</span>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={overrides[month] ?? ''}
+                      onChange={e => setOverrides(prev => ({ ...prev, [month]: e.target.value.replace(/[^0-9.]/g, '') }))}
+                      placeholder={defaultAmt || '0'}
+                      className="w-full border border-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                    />
+                    <span className="text-xs text-gray-400">€</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {tasks.length > 0 && (
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-2">
+                Assign Tickets ({selectedTickets.length} selected)
+              </label>
+              <div className="border border-gray-200 rounded-md divide-y divide-gray-100 max-h-48 overflow-y-auto">
+                {tasks.map(task => (
+                  <label key={task} className="flex items-center gap-3 px-3 py-2 hover:bg-gray-50 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={selectedTickets.includes(task)}
+                      onChange={() => toggleTicket(task)}
+                      className="text-indigo-600 rounded"
+                    />
+                    <span className="font-mono text-xs text-gray-400 shrink-0">{ticketId(task)}</span>
+                    <span className="text-xs text-gray-600 truncate">{ticketLabel(task)}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+        <div className="flex justify-end gap-2 px-6 py-4 border-t border-gray-200">
+          <button onClick={onClose} className="text-sm text-gray-500 hover:text-gray-700 px-4 py-2">Cancel</button>
+          <button
+            onClick={handleSave}
+            disabled={!name.trim()}
+            className="bg-indigo-600 text-white text-sm px-4 py-2 rounded-md hover:bg-indigo-700 transition-colors disabled:opacity-50"
+          >
+            Save
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function OperationsTab({
+  projectId,
+  contracts,
+  months,
+  tasks,
+  isAdmin,
+  onSave,
+}: {
+  projectId: string;
+  contracts: OperationContract[];
+  months: string[];
+  tasks: string[];
+  isAdmin: boolean;
+  onSave: (next: OperationContract[]) => Promise<void>;
+}) {
+  const [editingContract, setEditingContract] = useState<OperationContract | null | 'new'>(null);
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+
+  function toggleExpand(id: string) {
+    setExpandedIds(prev => {
+      const n = new Set(prev);
+      n.has(id) ? n.delete(id) : n.add(id);
+      return n;
+    });
+  }
+
+  async function handleSaveContract(c: OperationContract) {
+    const next = editingContract === 'new'
+      ? [...contracts, c]
+      : contracts.map(x => x.id === c.id ? c : x);
+    setEditingContract(null);
+    await onSave(next);
+  }
+
+  async function handleDelete(id: string) {
+    await onSave(contracts.filter(c => c.id !== id));
+  }
+
+  const totalIncome = months.reduce(
+    (sum, month) => sum + contracts.reduce((s, c) => s + opAmount(c, month), 0),
+    0
+  );
+
+  return (
+    <div className="space-y-4">
+      {editingContract !== null && (
+        <OperationContractModal
+          initial={editingContract === 'new' ? undefined : editingContract}
+          months={months}
+          tasks={tasks}
+          onSave={handleSaveContract}
+          onClose={() => setEditingContract(null)}
+        />
+      )}
+
+      <div className="bg-white rounded-lg ring-1 ring-gray-200 overflow-hidden">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+          <div>
+            <h3 className="text-sm font-semibold text-gray-800">Operation Contracts</h3>
+            {totalIncome > 0 && (
+              <p className="text-xs text-gray-400 mt-0.5">
+                Total income ({months.length} months): <span className="font-semibold text-indigo-700">{fmtEur(totalIncome)}</span>
+              </p>
+            )}
+          </div>
+          {isAdmin && (
+            <button
+              onClick={() => setEditingContract('new')}
+              className="text-xs text-indigo-600 hover:text-indigo-800 border border-indigo-200 hover:border-indigo-300 rounded-md px-3 py-1.5 transition-colors"
+            >
+              + Add Contract
+            </button>
+          )}
+        </div>
+
+        {contracts.length === 0 ? (
+          <div className="px-5 py-8 text-center text-sm text-gray-400">
+            No operation contracts yet.{isAdmin ? ' Click "+ Add Contract" to create one.' : ''}
+          </div>
+        ) : (
+          <div className="divide-y divide-gray-100">
+            {contracts.map(c => {
+              const contractTotal = months.reduce((s, m) => s + opAmount(c, m), 0);
+              const isExpanded = expandedIds.has(c.id);
+              return (
+                <div key={c.id}>
+                  <div
+                    className="flex items-center gap-3 px-5 py-3 hover:bg-gray-50 cursor-pointer"
+                    onClick={() => toggleExpand(c.id)}
+                  >
+                    <span className={`text-gray-300 text-xs transition-transform ${isExpanded ? 'rotate-90' : ''}`}>▶</span>
+                    <div className="flex-1 min-w-0">
+                      <span className="text-sm font-medium text-gray-800">{c.name}</span>
+                      <span className="ml-3 text-xs text-gray-400">
+                        {fmtEur(c.defaultMonthlyAmount)}/mo default
+                        {Object.keys(c.monthlyOverrides).length > 0 && ` · ${Object.keys(c.monthlyOverrides).length} override(s)`}
+                      </span>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <span className="text-sm font-semibold text-indigo-700">{fmtEur(contractTotal)}</span>
+                      <span className="text-xs text-gray-400 ml-1">total</span>
+                    </div>
+                    <div className="text-xs text-gray-400 shrink-0">
+                      {c.ticketIds.length} ticket{c.ticketIds.length !== 1 ? 's' : ''}
+                    </div>
+                    {isAdmin && (
+                      <div className="flex items-center gap-1 shrink-0" onClick={e => e.stopPropagation()}>
+                        <button
+                          onClick={() => setEditingContract(c)}
+                          className="text-xs text-gray-400 hover:text-slate-600 px-2 py-1 border border-transparent hover:border-gray-200 rounded transition-colors"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          onClick={() => handleDelete(c.id)}
+                          className="text-xs text-gray-300 hover:text-red-400 px-1.5 py-1 transition-colors"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {isExpanded && (
+                    <div className="bg-gray-50/60 border-t border-gray-100 px-5 py-4 space-y-4">
+                      {months.length > 0 && (
+                        <div>
+                          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Monthly Income</p>
+                          <div className="overflow-x-auto">
+                            <table className="text-xs w-full">
+                              <thead>
+                                <tr className="text-gray-400">
+                                  {months.map(m => (
+                                    <th key={m} className="text-right pr-3 py-1 font-medium">{fmtMonth(m)}</th>
+                                  ))}
+                                  <th className="text-right py-1 font-medium">Total</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                <tr>
+                                  {months.map(m => (
+                                    <td key={m} className={`text-right pr-3 py-1.5 font-medium ${c.monthlyOverrides[m] !== undefined ? 'text-indigo-600' : 'text-gray-700'}`}>
+                                      {fmtEur(opAmount(c, m))}
+                                    </td>
+                                  ))}
+                                  <td className="text-right py-1.5 font-bold text-indigo-700">{fmtEur(contractTotal)}</td>
+                                </tr>
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      )}
+                      {c.ticketIds.length > 0 && (
+                        <div>
+                          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Assigned Tickets</p>
+                          <div className="flex flex-wrap gap-1.5">
+                            {c.ticketIds.map(task => (
+                              <span key={task} className="text-xs bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-full px-2.5 py-0.5">
+                                {ticketId(task)} {ticketLabel(task)}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Monthly breakdown across all contracts */}
+      {contracts.length > 0 && months.length > 0 && (
+        <div className="bg-white rounded-lg ring-1 ring-gray-200 overflow-hidden">
+          <div className="px-5 py-4 border-b border-gray-100">
+            <h3 className="text-sm font-semibold text-gray-800">Monthly Operations Income Overview</h3>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="text-xs w-full">
+              <thead>
+                <tr className="border-b border-gray-100 bg-gray-50">
+                  <th className="text-left px-5 py-2 font-medium text-gray-500">Contract</th>
+                  {months.map(m => (
+                    <th key={m} className="text-right px-3 py-2 font-medium text-gray-500">{fmtMonth(m)}</th>
+                  ))}
+                  <th className="text-right px-5 py-2 font-medium text-gray-600">Total</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {contracts.map(c => (
+                  <tr key={c.id}>
+                    <td className="px-5 py-2 text-gray-700 font-medium">{c.name}</td>
+                    {months.map(m => (
+                      <td key={m} className="text-right px-3 py-2 text-gray-600">{fmtEur(opAmount(c, m))}</td>
+                    ))}
+                    <td className="text-right px-5 py-2 font-semibold text-gray-800">
+                      {fmtEur(months.reduce((s, m) => s + opAmount(c, m), 0))}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot className="border-t-2 border-gray-200 bg-indigo-50/50">
+                <tr className="font-bold text-indigo-700">
+                  <td className="px-5 py-2">Total Ops Income</td>
+                  {months.map(m => (
+                    <td key={m} className="text-right px-3 py-2">
+                      {fmtEur(contracts.reduce((s, c) => s + opAmount(c, m), 0))}
+                    </td>
+                  ))}
+                  <td className="text-right px-5 py-2">{fmtEur(totalIncome)}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── KPI Card ─────────────────────────────────────────────────────────────────
 
 function KpiCard({ label, value, sub }: { label: string; value: string; sub?: string }) {
@@ -467,14 +832,48 @@ export default function ProjektAnalysisDetailClient({ project, forecasts, teamMe
     });
   }
 
+  // ── Operation contracts ────────────────────────────────────────────────────
+  const [operationContracts, setOperationContracts] = useState<OperationContract[]>(
+    project.operationContracts ?? []
+  );
+  useEffect(() => { setOperationContracts(project.operationContracts ?? []); }, [project.operationContracts]);
+
+  const operationTicketSet = useMemo(
+    () => new Set(operationContracts.flatMap(c => c.ticketIds)),
+    [operationContracts]
+  );
+
+  async function saveOperationContracts(next: OperationContract[]) {
+    setOperationContracts(next);
+    await updateOperationContracts(project.id, next);
+    router.refresh();
+  }
+
   // ── Economics ──────────────────────────────────────────────────────────────
   const userEconomics = useMemo(() => users.map(user => {
-    const hours = userTotalHours[user] || 0;
+    const allHours = userTotalHours[user] || 0;
     const r = memberRates[user] ?? { costRate: 0, billingRate: 0 };
-    return { user, hours, cost: hours * r.costRate, revenue: hours * r.billingRate, pl: hours * (r.billingRate - r.costRate) };
-  }), [users, userTotalHours, memberRates]);
+    // Hours on operation tickets are covered by fixed pricing, not billed at hourly rate
+    const tmHours = filteredEntries
+      .filter(e => e.user === user && !operationTicketSet.has(e.task))
+      .reduce((s, e) => s + e.spentTime, 0);
+    const cost = allHours * r.costRate;
+    const revenue = tmHours * r.billingRate;
+    return { user, hours: allHours, tmHours, cost, revenue, pl: revenue - cost };
+  }), [users, userTotalHours, memberRates, filteredEntries, operationTicketSet]);
+
   const totalCost = useMemo(() => userEconomics.reduce((s, e) => s + e.cost, 0), [userEconomics]);
-  const totalRevenue = useMemo(() => userEconomics.reduce((s, e) => s + e.revenue, 0), [userEconomics]);
+  const totalTmRevenue = useMemo(() => userEconomics.reduce((s, e) => s + e.revenue, 0), [userEconomics]);
+
+  const totalOperationsIncome = useMemo(() =>
+    months.reduce((total, month) =>
+      total + operationContracts.reduce((s, c) =>
+        s + (c.monthlyOverrides[month] ?? c.defaultMonthlyAmount), 0
+      ), 0
+    ), [months, operationContracts]
+  );
+
+  const totalRevenue = totalTmRevenue + totalOperationsIncome;
 
   // ── Project settings (type + contract) ────────────────────────────────────
   const [projectSettings, setProjectSettings] = useState({
@@ -889,7 +1288,31 @@ export default function ProjektAnalysisDetailClient({ project, forecasts, teamMe
                   })}
                 </tbody>
                 <tfoot className="border-t border-gray-200">
-                  <tr className="text-sm font-semibold text-gray-700">
+                  <tr className="text-sm text-gray-600">
+                    <td className="px-4 py-3 font-medium">T&amp;M Subtotal</td>
+                    <td className="px-4 py-3 text-right">{fmtH(totalHours)}</td>
+                    <td className="px-4 py-3 text-right">{fmtH(workHours)}</td>
+                    <td className="px-4 py-3 text-right">{fmtH(opsHours)}</td>
+                    <td colSpan={2} />
+                    <td className="px-4 py-3 text-right">{totalCost > 0 ? fmtEur(totalCost) : '—'}</td>
+                    <td className="px-4 py-3 text-right">{totalTmRevenue > 0 ? fmtEur(totalTmRevenue) : '—'}</td>
+                    <td className={`px-4 py-3 text-right font-medium ${totalTmRevenue - totalCost >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                      {totalCost > 0 || totalTmRevenue > 0 ? fmtEur(totalTmRevenue - totalCost) : '—'}
+                    </td>
+                    <td />
+                  </tr>
+                  {totalOperationsIncome > 0 && (
+                    <tr className="text-sm text-indigo-700 bg-indigo-50/50">
+                      <td className="px-4 py-2 font-medium" colSpan={6}>
+                        Operations Income ({operationContracts.length} contract{operationContracts.length !== 1 ? 's' : ''})
+                      </td>
+                      <td className="px-4 py-2 text-right text-gray-400">—</td>
+                      <td className="px-4 py-2 text-right font-semibold text-indigo-700">{fmtEur(totalOperationsIncome)}</td>
+                      <td className="px-4 py-2 text-right font-semibold text-indigo-700">{fmtEur(totalOperationsIncome)}</td>
+                      <td />
+                    </tr>
+                  )}
+                  <tr className="text-sm font-bold text-gray-800 border-t border-gray-300">
                     <td className="px-4 py-3">Total</td>
                     <td className="px-4 py-3 text-right">{fmtH(totalHours)}</td>
                     <td className="px-4 py-3 text-right">{fmtH(workHours)}</td>
@@ -1096,6 +1519,18 @@ export default function ProjektAnalysisDetailClient({ project, forecasts, teamMe
         </div>
       )}
 
+      {/* ── Operations Tab ── */}
+      {activeTab === 'Operations' && (
+        <OperationsTab
+          projectId={project.id}
+          contracts={operationContracts}
+          months={months}
+          tasks={tasks}
+          isAdmin={isAdmin}
+          onSave={saveOperationContracts}
+        />
+      )}
+
       {/* ── Trends Tab ── */}
       {activeTab === 'Trends' && (
         <div className="space-y-4">
@@ -1113,8 +1548,8 @@ export default function ProjektAnalysisDetailClient({ project, forecasts, teamMe
           {/* T&M specific */}
           {projectSettings.projectType === 'time-and-material' && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              <MonthlyBillingChart entries={filteredEntries} memberSettings={project.memberSettings} />
-              <EconomicsChart entries={filteredEntries} memberSettings={project.memberSettings} />
+              <MonthlyBillingChart entries={filteredEntries} memberSettings={project.memberSettings} operationContracts={operationContracts} operationTicketSet={operationTicketSet} />
+              <EconomicsChart entries={filteredEntries} memberSettings={project.memberSettings} operationContracts={operationContracts} operationTicketSet={operationTicketSet} />
             </div>
           )}
 
@@ -1151,6 +1586,29 @@ export default function ProjektAnalysisDetailClient({ project, forecasts, teamMe
       {/* ── Forecast Tab ── */}
       {activeTab === 'Forecast' && (
         <div className="space-y-6">
+          {/* Operations Income Summary */}
+          {operationContracts.length > 0 && (
+            <div className="bg-indigo-50 rounded-lg ring-1 ring-indigo-200 px-5 py-4">
+              <h3 className="text-sm font-semibold text-indigo-800 mb-3">Operations Income</h3>
+              <div className="space-y-1.5">
+                {operationContracts.map(c => (
+                  <div key={c.id} className="flex items-center justify-between text-sm">
+                    <span className="text-indigo-700">{c.name}</span>
+                    <div className="flex items-center gap-3">
+                      <span className="text-xs text-indigo-500">{fmtEur(c.defaultMonthlyAmount)}/mo</span>
+                      <span className="font-semibold text-indigo-800">
+                        {fmtEur(months.reduce((s, m) => s + opAmount(c, m), 0))} total
+                      </span>
+                    </div>
+                  </div>
+                ))}
+                <div className="flex items-center justify-between pt-2 border-t border-indigo-200 text-sm font-bold text-indigo-900">
+                  <span>Total Operations Income</span>
+                  <span>{fmtEur(totalOperationsIncome)}</span>
+                </div>
+              </div>
+            </div>
+          )}
           {/* Inputs */}
           {isAdmin && <div className="bg-white rounded-lg ring-1 ring-gray-200 p-5">
             <div className="flex items-center justify-between mb-4">
@@ -1274,8 +1732,8 @@ export default function ProjektAnalysisDetailClient({ project, forecasts, teamMe
 
           {projectSettings.projectType === 'time-and-material' && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              <MonthlyBillingChart entries={filteredEntries} memberSettings={project.memberSettings} />
-              <EconomicsChart entries={filteredEntries} memberSettings={project.memberSettings} />
+              <MonthlyBillingChart entries={filteredEntries} memberSettings={project.memberSettings} operationContracts={operationContracts} operationTicketSet={operationTicketSet} />
+              <EconomicsChart entries={filteredEntries} memberSettings={project.memberSettings} operationContracts={operationContracts} operationTicketSet={operationTicketSet} />
             </div>
           )}
 
