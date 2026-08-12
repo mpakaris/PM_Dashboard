@@ -113,6 +113,21 @@ export async function setWbsSubCategoryOverride(code: string, override: string |
   return { ok: true };
 }
 
+// ─── Member management (US-010) ──────────────────────────────────────────────
+
+export async function updateFmoMember(
+  id: string,
+  updates: { type?: 'intern' | 'extern'; partnerCompany?: string; costRate?: number }
+) {
+  const mappings = await readFmoMappings();
+  if (!mappings.members[id]) return { ok: false, error: 'Member not found' };
+  Object.assign(mappings.members[id], updates);
+  await writeFmoMappings(mappings);
+  revalidatePath('/fmo/members');
+  revalidatePath(`/fmo/members/${id}`);
+  return { ok: true };
+}
+
 // ─── Ticket WBS assignment (US-008) ──────────────────────────────────────────
 
 export async function assignTicketWbs(ticketId: number, wbsCode: string | null) {
