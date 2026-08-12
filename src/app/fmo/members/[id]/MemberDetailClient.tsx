@@ -6,6 +6,7 @@ import { useTranslations, useLocale } from 'next-intl';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer,
   PieChart, Pie, Cell,
+  ComposedChart, Line, CartesianGrid,
 } from 'recharts';
 import { fmtH, type Locale } from '@/lib/i18n';
 import type { FmoMember, FmoEntry, WbsSubCategory } from '@/lib/types';
@@ -15,10 +16,6 @@ import { ChartTimeFilter, initChartRange, type TimeRange } from '@/components/Ch
 type Tab = 'profile' | 'tickets' | 'charts';
 
 const COLORS = ['#6366f1','#22c55e','#f97316','#3b82f6','#a855f7','#eab308','#ef4444','#64748b','#06b6d4','#ec4899'];
-
-function fmtEur(v: number) {
-  return v.toLocaleString('de-DE', { minimumFractionDigits: 0, maximumFractionDigits: 0 }) + ' €';
-}
 
 const SUB_COLORS: Record<string, string> = {
   V:'#22c55e', admin:'#64748b', presales:'#3b82f6', opm:'#f97316',
@@ -67,7 +64,7 @@ export default function MemberDetailClient({
     else setError(r.error ?? tCommon('error'));
   }
 
-  // ── Derived data ─────────────────────────────────────────────────────────
+  // ── Derived data ──────────────────────────────────────────────────────────
 
   const totalHours = useMemo(() => entries.reduce((s, e) => s + e.spentTime, 0), [entries]);
 
@@ -89,7 +86,7 @@ export default function MemberDetailClient({
     return [...map.entries()].map(([id, v]) => ({ id, ...v })).sort((a, b) => b.hours - a.hours);
   }, [entries]);
 
-  // For bar chart: category/month
+  // 1. Hours by Category per Month
   const { chartData, categories } = useMemo(() => {
     const monthMap = new Map<string, Map<string, number>>();
     const catSet = new Set<string>();
@@ -111,20 +108,65 @@ export default function MemberDetailClient({
     return { chartData: data, categories: cats };
   }, [chartEntries]);
 
-  // For pie: billable vs internal total
-  const billablePie = useMemo(() => {
-    let billable = 0, internal = 0;
-    for (const e of chartEntries) {
-      if (e.billingClass === 'V') billable += e.spentTime;
-      else internal += e.spentTime;
-    }
-    return [
-      { name: tUtil('billable'), value: billable, color: '#22c55e' },
-      { name: tUtil('internal'), value: internal, color: '#64748b' },
-    ].filter(d => d.value > 0);
-  }, [chartEntries, tUtil]);
+  // 2. Velocity + 3M rolling average
+  const velocityData = useMemo(() => {
+    const monthTotals = new Map<string, number>();
+    for (const e of chartEntries) monthTotals.set(e.month, (monthTotals.get(e.month) ?? 0) + e.spentTime);
+    const months = [...monthTotals.keys()].sort();
+    return months.map((month, i) => {
+      const h = monthTotals.get(month)!;
+      const slice = months.slice(Math.max(0, i - 2), i + 1);
+      const avg = slice.reduce((s, m) => s + (monthTotals.get(m) ?? 0), 0) / slice.length;
+      return { month: month.slice(0, 7), hours: h, avg3m: Math.round(avg * 10) / 10 };
+    });
+  }, [chartEntries]);
 
-  // Top tickets chart (horizontal bar) — derived from chartEntries
+  // 3. Hours by Ticket per Month (stacked, top 8 tickets)
+  const { ticketBarData, top8Keys, ticketHasOthers } = useMemo(() => {
+    const totals = new Map<string, number>();
+    for (const e of chartEntries) totals.set(e.ticketName, (totals.get(e.ticketName) ?? 0) + e.spentTime);
+    const sorted = [...totals.entries()].sort((a, b) => b[1] - a[1]);
+    const top8Keys = sorted.slice(0, 8).map(([n]) => n);
+    const ticketHasOthers = sorted.length > 8;
+
+    const monthMap = new Map<string, Map<string, number>>();
+    for (const e of chartEntries) {
+      if (!monthMap.has(e.month)) monthMap.set(e.month, new Map());
+      const m = monthMap.get(e.month)!;
+      const key = top8Keys.includes(e.ticketName) ? e.ticketName : 'Others';
+      m.set(key, (m.get(key) ?? 0) + e.spentTime);
+    }
+    const months = [...monthMap.keys()].sort();
+    const data = months.map(month => {
+      const row: Record<string, any> = { month: month.slice(0, 7) };
+      const m = monthMap.get(month)!;
+      for (const k of top8Keys) row[k] = m.get(k) ?? 0;
+      if (ticketHasOthers) row['Others'] = m.get('Others') ?? 0;
+      return row;
+    });
+    return { ticketBarData: data, top8Keys, ticketHasOthers };
+  }, [chartEntries]);
+
+  // 4. Category breakdown pie (all subcategories)
+  const categoryPie = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const e of chartEntries) {
+      const key = e.billingClass === 'V' ? 'V' : (e.subCategory ?? 'unmapped');
+      map.set(key, (map.get(key) ?? 0) + e.spentTime);
+    }
+    return [...map.entries()]
+      .filter(([, h]) => h > 0)
+      .sort((a, b) => b[1] - a[1])
+      .map(([key, value]) => ({
+        name: key === 'V'
+          ? tUtil('billable')
+          : (subCategories[key]?.label ?? (key === 'unmapped' ? tUtil('unmapped') : key)),
+        value,
+        color: key === 'V' ? SUB_COLORS.V : (SUB_COLORS[key] ?? SUB_COLORS.unmapped),
+      }));
+  }, [chartEntries, subCategories, tUtil]);
+
+  // 5. Top Tickets horizontal bar (fixed)
   const topTicketsChart = useMemo(() => {
     const map = new Map<number | string, { name: string; hours: number }>();
     for (const e of chartEntries) {
@@ -136,9 +178,9 @@ export default function MemberDetailClient({
     return [...map.values()]
       .sort((a, b) => b.hours - a.hours)
       .slice(0, 10)
-      .map((t, i) => ({
-        name: t.name.length > 35 ? t.name.slice(0, 35) + '…' : t.name,
-        hours: t.hours,
+      .map((tk, i) => ({
+        name: tk.name.length > 28 ? tk.name.slice(0, 28) + '…' : tk.name,
+        hours: tk.hours,
         fill: COLORS[i % COLORS.length],
       }));
   }, [chartEntries]);
@@ -179,7 +221,7 @@ export default function MemberDetailClient({
           { label: t('totalHours'), value: fmtH(totalHours, locale) },
           { label: 'Tickets', value: String(ticketSummary.length) },
           { label: tUtil('billable'), value: fmtH(entries.filter(e => e.billingClass === 'V').reduce((s, e) => s + e.spentTime, 0), locale) },
-          { label: 'Internal', value: fmtH(entries.filter(e => e.billingClass !== 'V').reduce((s, e) => s + e.spentTime, 0), locale) },
+          { label: tUtil('internal'), value: fmtH(entries.filter(e => e.billingClass !== 'V').reduce((s, e) => s + e.spentTime, 0), locale) },
         ].map(kpi => (
           <div key={kpi.label} className="bg-white rounded-lg border border-slate-200 px-4 py-3">
             <p className="text-xs text-slate-400 mb-1">{kpi.label}</p>
@@ -209,9 +251,7 @@ export default function MemberDetailClient({
       {activeTab === 'tickets' && (
         <div className="space-y-3">
           {dateRange && (
-            <p className="text-xs text-slate-400">
-              {dateRange.from} → {dateRange.to}
-            </p>
+            <p className="text-xs text-slate-400">{dateRange.from} → {dateRange.to}</p>
           )}
           {entries.length === 0 ? (
             <p className="text-slate-400 text-sm">{t('noData')}</p>
@@ -233,10 +273,7 @@ export default function MemberDetailClient({
                       <td className="px-4 py-2.5">
                         <div className="flex items-center gap-2">
                           {typeof tk.id === 'number' && (
-                            <Link
-                              href={`/fmo/tickets/${tk.id}`}
-                              className="font-mono text-xs text-indigo-600 hover:text-indigo-800 shrink-0"
-                            >
+                            <Link href={`/fmo/tickets/${tk.id}`} className="font-mono text-xs text-indigo-600 hover:text-indigo-800 shrink-0">
                               #{tk.id}
                             </Link>
                           )}
@@ -274,12 +311,13 @@ export default function MemberDetailClient({
       {activeTab === 'charts' && entries.length > 0 && (
         <div className="space-y-6">
           <ChartTimeFilter value={chartRange} onChange={setChartRange} />
-          {/* Hours by Category per Month */}
+
+          {/* 1. Hours by Category per Month */}
           <div className="bg-white rounded-lg border border-slate-200 p-4">
             <h3 className="text-sm font-semibold text-slate-700 mb-4">{t('chartTitle')}</h3>
             <ResponsiveContainer width="100%" height={260}>
               <BarChart data={chartData} margin={{ top: 4, right: 16, left: 0, bottom: 4 }}>
-                <XAxis dataKey="month" tick={{ fontSize: 11 }} />
+                <XAxis dataKey="month" tick={{ fontSize: 10 }} interval={0} angle={-35} textAnchor="end" height={48} />
                 <YAxis tick={{ fontSize: 11 }} />
                 <Tooltip formatter={(v) => typeof v === 'number' ? fmtH(v, locale) : v} />
                 <Legend />
@@ -293,36 +331,85 @@ export default function MemberDetailClient({
             </ResponsiveContainer>
           </div>
 
-          {/* Billable vs Internal Pie */}
-          <div className="space-y-4">
+          {/* 2. Velocity + 3M Rolling Average */}
+          {velocityData.length > 0 && (
             <div className="bg-white rounded-lg border border-slate-200 p-4">
-              <h3 className="text-sm font-semibold text-slate-700 mb-4">Billable vs Internal</h3>
-              <ResponsiveContainer width="100%" height={220}>
+              <h3 className="text-sm font-semibold text-slate-700 mb-1">Velocity &amp; 3-Month Average</h3>
+              <p className="text-xs text-slate-400 mb-4">Monthly hours (bars) with 3-month rolling average (line)</p>
+              <ResponsiveContainer width="100%" height={260}>
+                <ComposedChart data={velocityData} margin={{ top: 4, right: 16, left: 0, bottom: 4 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                  <XAxis dataKey="month" tick={{ fontSize: 10 }} interval={0} angle={-35} textAnchor="end" height={48} />
+                  <YAxis tick={{ fontSize: 11 }} />
+                  <Tooltip formatter={(v) => typeof v === 'number' ? fmtH(v, locale) : v} />
+                  <Legend />
+                  <Bar dataKey="hours" fill="#e0e7ff" name="Monthly Hours" radius={[3, 3, 0, 0]} />
+                  <Line type="monotone" dataKey="avg3m" stroke="#6366f1" strokeWidth={2} dot={false} name="3M Avg" />
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+
+          {/* 3. Hours by Ticket per Month */}
+          {ticketBarData.length > 0 && (
+            <div className="bg-white rounded-lg border border-slate-200 p-4">
+              <h3 className="text-sm font-semibold text-slate-700 mb-4">Hours by Ticket per Month</h3>
+              <ResponsiveContainer width="100%" height={280}>
+                <BarChart data={ticketBarData} margin={{ top: 4, right: 16, left: 0, bottom: 4 }}>
+                  <XAxis dataKey="month" tick={{ fontSize: 10 }} interval={0} angle={-35} textAnchor="end" height={48} />
+                  <YAxis tick={{ fontSize: 11 }} />
+                  <Tooltip formatter={(v) => typeof v === 'number' ? fmtH(v, locale) : v} />
+                  <Legend formatter={(name) => String(name).length > 26 ? String(name).slice(0, 26) + '…' : String(name)} />
+                  {top8Keys.map((key, i) => (
+                    <Bar key={key} dataKey={key} stackId="t" fill={COLORS[i % COLORS.length]} />
+                  ))}
+                  {ticketHasOthers && <Bar dataKey="Others" stackId="t" fill="#cbd5e1" />}
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+
+          {/* 4. Category Breakdown Pie */}
+          {categoryPie.length > 0 && (
+            <div className="bg-white rounded-lg border border-slate-200 p-4">
+              <h3 className="text-sm font-semibold text-slate-700 mb-4">Hours by Category</h3>
+              <ResponsiveContainer width="100%" height={300}>
                 <PieChart>
-                  <Pie data={billablePie} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80}
-                    label={({ name, percent }) => `${name} ${Math.round((percent ?? 0) * 100)}%`}>
-                    {billablePie.map((d, i) => <Cell key={i} fill={d.color} />)}
+                  <Pie
+                    data={categoryPie}
+                    dataKey="value"
+                    nameKey="name"
+                    cx="50%"
+                    cy="50%"
+                    outerRadius={110}
+                    label={({ name, percent }) => `${name} ${Math.round((percent ?? 0) * 100)}%`}
+                    labelLine
+                  >
+                    {categoryPie.map((d, i) => <Cell key={i} fill={d.color} />)}
                   </Pie>
                   <Tooltip formatter={(v) => typeof v === 'number' ? fmtH(v, locale) : v} />
+                  <Legend />
                 </PieChart>
               </ResponsiveContainer>
             </div>
+          )}
 
-            {/* Top Tickets */}
+          {/* 5. Top Tickets by Hours — dynamic height */}
+          {topTicketsChart.length > 0 && (
             <div className="bg-white rounded-lg border border-slate-200 p-4">
               <h3 className="text-sm font-semibold text-slate-700 mb-4">Top Tickets by Hours</h3>
-              <ResponsiveContainer width="100%" height={220}>
-                <BarChart data={topTicketsChart} layout="vertical" margin={{ left: 0, right: 16 }}>
+              <ResponsiveContainer width="100%" height={topTicketsChart.length * 44 + 24}>
+                <BarChart data={topTicketsChart} layout="vertical" margin={{ left: 0, right: 40, top: 4, bottom: 4 }}>
                   <XAxis type="number" tick={{ fontSize: 10 }} />
-                  <YAxis type="category" dataKey="name" tick={{ fontSize: 9 }} width={140} />
+                  <YAxis type="category" dataKey="name" tick={{ fontSize: 10 }} width={190} />
                   <Tooltip formatter={(v) => typeof v === 'number' ? fmtH(v, locale) : v} />
-                  <Bar dataKey="hours" radius={[0, 3, 3, 0]}>
+                  <Bar dataKey="hours" radius={[0, 3, 3, 0]} barSize={20}>
                     {topTicketsChart.map((d, i) => <Cell key={i} fill={d.fill} />)}
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>
             </div>
-          </div>
+          )}
         </div>
       )}
 

@@ -220,7 +220,7 @@ export default function ProjectDetailClient({
             <h3 className="text-sm font-semibold text-slate-700 mb-4">Monthly Hours by WBS</h3>
             <ResponsiveContainer width="100%" height={260}>
               <BarChart data={monthlyByWbs} margin={{ top: 4, right: 16, left: 0, bottom: 4 }}>
-                <XAxis dataKey="month" tick={{ fontSize: 10 }} />
+                <XAxis dataKey="month" tick={{ fontSize: 10 }} interval={0} angle={-35} textAnchor="end" height={48} />
                 <YAxis tick={{ fontSize: 10 }} />
                 <Tooltip formatter={(v) => typeof v === 'number' ? fmtH(v, locale) : v} />
                 <Legend formatter={code => wbs[code]?.label ?? code} />
@@ -296,7 +296,7 @@ export default function ProjectDetailClient({
               <h3 className="text-sm font-semibold text-slate-700 mb-4">Monthly by Member</h3>
               <ResponsiveContainer width="100%" height={240}>
                 <BarChart data={monthlyByMember} margin={{ top: 4, right: 16, left: 0, bottom: 4 }}>
-                  <XAxis dataKey="month" tick={{ fontSize: 10 }} />
+                  <XAxis dataKey="month" tick={{ fontSize: 10 }} interval={0} angle={-35} textAnchor="end" height={48} />
                   <YAxis tick={{ fontSize: 10 }} />
                   <Tooltip formatter={(v) => typeof v === 'number' ? fmtH(v, locale) : v} />
                   <Legend />
@@ -356,7 +356,7 @@ export default function ProjectDetailClient({
             <h3 className="text-sm font-semibold text-slate-700 mb-4">Monthly Hours by WBS Code</h3>
             <ResponsiveContainer width="100%" height={280}>
               <BarChart data={monthlyByWbs} margin={{ top: 4, right: 16, left: 0, bottom: 4 }}>
-                <XAxis dataKey="month" tick={{ fontSize: 11 }} />
+                <XAxis dataKey="month" tick={{ fontSize: 10 }} interval={0} angle={-35} textAnchor="end" height={48} />
                 <YAxis tick={{ fontSize: 11 }} />
                 <Tooltip formatter={(v) => typeof v === 'number' ? fmtH(v, locale) : v} />
                 <Legend formatter={code => wbs[code]?.label ?? code} />
@@ -371,7 +371,7 @@ export default function ProjectDetailClient({
               <h3 className="text-sm font-semibold text-slate-700 mb-4">Monthly Hours by Member (Top 5)</h3>
               <ResponsiveContainer width="100%" height={240}>
                 <BarChart data={monthlyByMember} margin={{ top: 4, right: 16, left: 0, bottom: 4 }}>
-                  <XAxis dataKey="month" tick={{ fontSize: 10 }} />
+                  <XAxis dataKey="month" tick={{ fontSize: 10 }} interval={0} angle={-35} textAnchor="end" height={48} />
                   <YAxis tick={{ fontSize: 10 }} />
                   <Tooltip formatter={(v) => typeof v === 'number' ? fmtH(v, locale) : v} />
                   <Legend />

@@ -187,7 +187,7 @@ export default function TicketDetailClient({
           <ResponsiveContainer width="100%" height={240}>
             <LineChart data={cumulativeData} margin={{ top: 4, right: 16, left: 0, bottom: 4 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-              <XAxis dataKey="month" tick={{ fontSize: 10 }} />
+              <XAxis dataKey="month" tick={{ fontSize: 10 }} interval={0} angle={-35} textAnchor="end" height={48} />
               <YAxis tick={{ fontSize: 10 }} />
               <Tooltip formatter={(v) => typeof v === 'number' ? fmtH(v, locale) : v} />
               <Line type="monotone" dataKey="cumulative" stroke="#6366f1" strokeWidth={2} dot={false} name="Cumulative" />
@@ -203,7 +203,7 @@ export default function TicketDetailClient({
           <h3 className="text-sm font-semibold text-slate-700 mb-4">Monthly Breakdown by Member</h3>
           <ResponsiveContainer width="100%" height={260}>
             <BarChart data={monthlyData} margin={{ top: 4, right: 16, left: 0, bottom: 4 }}>
-              <XAxis dataKey="month" tick={{ fontSize: 11 }} />
+              <XAxis dataKey="month" tick={{ fontSize: 10 }} interval={0} angle={-35} textAnchor="end" height={48} />
               <YAxis tick={{ fontSize: 11 }} />
               <Tooltip formatter={(v) => typeof v === 'number' ? fmtH(v, locale) : v} />
               <Legend />
