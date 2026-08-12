@@ -366,6 +366,21 @@ export interface FmoMappingStore {
 
 // ─── FMO Projects ─────────────────────────────────────────────────────────────
 
+export type FmoProjectType = 'tm' | 'fixprice';
+
+export interface FmoProjectMemberRate {
+  billingRate: number; // €/h billed to client on this project
+}
+
+export interface FmoOperationContract {
+  id: string;
+  name: string;
+  type: 'hourly' | 'fixprice';
+  ticketIds: number[];
+  defaultMonthlyAmount: number; // for fixprice type
+  monthlyOverrides: Record<string, number>; // "YYYY-MM" → override €
+}
+
 export interface FmoProject {
   id: string;
   name: string;
@@ -374,6 +389,11 @@ export interface FmoProject {
   ticketIds: number[];         // extra tickets added individually (mixed / tickets mode)
   excludedTicketIds: number[]; // tickets excluded from a selected WBS code
   createdAt: string;
+  projectType: FmoProjectType;                        // default 'tm'
+  contractValue: number;                              // fixprice: total €
+  contractHours: number;                              // fixprice: budget h
+  memberRates: Record<string, FmoProjectMemberRate>;  // memberId → rate
+  operationContracts: FmoOperationContract[];
 }
 
 // ─── FMO Planning ─────────────────────────────────────────────────────────────
