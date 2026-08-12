@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useMemo, useEffect } from 'react';
+import Link from 'next/link';
 import { useTranslations, useLocale } from 'next-intl';
 import { fmtH, type Locale } from '@/lib/i18n';
 import type { FmoTicket, FmoWbsEntry, FmoEntry } from '@/lib/types';
@@ -46,7 +47,9 @@ function TicketRow({
 
   return (
     <tr className="hover:bg-slate-50">
-      <td className="px-4 py-3 font-mono text-xs text-slate-600">{ticket.id}</td>
+      <td className="px-4 py-3 font-mono text-xs text-slate-600">
+        <Link href={`/fmo/tickets/${ticket.id}`} className="text-indigo-600 hover:text-indigo-800">#{ticket.id}</Link>
+      </td>
       <td className="px-4 py-3 text-sm text-slate-800 max-w-xs truncate" title={ticket.name}>{ticket.name}</td>
       <td className="px-4 py-3 text-xs text-slate-500">{ticket.project}</td>
       <td className="px-4 py-3">
