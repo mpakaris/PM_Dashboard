@@ -73,6 +73,7 @@ export default function MemberDetailClient({
 
   const [activeTab, setActiveTab] = useState<Tab>('tickets');
   const [chartRange, setChartRange] = useState<TimeRange>(() => initChartRange(entries));
+  const [pieView, setPieView] = useState<'category' | 'ticket'>('category');
   const [type, setType]           = useState(member.type);
   const [company, setCompany]     = useState(member.partnerCompany);
   const [costRate, setCostRate]   = useState(String(member.costRate));
@@ -194,6 +195,25 @@ export default function MemberDetailClient({
         color: key === 'V' ? SUB_COLORS.V : (SUB_COLORS[key] ?? SUB_COLORS.unmapped),
       }));
   }, [chartEntries, subCategories, tUtil]);
+
+  // 4b. Pie by ticket (top 12, rest grouped)
+  const ticketPie = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const e of chartEntries) {
+      const key = e.ticketName;
+      map.set(key, (map.get(key) ?? 0) + e.spentTime);
+    }
+    const sorted = [...map.entries()].filter(([, h]) => h > 0).sort((a, b) => b[1] - a[1]);
+    const top = sorted.slice(0, 12);
+    const othersH = sorted.slice(12).reduce((s, [, h]) => s + h, 0);
+    const slices = top.map(([name, value], i) => ({
+      name: name.length > 32 ? name.slice(0, 32) + '…' : name,
+      value,
+      color: COLORS[i % COLORS.length],
+    }));
+    if (othersH > 0) slices.push({ name: 'Others', value: othersH, color: '#94a3b8' });
+    return slices;
+  }, [chartEntries]);
 
   // 5. Top Tickets horizontal bar
   const topTicketsChart = useMemo(() => {
@@ -403,16 +423,37 @@ export default function MemberDetailClient({
             </div>
           )}
 
-          {/* 4. Category Breakdown Pie */}
-          {categoryPie.length > 0 && (
+          {/* 4. Pie — By Category / By Ticket toggle */}
+          {(categoryPie.length > 0 || ticketPie.length > 0) && (
             <div className="bg-white rounded-lg border border-slate-200 p-4">
-              <h3 className="text-sm font-semibold text-gray-800 mb-4">Hours by Category</h3>
-              <ResponsiveContainer width="100%" height={320}>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-sm font-semibold text-gray-800">
+                  {pieView === 'category' ? 'Hours by Category' : 'Hours by Ticket'}
+                </h3>
+                <div className="flex gap-1 border border-slate-200 rounded-md p-0.5">
+                  {(['category', 'ticket'] as const).map(v => (
+                    <button key={v} onClick={() => setPieView(v)}
+                      className={`text-xs px-3 py-1 rounded transition-colors ${
+                        pieView === v
+                          ? 'bg-slate-800 text-white'
+                          : 'text-slate-500 hover:text-slate-700'
+                      }`}>
+                      {v === 'category' ? 'By Category' : 'By Ticket'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <ResponsiveContainer width="100%" height={340}>
                 <PieChart>
-                  <Pie data={categoryPie} dataKey="value" nameKey="name"
-                    cx="50%" cy="50%" outerRadius={110}
-                    labelLine={false} label={PieLabel}>
-                    {categoryPie.map((d, i) => <Cell key={i} fill={d.color} opacity={0.9} />)}
+                  <Pie
+                    data={pieView === 'category' ? categoryPie : ticketPie}
+                    dataKey="value" nameKey="name"
+                    cx="50%" cy="50%" outerRadius={120}
+                    labelLine={false} label={PieLabel}
+                  >
+                    {(pieView === 'category' ? categoryPie : ticketPie).map((d, i) => (
+                      <Cell key={i} fill={d.color} opacity={0.9} />
+                    ))}
                   </Pie>
                   <Tooltip {...TOOLTIP_STYLE} formatter={(v) => typeof v === 'number' ? fmtH(v, locale) : v} />
                   <Legend wrapperStyle={{ fontSize: '12px' }} />
