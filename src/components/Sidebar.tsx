@@ -5,58 +5,9 @@ import { logout } from "@/actions/auth";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, useEffect } from "react";
+import { useTranslations } from "next-intl";
 import type { Role } from "@/lib/auth";
 import { LOCALE_KEY, DEFAULT_LOCALE, LOCALES, type Locale } from "@/lib/i18n";
-
-const sections = [
-  {
-    label: "Organisation",
-    items: [
-      { label: "Team Members", href: "/team" },
-      { label: "Roles", href: "/roles" },
-      { label: "Profiles", href: "/profiles" },
-      { label: "Subs", href: "/subs" },
-    ],
-  },
-  {
-    label: "Projects",
-    items: [
-      { label: "Dashboard", href: "/" },
-      { label: "Projects", href: "/projects" },
-      { label: "Assignments", href: "/assignments" },
-      { label: "Performance", href: "/overview" },
-    ],
-  },
-  {
-    label: "Forecast",
-    items: [
-      { label: "Planning", href: "/planning" },
-      { label: "Timesheets", href: "/timesheets" },
-      { label: "Projekt Analysis", href: "/projekt-analysis" },
-    ],
-  },
-  {
-    label: "SAP Import",
-    items: [{ label: "ELSAP", href: "/elsap" }],
-  },
-  {
-    label: "Bookkeeping",
-    items: [
-      { label: "Invoicing Client", href: "/invoicing" },
-      { label: "Invoicing Subs", href: "/subinvoices" },
-    ],
-  },
-  {
-    label: "FMO",
-    items: [
-      { label: "Import",      href: "/fmo/import" },
-      { label: "WBS Codes",   href: "/fmo/wbs" },
-      { label: "Tickets",     href: "/fmo/tickets" },
-      { label: "Members",     href: "/fmo/members" },
-      { label: "Utilization", href: "/fmo/utilization" },
-    ],
-  },
-];
 
 export default function Sidebar({
   open = true,
@@ -68,6 +19,57 @@ export default function Sidebar({
   role?: Role;
 }) {
   const pathname = usePathname();
+  const t = useTranslations("nav");
+
+  const sections = [
+    {
+      key: "organisation",
+      items: [
+        { key: "teamMembers", href: "/team" },
+        { key: "roles", href: "/roles" },
+        { key: "profiles", href: "/profiles" },
+        { key: "subs", href: "/subs" },
+      ],
+    },
+    {
+      key: "projects",
+      items: [
+        { key: "dashboard", href: "/" },
+        { key: "projects", href: "/projects" },
+        { key: "assignments", href: "/assignments" },
+        { key: "performance", href: "/overview" },
+      ],
+    },
+    {
+      key: "forecast",
+      items: [
+        { key: "planning", href: "/planning" },
+        { key: "timesheets", href: "/timesheets" },
+        { key: "projektAnalysis", href: "/projekt-analysis" },
+      ],
+    },
+    {
+      key: "sapImport",
+      items: [{ key: "elsap", href: "/elsap" }],
+    },
+    {
+      key: "bookkeeping",
+      items: [
+        { key: "invoicingClient", href: "/invoicing" },
+        { key: "invoicingSubs", href: "/subinvoices" },
+      ],
+    },
+    {
+      key: "fmo",
+      items: [
+        { key: "import",      href: "/fmo/import" },
+        { key: "wbs",         href: "/fmo/wbs" },
+        { key: "tickets",     href: "/fmo/tickets" },
+        { key: "members",     href: "/fmo/members" },
+        { key: "utilization", href: "/fmo/utilization" },
+      ],
+    },
+  ];
 
   return (
     <aside
@@ -75,41 +77,30 @@ export default function Sidebar({
     >
       <div className="px-6 py-5 border-b border-slate-700 flex items-center justify-between">
         <h1 className="text-lg font-bold text-white leading-tight">
-          Ressource Dashboard
+          {t("appTitle")}
         </h1>
         <button
           onClick={onToggle}
-          title="Hide sidebar"
+          title={t("hideSidebar")}
           className="text-slate-400 hover:text-white transition-colors p-1 rounded hover:bg-slate-700"
         >
-          <svg
-            className="w-4 h-4"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M15 19l-7-7 7-7"
-            />
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
           </svg>
         </button>
       </div>
       <nav className="flex-1 px-3 py-4 space-y-5 overflow-y-auto">
         {sections.map((section) => (
-          <div key={section.label}>
+          <div key={section.key}>
             <p className="px-3 mb-1.5 text-xs font-semibold text-slate-500 uppercase tracking-wider">
-              {section.label}
+              {t(section.key as Parameters<typeof t>[0])}
             </p>
             <div className="space-y-0.5">
               {section.items.map((item) => {
                 const isActive =
                   item.href === "/"
                     ? pathname === "/"
-                    : pathname === item.href ||
-                      pathname.startsWith(item.href + "/");
+                    : pathname === item.href || pathname.startsWith(item.href + "/");
                 return (
                   <Link
                     key={item.href}
@@ -120,7 +111,7 @@ export default function Sidebar({
                         : "text-slate-300 hover:bg-slate-700 hover:text-white"
                     }`}
                   >
-                    {item.label}
+                    {t(item.key as Parameters<typeof t>[0])}
                   </Link>
                 );
               })}
@@ -133,18 +124,16 @@ export default function Sidebar({
         <div className="px-3 py-3 border-t border-slate-700 space-y-2">
           <div className="flex items-center justify-between">
             <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
-              role === 'admin'
-                ? 'bg-amber-500/20 text-amber-300'
-                : 'bg-slate-600 text-slate-300'
+              role === "admin" ? "bg-amber-500/20 text-amber-300" : "bg-slate-600 text-slate-300"
             }`}>
-              {role === 'admin' ? 'Admin' : 'Viewer'}
+              {role === "admin" ? t("admin") : t("viewer")}
             </span>
             <form action={logout}>
               <button
                 type="submit"
                 className="text-xs text-slate-400 hover:text-white transition-colors px-2 py-1 rounded hover:bg-slate-700"
               >
-                Sign out
+                {t("signOut")}
               </button>
             </form>
           </div>

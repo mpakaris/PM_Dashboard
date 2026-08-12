@@ -184,9 +184,9 @@ function AddWbsForm({ onClose }: { onClose: () => void }) {
         />
         {error && <p className="text-xs text-red-600 mt-1">{error}</p>}
       </td>
-      <td className="px-4 py-3 text-xs text-slate-400">auto-derived</td>
-      <td className="px-4 py-3 text-xs text-slate-400">auto-derived</td>
-      <td className="px-4 py-3 text-xs text-slate-400">manual</td>
+      <td className="px-4 py-3 text-xs text-slate-400">{t('autoDerived')}</td>
+      <td className="px-4 py-3 text-xs text-slate-400">{t('autoDerived')}</td>
+      <td className="px-4 py-3 text-xs text-slate-400">{t('manual')}</td>
       <td className="px-4 py-3">
         <div className="flex items-center gap-2">
           <button
@@ -259,7 +259,7 @@ function SubCategoryPanel({
               <tr className="text-xs text-slate-500 border-b border-slate-100">
                 <th className="py-2 text-left font-medium">Slug</th>
                 <th className="py-2 text-left font-medium">{tWbs('label')}</th>
-                <th className="py-2 text-left font-medium">{tWbs('usedBy', { count: '' }).replace(' ', '')}</th>
+                <th className="py-2 text-left font-medium">{tWbs('usedByHeader')}</th>
                 <th />
               </tr>
             </thead>

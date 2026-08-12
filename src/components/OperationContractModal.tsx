@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useTranslations } from 'next-intl';
 import { OperationContract } from '@/lib/types';
 import Modal from '@/components/Modal';
 
@@ -26,6 +27,9 @@ function getTicketLabel(task: string) {
 }
 
 export default function OperationContractModal({ initial, months, tasks, onSave, onClose }: Props) {
+  const t = useTranslations('operations');
+  const tCommon = useTranslations('common');
+
   const [name, setName] = useState(initial?.name ?? '');
   const [defaultAmt, setDefaultAmt] = useState(String(initial?.defaultMonthlyAmount ?? ''));
   const [overrides, setOverrides] = useState<Record<string, string>>(
@@ -59,33 +63,33 @@ export default function OperationContractModal({ initial, months, tasks, onSave,
   }
 
   return (
-    <Modal title={initial ? 'Edit Operation Contract' : 'Add Operation Contract'} onClose={onClose}>
+    <Modal title={initial ? t('editContract') : t('newContract')} onClose={onClose}>
       <div className="space-y-5">
         <div>
-          <label className="block text-xs font-medium text-gray-500 mb-1">Contract Name</label>
+          <label className="block text-xs font-medium text-gray-500 mb-1">{t('contractName')}</label>
           <input
             autoFocus
             type="text"
             value={name}
             onChange={e => setName(e.target.value)}
-            placeholder="e.g. Operation Contract 1"
+            placeholder={t('contractNamePlaceholder')}
             className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
           />
         </div>
         <div>
-          <label className="block text-xs font-medium text-gray-500 mb-1">Default Monthly Amount (€)</label>
+          <label className="block text-xs font-medium text-gray-500 mb-1">{t('defaultMonthlyAmount')}</label>
           <input
             type="text"
             inputMode="numeric"
             value={defaultAmt}
             onChange={e => setDefaultAmt(e.target.value.replace(/[^0-9.]/g, ''))}
-            placeholder="e.g. 20000"
+            placeholder={t('defaultAmountPlaceholder')}
             className="w-40 border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
           />
         </div>
         {months.length > 0 && (
           <div>
-            <label className="block text-xs font-medium text-gray-500 mb-2">Per-Month Overrides (leave blank to use default)</label>
+            <label className="block text-xs font-medium text-gray-500 mb-2">{t('perMonthOverrides')}</label>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-48 overflow-y-auto">
               {months.map(month => (
                 <div key={month} className="flex items-center gap-2">
@@ -107,7 +111,7 @@ export default function OperationContractModal({ initial, months, tasks, onSave,
         {tasks && tasks.length > 0 && (
           <div>
             <label className="block text-xs font-medium text-gray-500 mb-2">
-              Assign Tickets ({selectedTickets.length} selected)
+              {t('assignTickets', { count: selectedTickets.length })}
             </label>
             <div className="border border-gray-200 rounded-md divide-y divide-gray-100 max-h-48 overflow-y-auto">
               {tasks.map(task => (
@@ -126,13 +130,13 @@ export default function OperationContractModal({ initial, months, tasks, onSave,
           </div>
         )}
         <div className="flex justify-end gap-2 pt-2">
-          <button onClick={onClose} className="text-sm text-gray-500 hover:text-gray-700 px-4 py-2">Cancel</button>
+          <button onClick={onClose} className="text-sm text-gray-500 hover:text-gray-700 px-4 py-2">{tCommon('cancel')}</button>
           <button
             onClick={handleSave}
             disabled={!name.trim()}
             className="bg-indigo-600 text-white text-sm px-4 py-2 rounded-md hover:bg-indigo-700 transition-colors disabled:opacity-50"
           >
-            Save
+            {tCommon('save')}
           </button>
         </div>
       </div>

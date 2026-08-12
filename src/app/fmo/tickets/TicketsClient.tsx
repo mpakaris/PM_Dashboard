@@ -123,11 +123,11 @@ export default function TicketsClient({
   const unassignedCount = tickets.filter((tk) => !tk.wbsCode).length;
 
   async function reclass() {
-    if (!confirm(`Recompute categories for all ${entries.length} entries using current WBS assignments. Continue?`)) return;
+    if (!confirm(tWbs('reclassifyConfirm', { count: entries.length }))) return;
     setReclassifying(true);
     const r = await reclassifyAllEntries();
     setReclassifying(false);
-    if (r.ok) setReclassResult(`Reclassified ${r.reclassified} entries. ${r.unmapped} remain unmapped.`);
+    if (r.ok) setReclassResult(tWbs('reclassifyDone', { reclassified: r.reclassified, unmapped: r.unmapped }));
   }
 
   return (
