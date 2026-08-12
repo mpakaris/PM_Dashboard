@@ -12,9 +12,9 @@ function monthOffset(n: number): string {
 }
 
 const PRESETS = [
-  { key: '3m',  label: 'Last 3M',  offset: -2 },
-  { key: '6m',  label: 'Last 6M',  offset: -5 },
-  { key: '12m', label: 'Last 12M', offset: -11 },
+  { key: '3m',  label: 'Last 3M',  offset: -3 },
+  { key: '6m',  label: 'Last 6M',  offset: -6 },
+  { key: '12m', label: 'Last 12M', offset: -12 },
 ] as const;
 
 type Preset = typeof PRESETS[number]['key'] | null;
@@ -30,7 +30,7 @@ export function ChartTimeFilter({
 
   function applyPreset(key: Preset, offset: number) {
     setActive(key);
-    onChange({ from: monthOffset(offset), to: monthOffset(0) });
+    onChange({ from: monthOffset(offset), to: monthOffset(-1) });
   }
 
   return (
