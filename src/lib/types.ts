@@ -363,3 +363,35 @@ export interface FmoMappingStore {
   billingClasses: Record<string, string>;         // prefix → label, e.g. { 'V': 'Billable', 'I': 'Internal' }
   subCategories: Record<string, WbsSubCategory>;  // keyed by slug
 }
+
+// ─── FMO Projects ─────────────────────────────────────────────────────────────
+
+export interface FmoProject {
+  id: string;
+  name: string;
+  description?: string;
+  wbsCodes: string[];   // which WBS codes belong to this project
+  createdAt: string;
+}
+
+// ─── FMO Planning ─────────────────────────────────────────────────────────────
+
+export interface FmoForecast {
+  id: string;
+  name: string;
+  startMonth: string;   // "YYYY-MM"
+  endMonth: string;
+  createdAt: string;
+  projects: FmoForecastProject[];
+}
+
+export interface FmoForecastProject {
+  projectId: string;
+  overallHours: number;
+  assignments: FmoForecastAssignment[];
+}
+
+export interface FmoForecastAssignment {
+  memberId: string;
+  plannedHours: Record<string, number>;  // "YYYY-MM" → hours
+}

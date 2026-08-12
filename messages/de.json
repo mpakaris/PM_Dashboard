@@ -56,7 +56,9 @@
     "wbs": "WBS-Codes",
     "tickets": "Tickets",
     "members": "Mitarbeiter",
-    "utilization": "Auslastung"
+    "utilization": "Auslastung",
+    "projects": "Projekte",
+    "planning": "Planung"
   },
   "import": {
     "title": "SecTrack-Daten importieren",

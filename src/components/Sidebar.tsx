@@ -67,6 +67,8 @@ export default function Sidebar({
         { key: "tickets",     href: "/fmo/tickets" },
         { key: "members",     href: "/fmo/members" },
         { key: "utilization", href: "/fmo/utilization" },
+        { key: "projects",    href: "/fmo/projects" },
+        { key: "planning",    href: "/fmo/planning" },
       ],
     },
   ];

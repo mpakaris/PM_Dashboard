@@ -56,7 +56,9 @@
     "wbs": "WBS Codes",
     "tickets": "Tickets",
     "members": "Members",
-    "utilization": "Utilization"
+    "utilization": "Utilization",
+    "projects": "Projects",
+    "planning": "Planning"
   },
   "import": {
     "title": "Import SecTrack Data",

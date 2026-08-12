@@ -1,5 +1,5 @@
 import { Redis } from '@upstash/redis';
-import { AppData, Assignment, Project, Forecast, ElsapMirror, TimesheetStore, InvoicingStore, SubContractorStore, ProjektAnalysisProject, FmoStore, FmoMappingStore } from './types';
+import { AppData, Assignment, Project, Forecast, ElsapMirror, TimesheetStore, InvoicingStore, SubContractorStore, ProjektAnalysisProject, FmoStore, FmoMappingStore, FmoProject, FmoForecast } from './types';
 import { getMonthsBetween } from './utils';
 
 const redis = new Redis({
@@ -215,4 +215,25 @@ export async function readFmoMappings(): Promise<FmoMappingStore> {
 
 export async function writeFmoMappings(mappings: FmoMappingStore): Promise<void> {
   await withRetry(() => redis.set(FMO_MAPPING_KEY, mappings));
+}
+
+const FMO_PROJECTS_KEY  = 'app:fmo:projects';
+const FMO_PLANNING_KEY  = 'app:fmo:planning';
+
+export async function readFmoProjects(): Promise<FmoProject[]> {
+  const raw = await withRetry(() => redis.get<FmoProject[]>(FMO_PROJECTS_KEY));
+  return raw ?? [];
+}
+
+export async function writeFmoProjects(projects: FmoProject[]): Promise<void> {
+  await withRetry(() => redis.set(FMO_PROJECTS_KEY, projects));
+}
+
+export async function readFmoForecasts(): Promise<FmoForecast[]> {
+  const raw = await withRetry(() => redis.get<FmoForecast[]>(FMO_PLANNING_KEY));
+  return raw ?? [];
+}
+
+export async function writeFmoForecasts(forecasts: FmoForecast[]): Promise<void> {
+  await withRetry(() => redis.set(FMO_PLANNING_KEY, forecasts));
 }
