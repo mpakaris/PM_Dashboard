@@ -46,6 +46,16 @@ const sections = [
       { label: "Invoicing Subs", href: "/subinvoices" },
     ],
   },
+  {
+    label: "FMO",
+    items: [
+      { label: "Import",      href: "/fmo/import" },
+      { label: "WBS Codes",   href: "/fmo/wbs" },
+      { label: "Tickets",     href: "/fmo/tickets" },
+      { label: "Members",     href: "/fmo/members" },
+      { label: "Utilization", href: "/fmo/utilization" },
+    ],
+  },
 ];
 
 export default function Sidebar({
