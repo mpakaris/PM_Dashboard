@@ -99,7 +99,7 @@ export default function ImportClient({ store }: { store: FmoStore }) {
           accept=".csv"
           multiple
           className="hidden"
-          onChange={(e) => setFiles(Array.from(e.target.files ?? []))}
+          onChange={(e) => setFiles(prev => [...prev, ...Array.from(e.target.files ?? [])])}
         />
       </div>
 
