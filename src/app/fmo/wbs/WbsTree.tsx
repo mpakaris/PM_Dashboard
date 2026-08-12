@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useMemo } from 'react';
+import { useTranslations } from 'next-intl';
 import type { FmoWbsEntry, FmoTicket, FmoEntry, WbsSubCategory } from '@/lib/types';
 
 const TYPE1_COLORS: Record<string, string> = {
@@ -45,6 +46,8 @@ interface Props {
 }
 
 export default function WbsTree({ wbsEntries, subCategories, tickets, entries, search }: Props) {
+  const t = useTranslations('wbs');
+  const tCommon = useTranslations('common');
   const [expandedCodes, setExpandedCodes] = useState<Set<string>>(new Set());
 
   function toggleExpand(code: string) {
@@ -146,15 +149,15 @@ export default function WbsTree({ wbsEntries, subCategories, tickets, entries, s
             {isExpanded && (
               <div className="border-t border-slate-100">
                 {visibleChildren.length === 0 ? (
-                  <div className="px-8 py-3 text-xs text-slate-400 italic">No tickets</div>
+                  <div className="px-8 py-3 text-xs text-slate-400 italic">{t('noTickets')}</div>
                 ) : (
                   <table className="w-full text-xs">
                     <thead className="bg-slate-50/60">
                       <tr className="text-slate-500">
-                        <th className="px-8 py-2 text-left font-medium">ID</th>
-                        <th className="px-4 py-2 text-left font-medium">Name</th>
-                        <th className="px-4 py-2 text-left font-medium">Project</th>
-                        <th className="px-4 py-2 text-right font-medium">Hours</th>
+                        <th className="px-8 py-2 text-left font-medium">{tCommon('id')}</th>
+                        <th className="px-4 py-2 text-left font-medium">{tCommon('name')}</th>
+                        <th className="px-4 py-2 text-left font-medium">{tCommon('project')}</th>
+                        <th className="px-4 py-2 text-right font-medium">{tCommon('hours')}</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-50">
@@ -182,7 +185,7 @@ export default function WbsTree({ wbsEntries, subCategories, tickets, entries, s
             onClick={() => toggleExpand('__unassigned__')}
           >
             <span className={`text-amber-400 text-xs transition-transform shrink-0 ${expandedCodes.has('__unassigned__') ? 'rotate-90' : ''}`}>▶</span>
-            <span className="text-sm font-semibold text-amber-800">⚠ Unassigned Tickets</span>
+            <span className="text-sm font-semibold text-amber-800">{t('unassignedTickets')}</span>
             <span className="text-xs text-amber-600 bg-amber-100 rounded-full px-2 py-0.5 ml-auto">
               {visibleUnassigned.length} ticket{visibleUnassigned.length !== 1 ? 's' : ''}
             </span>

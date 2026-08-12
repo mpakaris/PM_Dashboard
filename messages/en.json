@@ -1,16 +1,29 @@
 {
   "common": {
     "save": "Save",
+    "saving": "Saving…",
     "cancel": "Cancel",
     "delete": "Delete",
     "edit": "Edit",
     "add": "Add",
+    "adding": "Adding…",
     "close": "Close",
     "confirm": "Confirm",
     "back": "Back",
     "loading": "Loading…",
     "error": "Error",
-    "success": "Saved"
+    "success": "Saved",
+    "source": "Source",
+    "all": "All",
+    "id": "ID",
+    "name": "Name",
+    "project": "Project",
+    "hours": "Hours",
+    "total": "Total",
+    "actions": "Actions",
+    "treeView": "Tree",
+    "flatView": "Flat",
+    "search": "Search"
   },
   "nav": {
     "import": "Import",
@@ -22,17 +35,25 @@
   "import": {
     "title": "Import SecTrack Data",
     "dropzone": "Drag & drop CSV files here, or click to choose",
+    "uploading": "Uploading…",
     "uploadButton": "Upload {count} file(s)",
+    "selectedFiles": "Selected files",
     "lastImport": "Last import",
     "never": "Never",
     "filesImported": "Files imported",
+    "dataSources": "Data Sources",
     "results": "Last import result",
     "added": "{count} added",
     "updated": "{count} updated",
     "duplicates": "{count} duplicates",
     "newTickets": "{count} new tickets",
     "newMembers": "{count} new members",
-    "unmapped": "{count} unmapped"
+    "unmapped": "{count} unmapped",
+    "seedTitle": "Seed from Therese_Board.xlsx",
+    "seedDesc": "Upload the Excel file to populate WBS labels, employee types, and backfill ticket→WBS mappings for legacy entries (7-column format).",
+    "seed": "Seed",
+    "seeding": "Seeding…",
+    "seedSuccess": "WBS labels added: {wbsLabelsAdded} · Legacy tickets backfilled: {ticketsBackfilled} · Entries reclassified: {entriesReclassified}"
   },
   "wbs": {
     "title": "WBS Codes",
@@ -40,15 +61,27 @@
     "label": "Label",
     "type1": "Billing Class",
     "type2": "Sub-Category",
+    "source": "Source",
     "actions": "Actions",
-    "addWbs": "Add WBS",
+    "addWbs": "+ Add WBS",
     "billable": "Billable",
     "internal": "Internal",
     "unknown": "Unknown",
     "unmapped": "Unmapped",
     "noTickets": "No tickets",
+    "noEntries": "No WBS codes yet.",
     "subCategories": "Sub-Categories",
-    "reclassifyAll": "Reclassify All"
+    "reclassifyAll": "Reclassify All",
+    "searchPlaceholder": "Search WBS codes or tickets…",
+    "autoOverride": "— auto —",
+    "slugLabel": "Slug (auto)",
+    "usedBy": "Used by {count} WBS",
+    "budgetH": "Budget h",
+    "budgetEur": "Budget €",
+    "unassignedTickets": "⚠ Unassigned Tickets",
+    "entries": "{count} entries",
+    "ticketCount": "{count} ticket",
+    "ticketsCount": "{count} tickets"
   },
   "tickets": {
     "title": "Tickets",
@@ -57,10 +90,15 @@
     "project": "Project",
     "wbsCode": "WBS Code",
     "status": "Status",
+    "hours": "Hours",
     "assigned": "Assigned",
     "unassigned": "Unassigned",
-    "assignWbs": "Assign WBS",
-    "needsAssignment": "{count} ticket(s) need WBS assignment"
+    "assignWbs": "WBS Assignment",
+    "needsAssignment": "{count} ticket(s) need WBS assignment",
+    "reclassifying": "Reclassifying…",
+    "searchPlaceholder": "Search ID or name…",
+    "showingOf": "Showing {filtered} of {total}",
+    "noTickets": "No tickets found."
   },
   "members": {
     "title": "Members",
@@ -69,9 +107,18 @@
     "partnerCompany": "Partner Company",
     "costRate": "Cost Rate (€/h)",
     "totalHours": "Total Hours",
+    "actions": "Actions",
     "intern": "Intern",
     "extern": "Extern",
-    "missingCost": "Cost rate not configured"
+    "missingCost": "Cost rate not configured",
+    "countSummary": "{extern} Extern, {intern} Intern",
+    "noMembers": "No members yet — import a CSV first.",
+    "profile": "Profile",
+    "companyPlaceholder": "Company name",
+    "noData": "No data imported yet.",
+    "chartTitle": "Hours by Category per Month",
+    "category": "Category",
+    "backLink": "← Members"
   },
   "utilization": {
     "title": "Utilization",
@@ -82,6 +129,26 @@
     "total": "Total",
     "year": "Year",
     "month": "Month",
-    "allClassified": "All entries classified — great!"
+    "allClassified": "All entries classified — great!",
+    "billable": "Billable"
+  },
+  "charts": {
+    "panel": "Charts",
+    "reset": "Reset to defaults",
+    "visible": "Visible",
+    "hidden": "Hidden",
+    "half": "Half width",
+    "full": "Full width",
+    "monthlyByTicket": "Monthly by Ticket",
+    "monthlyByUser": "Monthly by Employee",
+    "activitySplit": "Activity Split",
+    "devOps": "Dev vs Operations",
+    "velocity": "Velocity",
+    "teamComposition": "Team Composition",
+    "economics": "Economics",
+    "billing": "Monthly Billing",
+    "cumulative": "Cumulative Hours",
+    "forecastBurnup": "Forecast Burnup",
+    "ticketProgress": "Ticket Progress"
   }
 }

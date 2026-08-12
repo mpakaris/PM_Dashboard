@@ -1,6 +1,8 @@
 'use client';
 
 import { useState, useMemo, useEffect } from 'react';
+import { useTranslations, useLocale } from 'next-intl';
+import { fmtH, type Locale } from '@/lib/i18n';
 import type { FmoTicket, FmoWbsEntry, FmoEntry } from '@/lib/types';
 import { assignTicketWbs, reclassifyAllEntries } from '@/actions/fmo';
 import TicketsTree from './TicketsTree';
@@ -10,9 +12,10 @@ const LS_KEY = 'fmo-tickets-view';
 type Filter = 'all' | 'assigned' | 'unassigned';
 
 function StatusBadge({ assigned }: { assigned: boolean }) {
+  const t = useTranslations('tickets');
   return assigned
-    ? <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">Assigned</span>
-    : <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800">Unassigned</span>;
+    ? <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">{t('assigned')}</span>
+    : <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800">{t('unassigned')}</span>;
 }
 
 function TicketRow({
@@ -24,6 +27,9 @@ function TicketRow({
   hours: number;
   wbsEntries: Record<string, FmoWbsEntry>;
 }) {
+  const t = useTranslations('tickets');
+  const tCommon = useTranslations('common');
+  const locale = useLocale() as Locale;
   const [saving, setSaving] = useState(false);
   const [saved,  setSaved]  = useState(false);
   const [error,  setError]  = useState('');
@@ -33,7 +39,7 @@ function TicketRow({
     const r = await assignTicketWbs(ticket.id, wbsCode || null);
     setSaving(false);
     if (r.ok) { setSaved(true); setTimeout(() => setSaved(false), 2000); }
-    else setError(r.error ?? 'Error');
+    else setError(r.error ?? tCommon('error'));
   }
 
   const sortedWbs = Object.values(wbsEntries).sort((a, b) => a.code.localeCompare(b.code));
@@ -51,18 +57,18 @@ function TicketRow({
             disabled={saving}
             className="border border-slate-300 rounded px-2 py-1 text-xs w-52"
           >
-            <option value="">— unassigned —</option>
+            <option value="">— {t('unassigned')} —</option>
             {sortedWbs.map((w) => (
               <option key={w.code} value={w.code}>{w.code} · {w.label}</option>
             ))}
           </select>
-          {saving && <span className="text-xs text-slate-400">Saving…</span>}
-          {saved  && <span className="text-xs text-green-600">Saved</span>}
+          {saving && <span className="text-xs text-slate-400">{tCommon('saving')}</span>}
+          {saved  && <span className="text-xs text-green-600">{tCommon('success')}</span>}
           {error  && <span className="text-xs text-red-600">{error}</span>}
         </div>
       </td>
       <td className="px-4 py-3"><StatusBadge assigned={!!ticket.wbsCode} /></td>
-      <td className="px-4 py-3 text-xs text-slate-500 text-right">{hours.toFixed(1)}h</td>
+      <td className="px-4 py-3 text-xs text-slate-500 text-right">{fmtH(hours, locale)}</td>
     </tr>
   );
 }
@@ -76,6 +82,9 @@ export default function TicketsClient({
   wbsEntries: Record<string, FmoWbsEntry>;
   entries: FmoEntry[];
 }) {
+  const t = useTranslations('tickets');
+  const tCommon = useTranslations('common');
+  const tWbs = useTranslations('wbs');
   const [search, setSearch]   = useState('');
   const [filter, setFilter]   = useState<Filter>('all');
   const [reclassifying, setReclassifying] = useState(false);
@@ -98,10 +107,10 @@ export default function TicketsClient({
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
     return tickets
-      .filter((t) => {
-        if (filter === 'assigned'   && !t.wbsCode) return false;
-        if (filter === 'unassigned' &&  t.wbsCode) return false;
-        if (q && !String(t.id).includes(q) && !t.name.toLowerCase().includes(q)) return false;
+      .filter((tk) => {
+        if (filter === 'assigned'   && !tk.wbsCode) return false;
+        if (filter === 'unassigned' &&  tk.wbsCode) return false;
+        if (q && !String(tk.id).includes(q) && !tk.name.toLowerCase().includes(q)) return false;
         return true;
       })
       .sort((a, b) => {
@@ -111,7 +120,7 @@ export default function TicketsClient({
       });
   }, [tickets, search, filter]);
 
-  const unassignedCount = tickets.filter((t) => !t.wbsCode).length;
+  const unassignedCount = tickets.filter((tk) => !tk.wbsCode).length;
 
   async function reclass() {
     if (!confirm(`Recompute categories for all ${entries.length} entries using current WBS assignments. Continue?`)) return;
@@ -124,20 +133,20 @@ export default function TicketsClient({
   return (
     <div className="p-6 space-y-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-slate-900">Tickets</h1>
+        <h1 className="text-2xl font-bold text-slate-900">{t('title')}</h1>
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-1 border border-slate-200 rounded-md overflow-hidden text-xs">
             <button
               onClick={() => { setView('flat'); localStorage.setItem(LS_KEY, 'flat'); }}
               className={`px-3 py-1.5 transition-colors ${view === 'flat' ? 'bg-slate-800 text-white' : 'text-slate-500 hover:bg-slate-50'}`}
             >
-              Flat
+              {tCommon('flatView')}
             </button>
             <button
               onClick={() => { setView('tree'); localStorage.setItem(LS_KEY, 'tree'); }}
               className={`px-3 py-1.5 transition-colors ${view === 'tree' ? 'bg-slate-800 text-white' : 'text-slate-500 hover:bg-slate-50'}`}
             >
-              Tree
+              {tCommon('treeView')}
             </button>
           </div>
           <button
@@ -145,7 +154,7 @@ export default function TicketsClient({
             disabled={reclassifying}
             className="px-3 py-1.5 text-xs bg-slate-700 text-white rounded hover:bg-slate-600 disabled:opacity-50"
           >
-            {reclassifying ? 'Reclassifying…' : 'Reclassify All'}
+            {reclassifying ? t('reclassifying') : tWbs('reclassifyAll')}
           </button>
         </div>
       </div>
@@ -154,7 +163,7 @@ export default function TicketsClient({
 
       {unassignedCount > 0 && (
         <div className="bg-amber-50 border border-amber-200 rounded px-4 py-3 text-sm text-amber-800">
-          {unassignedCount} ticket(s) need WBS assignment
+          {t('needsAssignment', { count: unassignedCount })}
         </div>
       )}
 
@@ -163,7 +172,7 @@ export default function TicketsClient({
           type="text"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search ID or name…"
+          placeholder={t('searchPlaceholder')}
           className="border border-slate-300 rounded px-3 py-1.5 text-sm w-64"
         />
         {view === 'flat' && (
@@ -173,11 +182,11 @@ export default function TicketsClient({
               onChange={(e) => setFilter(e.target.value as Filter)}
               className="border border-slate-300 rounded px-2 py-1.5 text-sm"
             >
-              <option value="all">All</option>
-              <option value="assigned">Assigned</option>
-              <option value="unassigned">Unassigned</option>
+              <option value="all">{tCommon('all')}</option>
+              <option value="assigned">{t('assigned')}</option>
+              <option value="unassigned">{t('unassigned')}</option>
             </select>
-            <span className="text-sm text-slate-500">Showing {filtered.length} of {tickets.length}</span>
+            <span className="text-sm text-slate-500">{t('showingOf', { filtered: filtered.length, total: tickets.length })}</span>
           </>
         )}
       </div>
@@ -191,26 +200,26 @@ export default function TicketsClient({
         <table className="w-full text-sm">
           <thead className="bg-slate-50 border-b border-slate-200">
             <tr>
-              <th className="px-4 py-3 text-left font-semibold text-slate-600">ID</th>
-              <th className="px-4 py-3 text-left font-semibold text-slate-600">Name</th>
-              <th className="px-4 py-3 text-left font-semibold text-slate-600">Project</th>
-              <th className="px-4 py-3 text-left font-semibold text-slate-600">WBS Assignment</th>
-              <th className="px-4 py-3 text-left font-semibold text-slate-600">Status</th>
-              <th className="px-4 py-3 text-right font-semibold text-slate-600">Hours</th>
+              <th className="px-4 py-3 text-left font-semibold text-slate-600">{t('id')}</th>
+              <th className="px-4 py-3 text-left font-semibold text-slate-600">{t('name')}</th>
+              <th className="px-4 py-3 text-left font-semibold text-slate-600">{t('project')}</th>
+              <th className="px-4 py-3 text-left font-semibold text-slate-600">{t('assignWbs')}</th>
+              <th className="px-4 py-3 text-left font-semibold text-slate-600">{t('status')}</th>
+              <th className="px-4 py-3 text-right font-semibold text-slate-600">{t('hours')}</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {filtered.map((t) => (
+            {filtered.map((tk) => (
               <TicketRow
-                key={t.id}
-                ticket={t}
-                hours={hoursMap.get(t.id) ?? 0}
+                key={tk.id}
+                ticket={tk}
+                hours={hoursMap.get(tk.id) ?? 0}
                 wbsEntries={wbsEntries}
               />
             ))}
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-slate-400">No tickets found.</td>
+                <td colSpan={6} className="px-4 py-8 text-center text-slate-400">{t('noTickets')}</td>
               </tr>
             )}
           </tbody>

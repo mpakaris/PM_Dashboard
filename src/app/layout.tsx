@@ -4,6 +4,8 @@ import { Geist } from "next/font/google";
 import "./globals.css";
 import { cookies } from "next/headers";
 import { parseSession } from "@/lib/auth";
+import { NextIntlClientProvider } from "next-intl";
+import { getLocale, getMessages } from "next-intl/server";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -22,15 +24,19 @@ export default async function RootLayout({
 }>) {
   const store = await cookies();
   const role = await parseSession(store.get("session")?.value);
+  const locale = await getLocale();
+  const messages = await getMessages();
 
   return (
-    <html lang="en" className={`${geistSans.variable} h-full antialiased`}>
+    <html lang={locale} className={`${geistSans.variable} h-full antialiased`}>
       <body className="h-full bg-gray-50">
-        {role ? (
-          <LayoutShell role={role}>{children}</LayoutShell>
-        ) : (
-          children
-        )}
+        <NextIntlClientProvider locale={locale} messages={messages}>
+          {role ? (
+            <LayoutShell role={role}>{children}</LayoutShell>
+          ) : (
+            children
+          )}
+        </NextIntlClientProvider>
       </body>
     </html>
   );

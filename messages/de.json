@@ -1,16 +1,29 @@
 {
   "common": {
     "save": "Speichern",
+    "saving": "Wird gespeichert…",
     "cancel": "Abbrechen",
     "delete": "Löschen",
     "edit": "Bearbeiten",
     "add": "Hinzufügen",
+    "adding": "Wird hinzugefügt…",
     "close": "Schließen",
     "confirm": "Bestätigen",
     "back": "Zurück",
     "loading": "Wird geladen…",
     "error": "Fehler",
-    "success": "Gespeichert"
+    "success": "Gespeichert",
+    "source": "Quelle",
+    "all": "Alle",
+    "id": "ID",
+    "name": "Name",
+    "project": "Projekt",
+    "hours": "Stunden",
+    "total": "Gesamt",
+    "actions": "Aktionen",
+    "treeView": "Baum",
+    "flatView": "Liste",
+    "search": "Suche"
   },
   "nav": {
     "import": "Import",
@@ -22,17 +35,25 @@
   "import": {
     "title": "SecTrack-Daten importieren",
     "dropzone": "CSV-Dateien hier ablegen oder klicken",
+    "uploading": "Wird hochgeladen…",
     "uploadButton": "{count} Datei(en) hochladen",
+    "selectedFiles": "Ausgewählte Dateien",
     "lastImport": "Letzter Import",
     "never": "Nie",
     "filesImported": "Importierte Dateien",
+    "dataSources": "Datenquellen",
     "results": "Letztes Import-Ergebnis",
     "added": "{count} hinzugefügt",
     "updated": "{count} aktualisiert",
     "duplicates": "{count} Duplikate",
     "newTickets": "{count} neue Tickets",
     "newMembers": "{count} neue Mitarbeiter",
-    "unmapped": "{count} nicht zugeordnet"
+    "unmapped": "{count} nicht zugeordnet",
+    "seedTitle": "Aus Therese_Board.xlsx befüllen",
+    "seedDesc": "Excel-Datei hochladen, um WBS-Bezeichnungen, Mitarbeitertypen und Ticket→WBS-Zuordnungen für Alteinträge (7-Spalten-Format) zu befüllen.",
+    "seed": "Befüllen",
+    "seeding": "Wird befüllt…",
+    "seedSuccess": "WBS-Bezeichnungen hinzugefügt: {wbsLabelsAdded} · Alttickets zugeordnet: {ticketsBackfilled} · Einträge neu klassifiziert: {entriesReclassified}"
   },
   "wbs": {
     "title": "WBS-Codes",
@@ -40,15 +61,27 @@
     "label": "Bezeichnung",
     "type1": "Abrechnungsklasse",
     "type2": "Unterkategorie",
+    "source": "Quelle",
     "actions": "Aktionen",
-    "addWbs": "WBS hinzufügen",
+    "addWbs": "+ WBS hinzufügen",
     "billable": "Verrechenbar",
     "internal": "Intern",
     "unknown": "Unbekannt",
     "unmapped": "Nicht zugeordnet",
     "noTickets": "Keine Tickets",
+    "noEntries": "Noch keine WBS-Codes vorhanden.",
     "subCategories": "Unterkategorien",
-    "reclassifyAll": "Alle neu klassifizieren"
+    "reclassifyAll": "Alle neu klassifizieren",
+    "searchPlaceholder": "WBS-Codes oder Tickets suchen…",
+    "autoOverride": "— auto —",
+    "slugLabel": "Slug (auto)",
+    "usedBy": "Verwendet von {count} WBS",
+    "budgetH": "Budget h",
+    "budgetEur": "Budget €",
+    "unassignedTickets": "⚠ Nicht zugeordnete Tickets",
+    "entries": "{count} Einträge",
+    "ticketCount": "{count} Ticket",
+    "ticketsCount": "{count} Tickets"
   },
   "tickets": {
     "title": "Tickets",
@@ -57,10 +90,15 @@
     "project": "Projekt",
     "wbsCode": "WBS-Code",
     "status": "Status",
+    "hours": "Stunden",
     "assigned": "Zugeordnet",
     "unassigned": "Nicht zugeordnet",
-    "assignWbs": "WBS zuordnen",
-    "needsAssignment": "{count} Ticket(s) benötigen WBS-Zuordnung"
+    "assignWbs": "WBS-Zuordnung",
+    "needsAssignment": "{count} Ticket(s) benötigen WBS-Zuordnung",
+    "reclassifying": "Wird neu klassifiziert…",
+    "searchPlaceholder": "ID oder Name suchen…",
+    "showingOf": "{filtered} von {total} angezeigt",
+    "noTickets": "Keine Tickets gefunden."
   },
   "members": {
     "title": "Mitarbeiter",
@@ -69,9 +107,18 @@
     "partnerCompany": "Partnerunternehmen",
     "costRate": "Kostensatz (€/h)",
     "totalHours": "Gesamtstunden",
+    "actions": "Aktionen",
     "intern": "Intern",
     "extern": "Extern",
-    "missingCost": "Kostensatz nicht konfiguriert"
+    "missingCost": "Kostensatz nicht konfiguriert",
+    "countSummary": "{extern} Extern, {intern} Intern",
+    "noMembers": "Noch keine Mitarbeiter — zuerst CSV importieren.",
+    "profile": "Profil",
+    "companyPlaceholder": "Firmenname",
+    "noData": "Noch keine Daten importiert.",
+    "chartTitle": "Stunden nach Kategorie pro Monat",
+    "category": "Kategorie",
+    "backLink": "← Mitarbeiter"
   },
   "utilization": {
     "title": "Auslastung",
@@ -82,6 +129,26 @@
     "total": "Gesamt",
     "year": "Jahr",
     "month": "Monat",
-    "allClassified": "Alle Einträge klassifiziert — super!"
+    "allClassified": "Alle Einträge klassifiziert — super!",
+    "billable": "Verrechenbar"
+  },
+  "charts": {
+    "panel": "Diagramme",
+    "reset": "Standard wiederherstellen",
+    "visible": "Sichtbar",
+    "hidden": "Ausgeblendet",
+    "half": "Halbe Breite",
+    "full": "Volle Breite",
+    "monthlyByTicket": "Monatlich nach Ticket",
+    "monthlyByUser": "Monatlich nach Mitarbeiter",
+    "activitySplit": "Aktivitätsaufteilung",
+    "devOps": "Entwicklung vs. Betrieb",
+    "velocity": "Geschwindigkeit",
+    "teamComposition": "Teamzusammensetzung",
+    "economics": "Wirtschaftlichkeit",
+    "billing": "Monatliche Abrechnung",
+    "cumulative": "Kumulierte Stunden",
+    "forecastBurnup": "Forecast Burnup",
+    "ticketProgress": "Ticket-Fortschritt"
   }
 }
