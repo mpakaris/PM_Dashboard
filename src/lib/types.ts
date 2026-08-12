@@ -370,7 +370,9 @@ export interface FmoProject {
   id: string;
   name: string;
   description?: string;
-  wbsCodes: string[];   // which WBS codes belong to this project
+  wbsCodes: string[];          // WBS codes — all their tickets are included
+  ticketIds: number[];         // extra tickets added individually (mixed / tickets mode)
+  excludedTicketIds: number[]; // tickets excluded from a selected WBS code
   createdAt: string;
 }
 

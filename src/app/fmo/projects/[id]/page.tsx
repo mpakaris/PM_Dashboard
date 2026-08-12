@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation';
 import { getFmoProjects } from '@/actions/fmoProjects';
 import { getFmoData } from '@/actions/fmo';
+import { entryBelongsToProject } from '@/lib/utils';
 import ProjectDetailClient from './ProjectDetailClient';
 
 export default async function ProjectDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -9,7 +10,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   const project = projects.find(p => p.id === id);
   if (!project) notFound();
 
-  const projectEntries = store.entries.filter(e => e.wbsCode && project.wbsCodes.includes(e.wbsCode));
+  const projectEntries = store.entries.filter(e => entryBelongsToProject(e, project));
 
   return (
     <ProjectDetailClient

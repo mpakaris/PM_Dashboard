@@ -105,7 +105,7 @@ export default function FmoPlanningDetailClient({
     for (const fp of forecast.projects) {
       const proj = projects.find(p => p.id === fp.projectId);
       if (!proj) continue;
-      const h = entries.filter(e => e.wbsCode && proj.wbsCodes.includes(e.wbsCode)
+      const h = entries.filter(e => (e.wbsCode && proj.wbsCodes.includes(e.wbsCode) && (e.ticketId === null || !(proj.excludedTicketIds ?? []).includes(e.ticketId))) || (e.ticketId !== null && (proj.ticketIds ?? []).includes(e.ticketId))
         && e.month >= forecast.startMonth && e.month <= forecast.endMonth)
         .reduce((s, e) => s + e.spentTime, 0);
       map.set(fp.projectId, h);
@@ -253,7 +253,7 @@ export default function FmoPlanningDetailClient({
                         if (!member) return null;
                         const rowPlan = Object.values(asgn.plannedHours).reduce((s, h) => s + h, 0);
                         const rowActual = proj
-                          ? entries.filter(e => e.user === member.name && e.wbsCode && proj.wbsCodes.includes(e.wbsCode)
+                          ? entries.filter(e => e.user === member.name && (e.wbsCode && proj.wbsCodes.includes(e.wbsCode) && (e.ticketId === null || !(proj.excludedTicketIds ?? []).includes(e.ticketId))) || (e.ticketId !== null && (proj.ticketIds ?? []).includes(e.ticketId))
                             && e.month >= forecast.startMonth && e.month <= forecast.endMonth)
                             .reduce((s, e) => s + e.spentTime, 0)
                           : 0;

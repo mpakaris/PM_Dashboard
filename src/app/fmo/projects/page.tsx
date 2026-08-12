@@ -4,5 +4,5 @@ import ProjectsClient from './ProjectsClient';
 
 export default async function FmoProjectsPage() {
   const [projects, mappings] = await Promise.all([getFmoProjects(), getFmoMappings()]);
-  return <ProjectsClient projects={projects} wbsEntries={mappings.wbs} />;
+  return <ProjectsClient projects={projects} wbsEntries={mappings.wbs} tickets={mappings.tickets} />;
 }
