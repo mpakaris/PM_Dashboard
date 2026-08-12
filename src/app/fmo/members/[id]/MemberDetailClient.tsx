@@ -120,7 +120,7 @@ export default function MemberDetailClient({
     }
     return [
       { name: tUtil('billable'), value: billable, color: '#22c55e' },
-      { name: tUtil('unmapped').replace('Unmapped', 'Internal'), value: internal, color: '#64748b' },
+      { name: tUtil('internal'), value: internal, color: '#64748b' },
     ].filter(d => d.value > 0);
   }, [chartEntries, tUtil]);
 
