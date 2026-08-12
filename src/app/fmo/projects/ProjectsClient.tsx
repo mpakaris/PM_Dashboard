@@ -5,19 +5,27 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useRole } from '@/components/RoleProvider';
 import { FmoProject, FmoWbsEntry, FmoTicket } from '@/lib/types';
-import { createFmoProject, deleteFmoProject } from '@/actions/fmoProjects';
+import { createFmoProject, updateFmoProject, deleteFmoProject } from '@/actions/fmoProjects';
 
 type Mode = 'wbs' | 'tickets' | 'mixed';
 type BillingFilter = 'all' | 'V' | 'I';
 
+function detectMode(p: FmoProject): Mode {
+  const hasWbs   = p.wbsCodes.length > 0;
+  const hasExtra = (p.ticketIds ?? []).length > 0;
+  if (hasWbs && hasExtra) return 'mixed';
+  if (!hasWbs && hasExtra) return 'tickets';
+  return 'wbs';
+}
+
 // ─── Shared sub-components ────────────────────────────────────────────────────
 
-function BillingPill({ v, billingFilter, setBillingFilter }: { v: BillingFilter; billingFilter: BillingFilter; setBillingFilter: (f: BillingFilter) => void }) {
+function BillingPill({ v, active, onClick }: { v: BillingFilter; active: boolean; onClick: () => void }) {
   const labels: Record<BillingFilter, string> = { all: 'All', V: 'Billable', I: 'Internal' };
   return (
-    <button type="button" onClick={() => setBillingFilter(v)}
+    <button type="button" onClick={onClick}
       className={`text-xs px-2.5 py-1 rounded border transition-colors ${
-        billingFilter === v ? 'bg-slate-800 text-white border-slate-800' : 'text-slate-500 border-slate-200 hover:border-slate-400 hover:text-slate-700'
+        active ? 'bg-slate-800 text-white border-slate-800' : 'text-slate-500 border-slate-200 hover:border-slate-400 hover:text-slate-700'
       }`}>
       {labels[v]}
     </button>
@@ -40,29 +48,32 @@ function SearchInput({ value, onChange, placeholder }: { value: string; onChange
   );
 }
 
-// ─── Project creation form ────────────────────────────────────────────────────
+// ─── Create / Edit form ───────────────────────────────────────────────────────
 
 function ProjectForm({
   wbsEntries,
   tickets,
+  project,      // undefined = create, defined = edit
   onClose,
 }: {
   wbsEntries: Record<string, FmoWbsEntry>;
   tickets: Record<string, FmoTicket>;
+  project?: FmoProject;
   onClose: () => void;
 }) {
-  const router = useRouter();
+  const router   = useRouter();
+  const isEdit   = !!project;
 
-  const [name, setName]               = useState('');
-  const [description, setDescription] = useState('');
-  const [mode, setMode]               = useState<Mode>('wbs');
-  const [selectedWbs, setSelectedWbs] = useState<string[]>([]);
-  const [excludedTickets, setExcludedTickets] = useState<number[]>([]);
-  const [selectedTickets, setSelectedTickets] = useState<number[]>([]);
+  const [name, setName]               = useState(project?.name ?? '');
+  const [description, setDescription] = useState(project?.description ?? '');
+  const [mode, setMode]               = useState<Mode>(project ? detectMode(project) : 'wbs');
+  const [selectedWbs, setSelectedWbs] = useState<string[]>(project?.wbsCodes ?? []);
+  const [excludedTickets, setExcludedTickets] = useState<number[]>(project?.excludedTicketIds ?? []);
+  const [selectedTickets, setSelectedTickets] = useState<number[]>(project?.ticketIds ?? []);
   const [billingFilter, setBillingFilter]     = useState<BillingFilter>('all');
   const [wbsQuery, setWbsQuery]       = useState('');
   const [ticketQuery, setTicketQuery] = useState('');
-  const [expandedWbs, setExpandedWbs] = useState<Set<string>>(new Set());
+  const [expandedWbs, setExpandedWbs] = useState<Set<string>>(new Set(project?.wbsCodes ?? []));
   const [saving, setSaving]           = useState(false);
   const [error, setError]             = useState('');
 
@@ -87,7 +98,6 @@ function ProjectForm({
     [wbsEntries, billingFilter, wbsQuery],
   );
 
-  // Tickets visible in the individual section
   const filteredIndividualTickets = useMemo(() => {
     const q = ticketQuery.toLowerCase();
     return allTickets
@@ -101,7 +111,6 @@ function ProjectForm({
 
   function toggleWbs(code: string) {
     if (selectedWbs.includes(code)) {
-      // Remove WBS — also clear its exclusions
       const codeTickets = new Set((ticketsByWbs.get(code) ?? []).map(t => t.id));
       setExcludedTickets(prev => prev.filter(id => !codeTickets.has(id)));
       setSelectedWbs(prev => prev.filter(c => c !== code));
@@ -111,15 +120,11 @@ function ProjectForm({
   }
 
   function toggleExclusion(ticketId: number) {
-    setExcludedTickets(prev =>
-      prev.includes(ticketId) ? prev.filter(id => id !== ticketId) : [...prev, ticketId],
-    );
+    setExcludedTickets(prev => prev.includes(ticketId) ? prev.filter(id => id !== ticketId) : [...prev, ticketId]);
   }
 
   function toggleTicket(ticketId: number) {
-    setSelectedTickets(prev =>
-      prev.includes(ticketId) ? prev.filter(id => id !== ticketId) : [...prev, ticketId],
-    );
+    setSelectedTickets(prev => prev.includes(ticketId) ? prev.filter(id => id !== ticketId) : [...prev, ticketId]);
   }
 
   function toggleExpand(code: string) {
@@ -132,21 +137,23 @@ function ProjectForm({
     if (!selectedWbs.length && !selectedTickets.length) {
       setError('Select at least one WBS code or ticket'); return;
     }
-    setSaving(true);
     const wbs   = mode === 'tickets' ? [] : selectedWbs;
     const extra = mode === 'wbs'     ? [] : selectedTickets;
     const excl  = mode === 'tickets' ? [] : excludedTickets;
-    const r = await createFmoProject(name, description, wbs, extra, excl);
+
+    setSaving(true);
+    const r = isEdit
+      ? await updateFmoProject(project!.id, name, description, wbs, extra, excl)
+      : await createFmoProject(name, description, wbs, extra, excl);
     setSaving(false);
     if (r.ok) { onClose(); router.refresh(); }
-    else setError(r.error ?? 'Error');
+    else setError((r as any).error ?? 'Error');
   }
 
   const showWbs     = mode === 'wbs'     || mode === 'mixed';
   const showTickets = mode === 'tickets' || mode === 'mixed';
-
   const totalWbsTickets = selectedWbs.reduce((s, c) => s + (ticketsByWbs.get(c)?.length ?? 0), 0);
-  const effectiveWbs   = totalWbsTickets - excludedTickets.length;
+  const effectiveWbs    = totalWbsTickets - excludedTickets.length;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
@@ -154,7 +161,9 @@ function ProjectForm({
 
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 shrink-0">
-          <h2 className="text-base font-semibold text-gray-800">New Project</h2>
+          <h2 className="text-base font-semibold text-gray-800">
+            {isEdit ? `Edit "${project!.name}"` : 'New Project'}
+          </h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>
         </div>
 
@@ -180,8 +189,8 @@ function ProjectForm({
             <p className="text-xs font-medium text-slate-500 mb-2">Project scope</p>
             <div className="flex gap-2">
               {([
-                ['wbs',     'By WBS',     'All tickets under selected WBS codes'],
-                ['tickets', 'By Tickets', 'Hand-pick individual tickets'],
+                ['wbs',     'By WBS',       'All tickets under selected WBS codes'],
+                ['tickets', 'By Tickets',   'Hand-pick individual tickets'],
                 ['mixed',   'WBS + extras', 'WBS codes with additional individual tickets'],
               ] as const).map(([m, label, desc]) => (
                 <button key={m} type="button" onClick={() => setMode(m)}
@@ -195,12 +204,12 @@ function ProjectForm({
             </div>
           </div>
 
-          {/* Billing filter — shared */}
+          {/* Billing filter */}
           <div className="flex items-center gap-2">
             <span className="text-xs text-slate-400 shrink-0">Filter</span>
             <div className="flex gap-1">
               {(['all', 'V', 'I'] as const).map(v => (
-                <BillingPill key={v} v={v} billingFilter={billingFilter} setBillingFilter={setBillingFilter} />
+                <BillingPill key={v} v={v} active={billingFilter === v} onClick={() => setBillingFilter(v)} />
               ))}
             </div>
           </div>
@@ -231,47 +240,33 @@ function ProjectForm({
                   const isSelected = selectedWbs.includes(w.code);
                   const isExpanded = expandedWbs.has(w.code);
                   const exclCount  = isSelected ? wbsTickets.filter(t => excludedTickets.includes(t.id)).length : 0;
-
                   return (
                     <div key={w.code}>
-                      {/* WBS row */}
                       <div className={`flex items-center gap-2 px-3 py-2 hover:bg-slate-50 ${isSelected ? 'bg-indigo-50/40' : ''}`}>
-                        <input type="checkbox" checked={isSelected} onChange={() => toggleWbs(w.code)}
-                          className="rounded shrink-0" />
-                        {wbsTickets.length > 0 && (
-                          <button type="button" onClick={() => toggleExpand(w.code)}
-                            className="text-slate-400 hover:text-slate-600 shrink-0 w-4 text-center">
-                            {isExpanded ? '▾' : '▸'}
-                          </button>
-                        )}
-                        {wbsTickets.length === 0 && <span className="w-4 shrink-0" />}
+                        <input type="checkbox" checked={isSelected} onChange={() => toggleWbs(w.code)} className="rounded shrink-0" />
+                        {wbsTickets.length > 0
+                          ? <button type="button" onClick={() => toggleExpand(w.code)} className="text-slate-400 hover:text-slate-600 shrink-0 w-4 text-center">{isExpanded ? '▾' : '▸'}</button>
+                          : <span className="w-4 shrink-0" />
+                        }
                         <span className="font-mono text-xs text-slate-500 shrink-0">{w.code}</span>
                         <span className="text-sm text-slate-700 truncate flex-1">{w.label}</span>
                         {wbsTickets.length > 0 && (
                           <span className="text-xs text-slate-400 shrink-0">
-                            {isSelected && exclCount > 0
-                              ? `${wbsTickets.length - exclCount}/${wbsTickets.length} tickets`
-                              : `${wbsTickets.length} tickets`}
+                            {isSelected && exclCount > 0 ? `${wbsTickets.length - exclCount}/${wbsTickets.length} tickets` : `${wbsTickets.length} tickets`}
                           </span>
                         )}
                         <span className={`text-xs px-1.5 py-0.5 rounded shrink-0 ${w.billingClass === 'V' ? 'bg-green-50 text-green-700' : 'bg-slate-100 text-slate-500'}`}>
                           {w.billingClass === 'V' ? 'Billable' : 'Internal'}
                         </span>
                       </div>
-
-                      {/* Expanded tickets under this WBS */}
                       {isExpanded && wbsTickets.length > 0 && (
                         <div className="border-t border-slate-100 bg-slate-50/60">
                           {wbsTickets.map(t => {
                             const isExcluded = excludedTickets.includes(t.id);
                             return (
-                              <label key={t.id}
-                                className={`flex items-center gap-2 pl-8 pr-3 py-1.5 hover:bg-slate-100 cursor-pointer ${isExcluded ? 'opacity-50' : ''}`}>
-                                <input type="checkbox"
-                                  checked={isSelected && !isExcluded}
-                                  disabled={!isSelected}
-                                  onChange={() => isSelected && toggleExclusion(t.id)}
-                                  className="rounded shrink-0" />
+                              <label key={t.id} className={`flex items-center gap-2 pl-8 pr-3 py-1.5 hover:bg-slate-100 cursor-pointer ${isExcluded ? 'opacity-50' : ''}`}>
+                                <input type="checkbox" checked={isSelected && !isExcluded} disabled={!isSelected}
+                                  onChange={() => isSelected && toggleExclusion(t.id)} className="rounded shrink-0" />
                                 <span className="font-mono text-xs text-slate-400 shrink-0">#{t.id}</span>
                                 <span className="text-xs text-slate-600 truncate">{t.name}</span>
                               </label>
@@ -295,13 +290,10 @@ function ProjectForm({
               <div className="flex items-center justify-between mb-1.5">
                 <p className="text-xs font-medium text-slate-500">
                   {mode === 'mixed' ? 'Extra Tickets' : 'Tickets'}
-                  {selectedTickets.length > 0 && (
-                    <span className="ml-1 text-slate-400">({selectedTickets.length} selected)</span>
-                  )}
+                  {selectedTickets.length > 0 && <span className="ml-1 text-slate-400">({selectedTickets.length} selected)</span>}
                 </p>
                 {selectedTickets.length > 0 && (
-                  <button type="button" onClick={() => setSelectedTickets([])}
-                    className="text-xs text-slate-400 hover:text-slate-600">Clear</button>
+                  <button type="button" onClick={() => setSelectedTickets([])} className="text-xs text-slate-400 hover:text-slate-600">Clear</button>
                 )}
               </div>
               <SearchInput value={ticketQuery} onChange={setTicketQuery} placeholder="Search ticket ID or name…" />
@@ -312,8 +304,7 @@ function ProjectForm({
                   const covered = coveredByWbs(t);
                   const checked = selectedTickets.includes(t.id);
                   return (
-                    <label key={t.id}
-                      className={`flex items-center gap-2 px-3 py-2 cursor-pointer ${covered ? 'opacity-40 cursor-default' : 'hover:bg-slate-50'}`}>
+                    <label key={t.id} className={`flex items-center gap-2 px-3 py-2 cursor-pointer ${covered ? 'opacity-40 cursor-default' : 'hover:bg-slate-50'}`}>
                       <input type="checkbox" checked={checked || covered} disabled={covered}
                         onChange={() => !covered && toggleTicket(t.id)} className="rounded shrink-0" />
                       <span className="font-mono text-xs text-slate-400 shrink-0">#{t.id}</span>
@@ -343,7 +334,7 @@ function ProjectForm({
           <button type="button" onClick={onClose} className="text-sm text-slate-500 hover:text-slate-700 px-4 py-2">Cancel</button>
           <button onClick={submit} disabled={saving}
             className="bg-slate-800 text-white text-sm px-4 py-2 rounded hover:bg-slate-700 disabled:opacity-50">
-            {saving ? 'Creating…' : 'Create Project'}
+            {saving ? (isEdit ? 'Saving…' : 'Creating…') : (isEdit ? 'Save Changes' : 'Create Project')}
           </button>
         </div>
       </div>
@@ -364,7 +355,8 @@ export default function ProjectsClient({
 }) {
   const router  = useRouter();
   const isAdmin = useRole() === 'admin';
-  const [showForm, setShowForm] = useState(false);
+  const [showForm, setShowForm]         = useState(false);
+  const [editingProject, setEditingProject] = useState<FmoProject | null>(null);
 
   async function handleDelete(id: string, name: string) {
     if (!confirm(`Delete project "${name}"?`)) return;
@@ -375,11 +367,10 @@ export default function ProjectsClient({
   return (
     <div className="p-6 space-y-6 max-w-4xl">
       {showForm && (
-        <ProjectForm
-          wbsEntries={wbsEntries}
-          tickets={tickets}
-          onClose={() => setShowForm(false)}
-        />
+        <ProjectForm wbsEntries={wbsEntries} tickets={tickets} onClose={() => setShowForm(false)} />
+      )}
+      {editingProject && (
+        <ProjectForm wbsEntries={wbsEntries} tickets={tickets} project={editingProject} onClose={() => setEditingProject(null)} />
       )}
 
       <div className="flex items-center justify-between">
@@ -399,12 +390,13 @@ export default function ProjectsClient({
       ) : (
         <div className="space-y-3">
           {projects.map(project => (
-            <div key={project.id} className="bg-white rounded-lg border border-slate-200 px-5 py-4 flex items-center gap-4">
+            <div
+              key={project.id}
+              onClick={() => router.push(`/fmo/projects/${project.id}`)}
+              className="bg-white rounded-lg border border-slate-200 px-5 py-4 flex items-center gap-4 cursor-pointer hover:border-slate-300 hover:shadow-sm transition-all"
+            >
               <div className="flex-1 min-w-0">
-                <Link href={`/fmo/projects/${project.id}`}
-                  className="text-base font-semibold text-slate-800 hover:text-indigo-700">
-                  {project.name}
-                </Link>
+                <p className="text-base font-semibold text-slate-800">{project.name}</p>
                 {project.description && (
                   <p className="text-sm text-slate-500 mt-0.5">{project.description}</p>
                 )}
@@ -415,8 +407,7 @@ export default function ProjectsClient({
                       <span key={code} className={`text-xs px-2 py-0.5 rounded-full font-mono border ${
                         code.startsWith('V.') ? 'bg-green-50 border-green-200 text-green-700' : 'bg-slate-50 border-slate-200 text-slate-600'
                       }`}>
-                        {code}
-                        {w?.label && <span className="ml-1 font-sans font-normal">{w.label}</span>}
+                        {code}{w?.label && <span className="ml-1 font-sans font-normal">{w.label}</span>}
                       </span>
                     );
                   })}
@@ -428,13 +419,21 @@ export default function ProjectsClient({
                 </div>
               </div>
               <div className="flex items-center gap-2 shrink-0">
-                <Link href={`/fmo/projects/${project.id}`}
-                  className="text-xs text-indigo-600 hover:text-indigo-800 border border-indigo-200 rounded px-3 py-1.5 hover:border-indigo-300 transition-colors">
-                  Open →
-                </Link>
                 {isAdmin && (
-                  <button onClick={() => handleDelete(project.id, project.name)}
-                    className="text-xs text-gray-300 hover:text-red-400 transition-colors">×</button>
+                  <button
+                    onClick={e => { e.stopPropagation(); setEditingProject(project); }}
+                    className="text-xs text-slate-500 hover:text-slate-800 border border-slate-200 rounded px-3 py-1.5 hover:border-slate-400 transition-colors"
+                  >
+                    Edit
+                  </button>
+                )}
+                {isAdmin && (
+                  <button
+                    onClick={e => { e.stopPropagation(); handleDelete(project.id, project.name); }}
+                    className="text-xs text-gray-300 hover:text-red-400 transition-colors"
+                  >
+                    ×
+                  </button>
                 )}
               </div>
             </div>
