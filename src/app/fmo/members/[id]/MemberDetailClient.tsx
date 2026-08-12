@@ -386,7 +386,7 @@ export default function MemberDetailClient({
           {ticketBarData.length > 0 && (
             <div className="bg-white rounded-lg border border-slate-200 p-4">
               <h3 className="text-sm font-semibold text-gray-800 mb-4">Hours by Ticket per Month</h3>
-              <ResponsiveContainer width="100%" height={280}>
+              <ResponsiveContainer width="100%" height={400}>
                 <BarChart data={ticketBarData} margin={{ top: 4, right: 8, left: 0, bottom: 8 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                   <XAxis dataKey="month" tick={{ fontSize: 10 }} interval={0} angle={-35} textAnchor="end" height={48} />
