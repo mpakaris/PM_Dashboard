@@ -1,6 +1,8 @@
 'use client';
 
 import { useState, useMemo } from 'react';
+import { useTranslations, useLocale } from 'next-intl';
+import { fmtH, type Locale } from '@/lib/i18n';
 import type { FmoTicket, FmoWbsEntry, FmoEntry } from '@/lib/types';
 import { assignTicketWbs } from '@/actions/fmo';
 
@@ -13,6 +15,9 @@ function TicketRow({
   hours: number;
   wbsEntries: Record<string, FmoWbsEntry>;
 }) {
+  const tCommon = useTranslations('common');
+  const tTickets = useTranslations('tickets');
+  const locale = useLocale() as Locale;
   const [saving, setSaving] = useState(false);
   const [saved,  setSaved]  = useState(false);
   const [error,  setError]  = useState('');
@@ -22,7 +27,7 @@ function TicketRow({
     const r = await assignTicketWbs(ticket.id, wbsCode || null);
     setSaving(false);
     if (r.ok) { setSaved(true); setTimeout(() => setSaved(false), 2000); }
-    else setError(r.error ?? 'Error');
+    else setError(r.error ?? tCommon('error'));
   }
 
   const sortedWbs = Object.values(wbsEntries).sort((a, b) => a.code.localeCompare(b.code));
@@ -40,17 +45,17 @@ function TicketRow({
             disabled={saving}
             className="border border-slate-300 rounded px-2 py-1 text-xs w-48"
           >
-            <option value="">— unassigned —</option>
+            <option value="">— {tTickets('unassigned')} —</option>
             {sortedWbs.map((w) => (
               <option key={w.code} value={w.code}>{w.code} · {w.label}</option>
             ))}
           </select>
-          {saving && <span className="text-xs text-slate-400">Saving…</span>}
-          {saved  && <span className="text-xs text-green-600">Saved</span>}
+          {saving && <span className="text-xs text-slate-400">{tCommon('saving')}</span>}
+          {saved  && <span className="text-xs text-green-600">{tCommon('success')}</span>}
           {error  && <span className="text-xs text-red-600">{error}</span>}
         </div>
       </td>
-      <td className="px-4 py-2 text-xs text-slate-500 text-right">{hours.toFixed(1)}h</td>
+      <td className="px-4 py-2 text-xs text-slate-500 text-right">{fmtH(hours, locale)}</td>
     </tr>
   );
 }
@@ -62,6 +67,9 @@ interface Props {
 }
 
 export default function TicketsTree({ tickets, wbsEntries, entries }: Props) {
+  const t = useTranslations('tickets');
+  const tCommon = useTranslations('common');
+  const tWbs = useTranslations('wbs');
   const [expandedCodes, setExpandedCodes] = useState<Set<string>>(new Set());
 
   function toggleExpand(code: string) {
@@ -83,13 +91,13 @@ export default function TicketsTree({ tickets, wbsEntries, entries }: Props) {
   const { byWbs, unassigned } = useMemo(() => {
     const byWbs = new Map<string, FmoTicket[]>();
     const unassigned: FmoTicket[] = [];
-    for (const t of tickets) {
-      if (t.wbsCode) {
-        const list = byWbs.get(t.wbsCode) ?? [];
-        list.push(t);
-        byWbs.set(t.wbsCode, list);
+    for (const tk of tickets) {
+      if (tk.wbsCode) {
+        const list = byWbs.get(tk.wbsCode) ?? [];
+        list.push(tk);
+        byWbs.set(tk.wbsCode, list);
       } else {
-        unassigned.push(t);
+        unassigned.push(tk);
       }
     }
     return { byWbs, unassigned };
@@ -119,7 +127,7 @@ export default function TicketsTree({ tickets, wbsEntries, entries }: Props) {
               <span className="font-mono text-xs text-slate-500 shrink-0">{code}</span>
               <span className="text-sm font-medium text-slate-800 flex-1 truncate">{label}</span>
               <span className="text-xs text-slate-400 bg-slate-100 rounded-full px-2 py-0.5 shrink-0">
-                {groupTickets.length} ticket{groupTickets.length !== 1 ? 's' : ''}
+                {groupTickets.length}
               </span>
             </div>
             {isExpanded && (
@@ -127,19 +135,19 @@ export default function TicketsTree({ tickets, wbsEntries, entries }: Props) {
                 <table className="w-full text-sm">
                   <thead className="bg-slate-50/60 text-xs text-slate-500">
                     <tr>
-                      <th className="px-8 py-2 text-left font-medium">ID</th>
-                      <th className="px-4 py-2 text-left font-medium">Name</th>
-                      <th className="px-4 py-2 text-left font-medium">Project</th>
-                      <th className="px-4 py-2 text-left font-medium">WBS Assignment</th>
-                      <th className="px-4 py-2 text-right font-medium">Hours</th>
+                      <th className="px-8 py-2 text-left font-medium">{tCommon('id')}</th>
+                      <th className="px-4 py-2 text-left font-medium">{tCommon('name')}</th>
+                      <th className="px-4 py-2 text-left font-medium">{tCommon('project')}</th>
+                      <th className="px-4 py-2 text-left font-medium">{t('assignWbs')}</th>
+                      <th className="px-4 py-2 text-right font-medium">{tCommon('hours')}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-50">
-                    {groupTickets.map(t => (
+                    {groupTickets.map(tk => (
                       <TicketRow
-                        key={t.id}
-                        ticket={t}
-                        hours={hoursMap.get(t.id) ?? 0}
+                        key={tk.id}
+                        ticket={tk}
+                        hours={hoursMap.get(tk.id) ?? 0}
                         wbsEntries={wbsEntries}
                       />
                     ))}
@@ -158,7 +166,7 @@ export default function TicketsTree({ tickets, wbsEntries, entries }: Props) {
             onClick={() => toggleExpand('__unassigned__')}
           >
             <span className={`text-amber-400 text-xs transition-transform shrink-0 ${expandedCodes.has('__unassigned__') ? 'rotate-90' : ''}`}>▶</span>
-            <span className="text-sm font-semibold text-amber-800">⚠ Unassigned Tickets</span>
+            <span className="text-sm font-semibold text-amber-800">{tWbs('unassignedTickets')}</span>
             <span className="text-xs text-amber-600 bg-amber-100 rounded-full px-2 py-0.5 ml-auto">
               {unassigned.length}
             </span>
@@ -168,19 +176,19 @@ export default function TicketsTree({ tickets, wbsEntries, entries }: Props) {
               <table className="w-full text-sm">
                 <thead className="bg-amber-50/80 text-xs text-amber-700">
                   <tr>
-                    <th className="px-8 py-2 text-left font-medium">ID</th>
-                    <th className="px-4 py-2 text-left font-medium">Name</th>
-                    <th className="px-4 py-2 text-left font-medium">Project</th>
-                    <th className="px-4 py-2 text-left font-medium">WBS Assignment</th>
-                    <th className="px-4 py-2 text-right font-medium">Hours</th>
+                    <th className="px-8 py-2 text-left font-medium">{tCommon('id')}</th>
+                    <th className="px-4 py-2 text-left font-medium">{tCommon('name')}</th>
+                    <th className="px-4 py-2 text-left font-medium">{tCommon('project')}</th>
+                    <th className="px-4 py-2 text-left font-medium">{t('assignWbs')}</th>
+                    <th className="px-4 py-2 text-right font-medium">{tCommon('hours')}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-amber-100">
-                  {unassigned.map(t => (
+                  {unassigned.map(tk => (
                     <TicketRow
-                      key={t.id}
-                      ticket={t}
-                      hours={hoursMap.get(t.id) ?? 0}
+                      key={tk.id}
+                      ticket={tk}
+                      hours={hoursMap.get(tk.id) ?? 0}
                       wbsEntries={wbsEntries}
                     />
                   ))}
@@ -193,7 +201,7 @@ export default function TicketsTree({ tickets, wbsEntries, entries }: Props) {
 
       {wbsGroups.length === 0 && unassigned.length === 0 && (
         <div className="bg-white rounded-lg border border-slate-200 px-4 py-8 text-center text-slate-400 text-sm">
-          No tickets found.
+          {t('noTickets')}
         </div>
       )}
     </div>

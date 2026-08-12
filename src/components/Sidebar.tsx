@@ -3,7 +3,7 @@
 import { pushDevToProd, pushProdToDev, flushDevDb } from "@/actions/devTools";
 import { logout } from "@/actions/auth";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { useState, useEffect } from "react";
 import type { Role } from "@/lib/auth";
 import { LOCALE_KEY, DEFAULT_LOCALE, LOCALES, type Locale } from "@/lib/i18n";
@@ -158,7 +158,6 @@ export default function Sidebar({
 }
 
 function LocaleToggle() {
-  const router = useRouter();
   const [locale, setLocale] = useState<Locale>(DEFAULT_LOCALE);
 
   useEffect(() => {
@@ -167,10 +166,10 @@ function LocaleToggle() {
   }, []);
 
   function switchLocale(next: Locale) {
-    setLocale(next);
+    if (next === locale) return;
     localStorage.setItem(LOCALE_KEY, next);
     document.cookie = `${LOCALE_KEY}=${next};path=/;max-age=31536000`;
-    router.refresh();
+    window.location.reload();
   }
 
   return (
