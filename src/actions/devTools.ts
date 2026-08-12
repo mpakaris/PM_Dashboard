@@ -2,7 +2,7 @@
 
 import { Redis } from '@upstash/redis';
 
-const KEYS = ['app:db', 'app:elsap', 'app:timesheets', 'app:invoicing', 'app:subcontractors'] as const;
+const KEYS = ['app:db', 'app:elsap', 'app:timesheets', 'app:invoicing', 'app:subcontractors', 'app:projekt-analysis', 'app:fmo:store', 'app:fmo:mappings'] as const;
 
 function getProdRedis() {
   const prodUrl   = process.env.UPSTASH_REDIS_REST_URL_PROD;
@@ -34,5 +34,14 @@ export async function pushProdToDev(): Promise<{ ok: boolean; error?: string }> 
   const dev    = new Redis({ url: process.env.UPSTASH_REDIS_REST_URL!, token: process.env.UPSTASH_REDIS_REST_TOKEN! });
   const values = await Promise.all(KEYS.map((k) => prod.get(k)));
   await Promise.all(KEYS.map((k, i) => values[i] !== null ? dev.set(k, values[i]) : dev.del(k)));
+  return { ok: true };
+}
+
+export async function flushDevDb(): Promise<{ ok: boolean; error?: string }> {
+  if (process.env.NODE_ENV !== 'development') {
+    return { ok: false, error: 'Only available in development mode' };
+  }
+  const dev = new Redis({ url: process.env.UPSTASH_REDIS_REST_URL!, token: process.env.UPSTASH_REDIS_REST_TOKEN! });
+  await dev.flushdb();
   return { ok: true };
 }

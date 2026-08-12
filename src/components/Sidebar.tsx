@@ -1,6 +1,6 @@
 "use client";
 
-import { pushDevToProd, pushProdToDev } from "@/actions/devTools";
+import { pushDevToProd, pushProdToDev, flushDevDb } from "@/actions/devTools";
 import { logout } from "@/actions/auth";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -193,13 +193,30 @@ function LocaleToggle() {
 }
 
 function DevToolsPanel() {
-  const [devState, setDevState] = useState<"idle" | "busy" | "done" | "error">(
-    "idle",
-  );
-  const [prodState, setProdState] = useState<
-    "idle" | "busy" | "done" | "error"
-  >("idle");
+  const [devState, setDevState] = useState<"idle" | "busy" | "done" | "error">("idle");
+  const [prodState, setProdState] = useState<"idle" | "busy" | "done" | "error">("idle");
+  const [flushState, setFlushState] = useState<"idle" | "busy" | "done" | "error">("idle");
   const [errMsg, setErrMsg] = useState("");
+
+  async function handleFlushDev() {
+    if (!confirm("Flush ENTIRE DEV database?\n\nAll data (FMO, WBS, tickets, members, project analysis…) will be permanently deleted. PROD is not affected.")) return;
+    setFlushState("busy");
+    try {
+      const r = await flushDevDb();
+      if (r.ok) {
+        setFlushState("done");
+        setTimeout(() => setFlushState("idle"), 3000);
+      } else {
+        setErrMsg(r.error ?? "Unknown error");
+        setFlushState("error");
+        setTimeout(() => setFlushState("idle"), 5000);
+      }
+    } catch (e) {
+      setErrMsg(String(e));
+      setFlushState("error");
+      setTimeout(() => setFlushState("idle"), 5000);
+    }
+  }
 
   async function handlePushToProd() {
     if (
@@ -277,6 +294,17 @@ function DevToolsPanel() {
         {devState === "done" && "✓ Pushed to PROD"}
         {devState === "error" && `Error: ${errMsg}`}
         {devState === "idle" && "Push DEV → PROD"}
+      </button>
+      <button
+        type="button"
+        onClick={handleFlushDev}
+        disabled={flushState === "busy"}
+        className="w-full px-3 py-2 rounded-md text-sm font-medium transition-colors disabled:opacity-50 bg-red-800 hover:bg-red-700 text-white"
+      >
+        {flushState === "busy" && "Flushing…"}
+        {flushState === "done" && "✓ DEV DB cleared"}
+        {flushState === "error" && `Error: ${errMsg}`}
+        {flushState === "idle" && "Flush DEV DB"}
       </button>
     </div>
   );
