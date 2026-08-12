@@ -1,6 +1,18 @@
 'use client';
 
+import { useState } from 'react';
 import type { FmoWbsEntry, WbsSubCategory } from '@/lib/types';
+import {
+  addFmoWbs,
+  updateFmoWbs,
+  deleteFmoWbs,
+  addFmoSubCategory,
+  updateFmoSubCategoryLabel,
+  deleteFmoSubCategory,
+  setWbsSubCategoryOverride,
+} from '@/actions/fmo';
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const TYPE1_COLORS: Record<string, string> = {
   V: 'bg-green-100 text-green-800',
@@ -10,7 +22,6 @@ const TYPE1_LABELS: Record<string, string> = {
   V: 'Billable',
   I: 'Internal',
 };
-
 const TYPE2_COLORS: Record<string, string> = {
   admin:     'bg-slate-100 text-slate-700',
   training:  'bg-yellow-100 text-yellow-800',
@@ -24,39 +35,335 @@ function Type1Badge({ code }: { code: string }) {
   const prefix = code[0] ?? '?';
   const label  = TYPE1_LABELS[prefix] ?? 'Unknown';
   const color  = TYPE1_COLORS[prefix] ?? 'bg-rose-100 text-rose-800';
-  return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${color}`}>
-      {label}
-    </span>
-  );
+  return <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${color}`}>{label}</span>;
 }
 
-function Type2Badge({
+function Type2Badge({ entry, subCategories }: { entry: FmoWbsEntry; subCategories: Record<string, WbsSubCategory> }) {
+  if (entry.billingClass === 'V') return <span className="text-slate-400">—</span>;
+  const slug  = entry.subCategoryOverride ?? entry.subCategory;
+  if (!slug)  return <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-rose-100 text-rose-800">Unmapped</span>;
+  const label = subCategories[slug]?.label ?? slug;
+  const color = TYPE2_COLORS[slug] ?? 'bg-slate-100 text-slate-700';
+  return <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${color}`}>{label}</span>;
+}
+
+// ─── WBS table row ────────────────────────────────────────────────────────────
+
+function WbsRow({
   entry,
   subCategories,
 }: {
   entry: FmoWbsEntry;
   subCategories: Record<string, WbsSubCategory>;
 }) {
-  if (entry.billingClass === 'V') return <span className="text-slate-400">—</span>;
+  const [editing, setEditing]   = useState(false);
+  const [label, setLabel]       = useState(entry.label);
+  const [saving, setSaving]     = useState(false);
+  const [error, setError]       = useState('');
 
-  const slug = entry.subCategoryOverride ?? entry.subCategory;
-  if (!slug) {
-    return (
-      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-rose-100 text-rose-800">
-        Unmapped
-      </span>
-    );
+  async function save() {
+    setSaving(true);
+    const r = await updateFmoWbs(entry.code, label);
+    setSaving(false);
+    if (r.ok) setEditing(false);
+    else setError(r.error ?? 'Error');
   }
 
-  const label = subCategories[slug]?.label ?? slug;
-  const color = TYPE2_COLORS[slug] ?? 'bg-slate-100 text-slate-700';
+  async function remove() {
+    if (!confirm(`Delete WBS ${entry.code}?`)) return;
+    await deleteFmoWbs(entry.code);
+  }
+
+  async function changeOverride(override: string) {
+    await setWbsSubCategoryOverride(entry.code, override === '' ? null : override);
+  }
+
+  const isInternal = entry.billingClass === 'I';
+
   return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${color}`}>
-      {label}
-    </span>
+    <tr className="hover:bg-slate-50">
+      <td className="px-4 py-3 font-mono text-xs text-slate-800">{entry.code}</td>
+      <td className="px-4 py-3">
+        {editing ? (
+          <input
+            value={label}
+            onChange={(e) => setLabel(e.target.value)}
+            className="border border-slate-300 rounded px-2 py-1 text-sm w-full"
+            autoFocus
+          />
+        ) : (
+          <span className="text-slate-700">{entry.label || <span className="italic text-slate-400">—</span>}</span>
+        )}
+        {error && <p className="text-xs text-red-600 mt-1">{error}</p>}
+      </td>
+      <td className="px-4 py-3"><Type1Badge code={entry.code} /></td>
+      <td className="px-4 py-3">
+        {editing && isInternal ? (
+          <select
+            defaultValue={entry.subCategoryOverride ?? ''}
+            onChange={(e) => changeOverride(e.target.value)}
+            className="border border-slate-300 rounded px-2 py-1 text-sm"
+          >
+            <option value="">— auto —</option>
+            {Object.values(subCategories).map((sc) => (
+              <option key={sc.id} value={sc.id}>{sc.label}</option>
+            ))}
+          </select>
+        ) : (
+          <Type2Badge entry={entry} subCategories={subCategories} />
+        )}
+      </td>
+      <td className="px-4 py-3 text-xs text-slate-400">{entry.syncSource}</td>
+      <td className="px-4 py-3">
+        <div className="flex items-center gap-2">
+          {editing ? (
+            <>
+              <button
+                onClick={save}
+                disabled={saving}
+                className="text-xs px-2 py-1 bg-slate-800 text-white rounded hover:bg-slate-700 disabled:opacity-50"
+              >
+                {saving ? 'Saving…' : 'Save'}
+              </button>
+              <button onClick={() => { setEditing(false); setLabel(entry.label); setError(''); }} className="text-xs text-slate-500 hover:text-slate-700">
+                Cancel
+              </button>
+            </>
+          ) : (
+            <>
+              <button onClick={() => setEditing(true)} className="text-xs text-slate-500 hover:text-slate-800">Edit</button>
+              <button onClick={remove} className="text-xs text-red-500 hover:text-red-700">Delete</button>
+            </>
+          )}
+        </div>
+      </td>
+    </tr>
   );
 }
+
+// ─── Add WBS form ─────────────────────────────────────────────────────────────
+
+function AddWbsForm({ onClose }: { onClose: () => void }) {
+  const [code, setCode]   = useState('');
+  const [label, setLabel] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError]   = useState('');
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+    const r = await addFmoWbs(code.trim(), label.trim());
+    setSaving(false);
+    if (r.ok) onClose();
+    else setError(r.error ?? 'Error');
+  }
+
+  return (
+    <tr className="bg-slate-50 border-b border-slate-200">
+      <td className="px-4 py-3">
+        <input
+          value={code}
+          onChange={(e) => setCode(e.target.value)}
+          placeholder="V.05921700.81.01"
+          className="border border-slate-300 rounded px-2 py-1 text-sm font-mono w-full"
+          autoFocus
+        />
+      </td>
+      <td className="px-4 py-3">
+        <input
+          value={label}
+          onChange={(e) => setLabel(e.target.value)}
+          placeholder="Label"
+          className="border border-slate-300 rounded px-2 py-1 text-sm w-full"
+        />
+        {error && <p className="text-xs text-red-600 mt-1">{error}</p>}
+      </td>
+      <td className="px-4 py-3 text-xs text-slate-400">auto-derived</td>
+      <td className="px-4 py-3 text-xs text-slate-400">auto-derived</td>
+      <td className="px-4 py-3 text-xs text-slate-400">manual</td>
+      <td className="px-4 py-3">
+        <div className="flex items-center gap-2">
+          <button
+            onClick={submit}
+            disabled={saving}
+            className="text-xs px-2 py-1 bg-slate-800 text-white rounded hover:bg-slate-700 disabled:opacity-50"
+          >
+            {saving ? 'Adding…' : 'Add'}
+          </button>
+          <button onClick={onClose} className="text-xs text-slate-500 hover:text-slate-700">Cancel</button>
+        </div>
+      </td>
+    </tr>
+  );
+}
+
+// ─── Sub-category panel ───────────────────────────────────────────────────────
+
+function SubCategoryPanel({
+  subCategories,
+  wbsEntries,
+}: {
+  subCategories: Record<string, WbsSubCategory>;
+  wbsEntries: FmoWbsEntry[];
+}) {
+  const [open, setOpen]       = useState(false);
+  const [newSlug, setNewSlug] = useState('');
+  const [newLabel, setNewLabel] = useState('');
+  const [saving, setSaving]   = useState(false);
+  const [error, setError]     = useState('');
+
+  function refCount(slug: string) {
+    return wbsEntries.filter((w) => w.subCategory === slug || w.subCategoryOverride === slug).length;
+  }
+
+  function slugify(s: string) {
+    return s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  }
+
+  async function addSub(e: React.FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+    const r = await addFmoSubCategory(newSlug, newLabel);
+    setSaving(false);
+    if (r.ok) { setNewSlug(''); setNewLabel(''); setError(''); }
+    else setError(r.error ?? 'Error');
+  }
+
+  async function removeSub(slug: string) {
+    const r = await deleteFmoSubCategory(slug);
+    if (!r.ok) alert(r.error);
+  }
+
+  return (
+    <div className="bg-white rounded-lg border border-slate-200">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-slate-50"
+      >
+        <span className="font-semibold text-slate-700 text-sm">Sub-Categories</span>
+        <span className="text-slate-400 text-xs">{open ? '▲' : '▼'}</span>
+      </button>
+
+      {open && (
+        <div className="px-4 pb-4 space-y-3 border-t border-slate-100">
+          <table className="w-full text-sm mt-3">
+            <thead>
+              <tr className="text-xs text-slate-500 border-b border-slate-100">
+                <th className="py-2 text-left font-medium">Slug</th>
+                <th className="py-2 text-left font-medium">Label</th>
+                <th className="py-2 text-left font-medium">Used by</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-50">
+              {Object.values(subCategories).map((sc) => (
+                <SubCategoryRow
+                  key={sc.id}
+                  sc={sc}
+                  refCount={refCount(sc.id)}
+                  onDelete={() => removeSub(sc.id)}
+                />
+              ))}
+            </tbody>
+          </table>
+
+          <form onSubmit={addSub} className="flex items-end gap-2 pt-2 border-t border-slate-100">
+            <div>
+              <label className="text-xs text-slate-500">Label</label>
+              <input
+                value={newLabel}
+                onChange={(e) => { setNewLabel(e.target.value); setNewSlug(slugify(e.target.value)); }}
+                placeholder="e.g. Training"
+                className="mt-0.5 block border border-slate-300 rounded px-2 py-1 text-sm w-36"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-slate-500">Slug (auto)</label>
+              <input
+                value={newSlug}
+                onChange={(e) => setNewSlug(slugify(e.target.value))}
+                placeholder="e.g. training"
+                className="mt-0.5 block border border-slate-300 rounded px-2 py-1 text-sm w-32 font-mono"
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={saving}
+              className="px-3 py-1.5 bg-slate-800 text-white text-xs rounded hover:bg-slate-700 disabled:opacity-50"
+            >
+              {saving ? 'Adding…' : 'Add'}
+            </button>
+          </form>
+          {error && <p className="text-xs text-red-600">{error}</p>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SubCategoryRow({
+  sc,
+  refCount,
+  onDelete,
+}: {
+  sc: WbsSubCategory;
+  refCount: number;
+  onDelete: () => void;
+}) {
+  const [editing, setEditing]     = useState(false);
+  const [label, setLabel]         = useState(sc.label);
+  const [saving, setSaving]       = useState(false);
+
+  async function save() {
+    setSaving(true);
+    await updateFmoSubCategoryLabel(sc.id, label);
+    setSaving(false);
+    setEditing(false);
+  }
+
+  return (
+    <tr>
+      <td className="py-2 pr-4 font-mono text-xs text-slate-600">{sc.id}</td>
+      <td className="py-2 pr-4">
+        {editing ? (
+          <input
+            value={label}
+            onChange={(e) => setLabel(e.target.value)}
+            className="border border-slate-300 rounded px-2 py-0.5 text-sm w-36"
+            autoFocus
+          />
+        ) : (
+          <span className="text-sm text-slate-700">{sc.label}</span>
+        )}
+      </td>
+      <td className="py-2 pr-4 text-xs text-slate-500">{refCount} WBS</td>
+      <td className="py-2">
+        <div className="flex items-center gap-2">
+          {editing ? (
+            <>
+              <button onClick={save} disabled={saving} className="text-xs px-2 py-0.5 bg-slate-800 text-white rounded">{saving ? '…' : 'Save'}</button>
+              <button onClick={() => { setEditing(false); setLabel(sc.label); }} className="text-xs text-slate-400">Cancel</button>
+            </>
+          ) : (
+            <>
+              <button onClick={() => setEditing(true)} className="text-xs text-slate-500 hover:text-slate-800">Edit</button>
+              <button
+                onClick={onDelete}
+                disabled={refCount > 0}
+                className="text-xs text-red-500 hover:text-red-700 disabled:opacity-30 disabled:cursor-not-allowed"
+                title={refCount > 0 ? `Used by ${refCount} WBS entries` : undefined}
+              >
+                Delete
+              </button>
+            </>
+          )}
+        </div>
+      </td>
+    </tr>
+  );
+}
+
+// ─── Main export ──────────────────────────────────────────────────────────────
 
 export default function WbsClient({
   wbsEntries,
@@ -65,13 +372,22 @@ export default function WbsClient({
   wbsEntries: FmoWbsEntry[];
   subCategories: Record<string, WbsSubCategory>;
 }) {
-  const sorted = [...wbsEntries].sort((a, b) => a.code.localeCompare(b.code));
+  const sorted  = [...wbsEntries].sort((a, b) => a.code.localeCompare(b.code));
+  const [adding, setAdding] = useState(false);
 
   return (
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-slate-900">WBS Codes</h1>
-        <span className="text-sm text-slate-500">{sorted.length} entries</span>
+        <div className="flex items-center gap-3">
+          <span className="text-sm text-slate-500">{sorted.length} entries</span>
+          <button
+            onClick={() => setAdding(true)}
+            className="px-3 py-1.5 bg-slate-800 text-white text-sm rounded hover:bg-slate-700"
+          >
+            + Add WBS
+          </button>
+        </div>
       </div>
 
       <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
@@ -80,35 +396,27 @@ export default function WbsClient({
             <tr>
               <th className="px-4 py-3 text-left font-semibold text-slate-600">WBS Code</th>
               <th className="px-4 py-3 text-left font-semibold text-slate-600">Label</th>
-              <th className="px-4 py-3 text-left font-semibold text-slate-600">Type 1 (Billing Class)</th>
-              <th className="px-4 py-3 text-left font-semibold text-slate-600">Type 2 (Sub-Category)</th>
+              <th className="px-4 py-3 text-left font-semibold text-slate-600">Type 1</th>
+              <th className="px-4 py-3 text-left font-semibold text-slate-600">Type 2</th>
               <th className="px-4 py-3 text-left font-semibold text-slate-600">Source</th>
+              <th className="px-4 py-3 text-left font-semibold text-slate-600">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
+            {adding && <AddWbsForm onClose={() => setAdding(false)} />}
             {sorted.map((entry) => (
-              <tr key={entry.code} className="hover:bg-slate-50">
-                <td className="px-4 py-3 font-mono text-xs text-slate-800">{entry.code}</td>
-                <td className="px-4 py-3 text-slate-700">{entry.label || <span className="text-slate-400 italic">—</span>}</td>
-                <td className="px-4 py-3">
-                  <Type1Badge code={entry.code} />
-                </td>
-                <td className="px-4 py-3">
-                  <Type2Badge entry={entry} subCategories={subCategories} />
-                </td>
-                <td className="px-4 py-3 text-xs text-slate-400">{entry.syncSource}</td>
-              </tr>
+              <WbsRow key={entry.code} entry={entry} subCategories={subCategories} />
             ))}
-            {sorted.length === 0 && (
+            {sorted.length === 0 && !adding && (
               <tr>
-                <td colSpan={5} className="px-4 py-8 text-center text-slate-400">
-                  No WBS codes yet.
-                </td>
+                <td colSpan={6} className="px-4 py-8 text-center text-slate-400">No WBS codes yet.</td>
               </tr>
             )}
           </tbody>
         </table>
       </div>
+
+      <SubCategoryPanel subCategories={subCategories} wbsEntries={wbsEntries} />
     </div>
   );
 }
