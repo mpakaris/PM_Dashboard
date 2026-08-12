@@ -18,10 +18,18 @@ function ProjectForm({
   const [name, setName]               = useState('');
   const [description, setDescription] = useState('');
   const [selectedWbs, setSelectedWbs] = useState<string[]>([]);
+  const [wbsQuery, setWbsQuery]       = useState('');
   const [saving, setSaving]           = useState(false);
   const [error, setError]             = useState('');
 
   const sortedWbs = Object.values(wbsEntries).sort((a, b) => a.code.localeCompare(b.code));
+
+  const filteredWbs = wbsQuery.trim()
+    ? sortedWbs.filter(w =>
+        w.code.toLowerCase().includes(wbsQuery.toLowerCase()) ||
+        w.label.toLowerCase().includes(wbsQuery.toLowerCase())
+      )
+    : sortedWbs;
 
   function toggleWbs(code: string) {
     setSelectedWbs(prev => prev.includes(code) ? prev.filter(c => c !== code) : [...prev, code]);
@@ -40,7 +48,7 @@ function ProjectForm({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col">
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
           <h2 className="text-base font-semibold text-gray-800">New Project</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-lg">×</button>
@@ -58,22 +66,50 @@ function ProjectForm({
               className="w-full border border-slate-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400" />
           </div>
           <div>
-            <label className="block text-xs font-medium text-slate-500 mb-2">
-              WBS Codes ({selectedWbs.length} selected)
-            </label>
-            <div className="border border-slate-200 rounded-md divide-y divide-slate-100 max-h-56 overflow-y-auto">
-              {sortedWbs.map(w => (
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-xs font-medium text-slate-500">
+                WBS Codes <span className="text-slate-400">({selectedWbs.length} selected)</span>
+              </label>
+              {selectedWbs.length > 0 && (
+                <button type="button" onClick={() => setSelectedWbs([])}
+                  className="text-xs text-slate-400 hover:text-slate-600">
+                  Clear selection
+                </button>
+              )}
+            </div>
+            <div className="relative mb-1.5">
+              <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
+              </svg>
+              <input
+                value={wbsQuery}
+                onChange={e => setWbsQuery(e.target.value)}
+                placeholder="Search WBS code or label…"
+                className="w-full pl-8 pr-3 py-1.5 border border-slate-200 rounded-md text-xs focus:outline-none focus:border-slate-400"
+              />
+              {wbsQuery && (
+                <button type="button" onClick={() => setWbsQuery('')}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">×</button>
+              )}
+            </div>
+            <div className="border border-slate-200 rounded-md divide-y divide-slate-100 max-h-80 overflow-y-auto">
+              {filteredWbs.length === 0 ? (
+                <p className="px-3 py-4 text-xs text-slate-400 text-center">No WBS codes match "{wbsQuery}"</p>
+              ) : filteredWbs.map(w => (
                 <label key={w.code} className="flex items-center gap-3 px-3 py-2 hover:bg-slate-50 cursor-pointer">
                   <input type="checkbox" checked={selectedWbs.includes(w.code)} onChange={() => toggleWbs(w.code)}
-                    className="rounded text-indigo-600" />
+                    className="rounded text-indigo-600 shrink-0" />
                   <span className="font-mono text-xs text-slate-500 shrink-0">{w.code}</span>
                   <span className="text-sm text-slate-700 truncate">{w.label}</span>
-                  <span className={`ml-auto text-xs px-1.5 py-0.5 rounded shrink-0 ${w.billingClass === 'V' ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-600'}`}>
+                  <span className={`ml-auto text-xs px-1.5 py-0.5 rounded shrink-0 ${w.billingClass === 'V' ? 'bg-green-50 text-green-700' : 'bg-slate-100 text-slate-500'}`}>
                     {w.billingClass === 'V' ? 'Billable' : 'Internal'}
                   </span>
                 </label>
               ))}
             </div>
+            {wbsQuery && filteredWbs.length > 0 && (
+              <p className="text-xs text-slate-400 mt-1">{filteredWbs.length} of {sortedWbs.length} shown</p>
+            )}
           </div>
           {error && <p className="text-xs text-red-600">{error}</p>}
           <div className="flex justify-end gap-2 pt-2">
