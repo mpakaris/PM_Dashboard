@@ -155,6 +155,7 @@
     "hours": "Hours (h)",
     "percent": "Utilization (%)",
     "unmapped": "Unmapped",
+    "internal": "Internal",
     "grandTotal": "Grand Total",
     "total": "Total",
     "year": "Year",
