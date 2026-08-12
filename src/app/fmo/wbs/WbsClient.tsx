@@ -1,7 +1,8 @@
 'use client';
 
-import { useState } from 'react';
-import type { FmoWbsEntry, WbsSubCategory } from '@/lib/types';
+import { useState, useEffect } from 'react';
+import type { FmoWbsEntry, FmoTicket, FmoEntry, WbsSubCategory } from '@/lib/types';
+import WbsTree from './WbsTree';
 import {
   addFmoWbs,
   updateFmoWbs,
@@ -365,15 +366,36 @@ function SubCategoryRow({
 
 // ─── Main export ──────────────────────────────────────────────────────────────
 
+const LS_KEY = 'fmo-wbs-view';
+
 export default function WbsClient({
   wbsEntries,
   subCategories,
+  tickets = [],
+  entries = [],
 }: {
   wbsEntries: FmoWbsEntry[];
   subCategories: Record<string, WbsSubCategory>;
+  tickets?: FmoTicket[];
+  entries?: FmoEntry[];
 }) {
   const sorted  = [...wbsEntries].sort((a, b) => a.code.localeCompare(b.code));
   const [adding, setAdding] = useState(false);
+  const [view, setView]     = useState<'tree' | 'flat'>('tree');
+  const [search, setSearch] = useState('');
+
+  useEffect(() => {
+    const v = localStorage.getItem(LS_KEY);
+    if (v === 'flat') setView('flat');
+  }, []);
+
+  function toggleView() {
+    setView(v => {
+      const next = v === 'tree' ? 'flat' : 'tree';
+      localStorage.setItem(LS_KEY, next);
+      return next;
+    });
+  }
 
   return (
     <div className="p-6 space-y-6">
@@ -381,6 +403,20 @@ export default function WbsClient({
         <h1 className="text-2xl font-bold text-slate-900">WBS Codes</h1>
         <div className="flex items-center gap-3">
           <span className="text-sm text-slate-500">{sorted.length} entries</span>
+          <div className="flex items-center gap-1 border border-slate-200 rounded-md overflow-hidden text-xs">
+            <button
+              onClick={() => { setView('tree'); localStorage.setItem(LS_KEY, 'tree'); }}
+              className={`px-3 py-1.5 transition-colors ${view === 'tree' ? 'bg-slate-800 text-white' : 'text-slate-500 hover:bg-slate-50'}`}
+            >
+              Tree
+            </button>
+            <button
+              onClick={() => { setView('flat'); localStorage.setItem(LS_KEY, 'flat'); }}
+              className={`px-3 py-1.5 transition-colors ${view === 'flat' ? 'bg-slate-800 text-white' : 'text-slate-500 hover:bg-slate-50'}`}
+            >
+              Flat
+            </button>
+          </div>
           <button
             onClick={() => setAdding(true)}
             className="px-3 py-1.5 bg-slate-800 text-white text-sm rounded hover:bg-slate-700"
@@ -390,31 +426,52 @@ export default function WbsClient({
         </div>
       </div>
 
-      <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
-        <table className="w-full text-sm">
-          <thead className="bg-slate-50 border-b border-slate-200">
-            <tr>
-              <th className="px-4 py-3 text-left font-semibold text-slate-600">WBS Code</th>
-              <th className="px-4 py-3 text-left font-semibold text-slate-600">Label</th>
-              <th className="px-4 py-3 text-left font-semibold text-slate-600">Type 1</th>
-              <th className="px-4 py-3 text-left font-semibold text-slate-600">Type 2</th>
-              <th className="px-4 py-3 text-left font-semibold text-slate-600">Source</th>
-              <th className="px-4 py-3 text-left font-semibold text-slate-600">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {adding && <AddWbsForm onClose={() => setAdding(false)} />}
-            {sorted.map((entry) => (
-              <WbsRow key={entry.code} entry={entry} subCategories={subCategories} />
-            ))}
-            {sorted.length === 0 && !adding && (
+      {view === 'tree' && (
+        <>
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search WBS codes or tickets…"
+            className="border border-slate-300 rounded px-3 py-1.5 text-sm w-72"
+          />
+          <WbsTree
+            wbsEntries={wbsEntries}
+            subCategories={subCategories}
+            tickets={tickets}
+            entries={entries}
+            search={search}
+          />
+        </>
+      )}
+
+      {view === 'flat' && (
+        <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
+          <table className="w-full text-sm">
+            <thead className="bg-slate-50 border-b border-slate-200">
               <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-slate-400">No WBS codes yet.</td>
+                <th className="px-4 py-3 text-left font-semibold text-slate-600">WBS Code</th>
+                <th className="px-4 py-3 text-left font-semibold text-slate-600">Label</th>
+                <th className="px-4 py-3 text-left font-semibold text-slate-600">Type 1</th>
+                <th className="px-4 py-3 text-left font-semibold text-slate-600">Type 2</th>
+                <th className="px-4 py-3 text-left font-semibold text-slate-600">Source</th>
+                <th className="px-4 py-3 text-left font-semibold text-slate-600">Actions</th>
               </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {adding && <AddWbsForm onClose={() => setAdding(false)} />}
+              {sorted.map((entry) => (
+                <WbsRow key={entry.code} entry={entry} subCategories={subCategories} />
+              ))}
+              {sorted.length === 0 && !adding && (
+                <tr>
+                  <td colSpan={6} className="px-4 py-8 text-center text-slate-400">No WBS codes yet.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       <SubCategoryPanel subCategories={subCategories} wbsEntries={wbsEntries} />
     </div>

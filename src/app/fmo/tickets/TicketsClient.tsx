@@ -1,8 +1,11 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import type { FmoTicket, FmoWbsEntry, FmoEntry } from '@/lib/types';
 import { assignTicketWbs, reclassifyAllEntries } from '@/actions/fmo';
+import TicketsTree from './TicketsTree';
+
+const LS_KEY = 'fmo-tickets-view';
 
 type Filter = 'all' | 'assigned' | 'unassigned';
 
@@ -77,6 +80,12 @@ export default function TicketsClient({
   const [filter, setFilter]   = useState<Filter>('all');
   const [reclassifying, setReclassifying] = useState(false);
   const [reclassResult, setReclassResult] = useState('');
+  const [view, setView]       = useState<'flat' | 'tree'>('flat');
+
+  useEffect(() => {
+    const v = localStorage.getItem(LS_KEY);
+    if (v === 'tree') setView('tree');
+  }, []);
 
   const hoursMap = useMemo(() => {
     const map = new Map<number, number>();
@@ -116,13 +125,29 @@ export default function TicketsClient({
     <div className="p-6 space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-slate-900">Tickets</h1>
-        <button
-          onClick={reclass}
-          disabled={reclassifying}
-          className="px-3 py-1.5 text-xs bg-slate-700 text-white rounded hover:bg-slate-600 disabled:opacity-50"
-        >
-          {reclassifying ? 'Reclassifying…' : 'Reclassify All'}
-        </button>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1 border border-slate-200 rounded-md overflow-hidden text-xs">
+            <button
+              onClick={() => { setView('flat'); localStorage.setItem(LS_KEY, 'flat'); }}
+              className={`px-3 py-1.5 transition-colors ${view === 'flat' ? 'bg-slate-800 text-white' : 'text-slate-500 hover:bg-slate-50'}`}
+            >
+              Flat
+            </button>
+            <button
+              onClick={() => { setView('tree'); localStorage.setItem(LS_KEY, 'tree'); }}
+              className={`px-3 py-1.5 transition-colors ${view === 'tree' ? 'bg-slate-800 text-white' : 'text-slate-500 hover:bg-slate-50'}`}
+            >
+              Tree
+            </button>
+          </div>
+          <button
+            onClick={reclass}
+            disabled={reclassifying}
+            className="px-3 py-1.5 text-xs bg-slate-700 text-white rounded hover:bg-slate-600 disabled:opacity-50"
+          >
+            {reclassifying ? 'Reclassifying…' : 'Reclassify All'}
+          </button>
+        </div>
       </div>
 
       {reclassResult && <p className="text-sm text-green-700 bg-green-50 border border-green-200 rounded px-3 py-2">{reclassResult}</p>}
@@ -141,18 +166,27 @@ export default function TicketsClient({
           placeholder="Search ID or name…"
           className="border border-slate-300 rounded px-3 py-1.5 text-sm w-64"
         />
-        <select
-          value={filter}
-          onChange={(e) => setFilter(e.target.value as Filter)}
-          className="border border-slate-300 rounded px-2 py-1.5 text-sm"
-        >
-          <option value="all">All</option>
-          <option value="assigned">Assigned</option>
-          <option value="unassigned">Unassigned</option>
-        </select>
-        <span className="text-sm text-slate-500">Showing {filtered.length} of {tickets.length}</span>
+        {view === 'flat' && (
+          <>
+            <select
+              value={filter}
+              onChange={(e) => setFilter(e.target.value as Filter)}
+              className="border border-slate-300 rounded px-2 py-1.5 text-sm"
+            >
+              <option value="all">All</option>
+              <option value="assigned">Assigned</option>
+              <option value="unassigned">Unassigned</option>
+            </select>
+            <span className="text-sm text-slate-500">Showing {filtered.length} of {tickets.length}</span>
+          </>
+        )}
       </div>
 
+      {view === 'tree' && (
+        <TicketsTree tickets={filtered} wbsEntries={wbsEntries} entries={entries} />
+      )}
+
+      {view === 'flat' && (
       <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
         <table className="w-full text-sm">
           <thead className="bg-slate-50 border-b border-slate-200">
@@ -182,6 +216,7 @@ export default function TicketsClient({
           </tbody>
         </table>
       </div>
+      )}
     </div>
   );
 }
