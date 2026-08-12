@@ -1,0 +1,87 @@
+{
+  "common": {
+    "save": "Speichern",
+    "cancel": "Abbrechen",
+    "delete": "Löschen",
+    "edit": "Bearbeiten",
+    "add": "Hinzufügen",
+    "close": "Schließen",
+    "confirm": "Bestätigen",
+    "back": "Zurück",
+    "loading": "Wird geladen…",
+    "error": "Fehler",
+    "success": "Gespeichert"
+  },
+  "nav": {
+    "import": "Import",
+    "wbs": "WBS-Codes",
+    "tickets": "Tickets",
+    "members": "Mitarbeiter",
+    "utilization": "Auslastung"
+  },
+  "import": {
+    "title": "SecTrack-Daten importieren",
+    "dropzone": "CSV-Dateien hier ablegen oder klicken",
+    "uploadButton": "{count} Datei(en) hochladen",
+    "lastImport": "Letzter Import",
+    "never": "Nie",
+    "filesImported": "Importierte Dateien",
+    "results": "Letztes Import-Ergebnis",
+    "added": "{count} hinzugefügt",
+    "updated": "{count} aktualisiert",
+    "duplicates": "{count} Duplikate",
+    "newTickets": "{count} neue Tickets",
+    "newMembers": "{count} neue Mitarbeiter",
+    "unmapped": "{count} nicht zugeordnet"
+  },
+  "wbs": {
+    "title": "WBS-Codes",
+    "code": "WBS-Code",
+    "label": "Bezeichnung",
+    "type1": "Abrechnungsklasse",
+    "type2": "Unterkategorie",
+    "actions": "Aktionen",
+    "addWbs": "WBS hinzufügen",
+    "billable": "Verrechenbar",
+    "internal": "Intern",
+    "unknown": "Unbekannt",
+    "unmapped": "Nicht zugeordnet",
+    "noTickets": "Keine Tickets",
+    "subCategories": "Unterkategorien",
+    "reclassifyAll": "Alle neu klassifizieren"
+  },
+  "tickets": {
+    "title": "Tickets",
+    "id": "Ticket-ID",
+    "name": "Name",
+    "project": "Projekt",
+    "wbsCode": "WBS-Code",
+    "status": "Status",
+    "assigned": "Zugeordnet",
+    "unassigned": "Nicht zugeordnet",
+    "assignWbs": "WBS zuordnen",
+    "needsAssignment": "{count} Ticket(s) benötigen WBS-Zuordnung"
+  },
+  "members": {
+    "title": "Mitarbeiter",
+    "name": "Name",
+    "type": "Typ",
+    "partnerCompany": "Partnerunternehmen",
+    "costRate": "Kostensatz (€/h)",
+    "totalHours": "Gesamtstunden",
+    "intern": "Intern",
+    "extern": "Extern",
+    "missingCost": "Kostensatz nicht konfiguriert"
+  },
+  "utilization": {
+    "title": "Auslastung",
+    "hours": "Stunden (h)",
+    "percent": "Auslastung (%)",
+    "unmapped": "Nicht zugeordnet",
+    "grandTotal": "Gesamtergebnis",
+    "total": "Gesamt",
+    "year": "Jahr",
+    "month": "Monat",
+    "allClassified": "Alle Einträge klassifiziert — super!"
+  }
+}

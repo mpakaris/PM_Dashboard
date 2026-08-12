@@ -3,9 +3,10 @@
 import { pushDevToProd, pushProdToDev } from "@/actions/devTools";
 import { logout } from "@/actions/auth";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { useState, useEffect } from "react";
 import type { Role } from "@/lib/auth";
+import { LOCALE_KEY, DEFAULT_LOCALE, LOCALES, type Locale } from "@/lib/i18n";
 
 const sections = [
   {
@@ -119,27 +120,65 @@ export default function Sidebar({
       </nav>
 
       {role && (
-        <div className="px-3 py-3 border-t border-slate-700 flex items-center justify-between">
-          <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
-            role === 'admin'
-              ? 'bg-amber-500/20 text-amber-300'
-              : 'bg-slate-600 text-slate-300'
-          }`}>
-            {role === 'admin' ? 'Admin' : 'Viewer'}
-          </span>
-          <form action={logout}>
-            <button
-              type="submit"
-              className="text-xs text-slate-400 hover:text-white transition-colors px-2 py-1 rounded hover:bg-slate-700"
-            >
-              Sign out
-            </button>
-          </form>
+        <div className="px-3 py-3 border-t border-slate-700 space-y-2">
+          <div className="flex items-center justify-between">
+            <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
+              role === 'admin'
+                ? 'bg-amber-500/20 text-amber-300'
+                : 'bg-slate-600 text-slate-300'
+            }`}>
+              {role === 'admin' ? 'Admin' : 'Viewer'}
+            </span>
+            <form action={logout}>
+              <button
+                type="submit"
+                className="text-xs text-slate-400 hover:text-white transition-colors px-2 py-1 rounded hover:bg-slate-700"
+              >
+                Sign out
+              </button>
+            </form>
+          </div>
+          <LocaleToggle />
         </div>
       )}
 
       {process.env.NODE_ENV === "development" && role === "admin" && <DevToolsPanel />}
     </aside>
+  );
+}
+
+function LocaleToggle() {
+  const router = useRouter();
+  const [locale, setLocale] = useState<Locale>(DEFAULT_LOCALE);
+
+  useEffect(() => {
+    const stored = localStorage.getItem(LOCALE_KEY) as Locale | null;
+    if (stored && LOCALES.includes(stored)) setLocale(stored);
+  }, []);
+
+  function switchLocale(next: Locale) {
+    setLocale(next);
+    localStorage.setItem(LOCALE_KEY, next);
+    document.cookie = `${LOCALE_KEY}=${next};path=/;max-age=31536000`;
+    router.refresh();
+  }
+
+  return (
+    <div className="flex items-center gap-1">
+      {LOCALES.map((l) => (
+        <button
+          key={l}
+          onClick={() => switchLocale(l)}
+          className={`text-xs px-2 py-0.5 rounded font-medium transition-colors ${
+            locale === l
+              ? 'bg-slate-600 text-white'
+              : 'text-slate-400 hover:text-white hover:bg-slate-700'
+          }`}
+        >
+          {l.toUpperCase()}
+        </button>
+      ))}
+    </div>
   );
 }
 

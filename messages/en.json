@@ -1,0 +1,87 @@
+{
+  "common": {
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "edit": "Edit",
+    "add": "Add",
+    "close": "Close",
+    "confirm": "Confirm",
+    "back": "Back",
+    "loading": "Loading…",
+    "error": "Error",
+    "success": "Saved"
+  },
+  "nav": {
+    "import": "Import",
+    "wbs": "WBS Codes",
+    "tickets": "Tickets",
+    "members": "Members",
+    "utilization": "Utilization"
+  },
+  "import": {
+    "title": "Import SecTrack Data",
+    "dropzone": "Drag & drop CSV files here, or click to choose",
+    "uploadButton": "Upload {count} file(s)",
+    "lastImport": "Last import",
+    "never": "Never",
+    "filesImported": "Files imported",
+    "results": "Last import result",
+    "added": "{count} added",
+    "updated": "{count} updated",
+    "duplicates": "{count} duplicates",
+    "newTickets": "{count} new tickets",
+    "newMembers": "{count} new members",
+    "unmapped": "{count} unmapped"
+  },
+  "wbs": {
+    "title": "WBS Codes",
+    "code": "WBS Code",
+    "label": "Label",
+    "type1": "Billing Class",
+    "type2": "Sub-Category",
+    "actions": "Actions",
+    "addWbs": "Add WBS",
+    "billable": "Billable",
+    "internal": "Internal",
+    "unknown": "Unknown",
+    "unmapped": "Unmapped",
+    "noTickets": "No tickets",
+    "subCategories": "Sub-Categories",
+    "reclassifyAll": "Reclassify All"
+  },
+  "tickets": {
+    "title": "Tickets",
+    "id": "Ticket ID",
+    "name": "Name",
+    "project": "Project",
+    "wbsCode": "WBS Code",
+    "status": "Status",
+    "assigned": "Assigned",
+    "unassigned": "Unassigned",
+    "assignWbs": "Assign WBS",
+    "needsAssignment": "{count} ticket(s) need WBS assignment"
+  },
+  "members": {
+    "title": "Members",
+    "name": "Name",
+    "type": "Type",
+    "partnerCompany": "Partner Company",
+    "costRate": "Cost Rate (€/h)",
+    "totalHours": "Total Hours",
+    "intern": "Intern",
+    "extern": "Extern",
+    "missingCost": "Cost rate not configured"
+  },
+  "utilization": {
+    "title": "Utilization",
+    "hours": "Hours (h)",
+    "percent": "Utilization (%)",
+    "unmapped": "Unmapped",
+    "grandTotal": "Grand Total",
+    "total": "Total",
+    "year": "Year",
+    "month": "Month",
+    "allClassified": "All entries classified — great!"
+  }
+}
