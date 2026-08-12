@@ -424,43 +424,47 @@ export default function MemberDetailClient({
           )}
 
           {/* 4. Pie — By Category / By Ticket toggle */}
-          {(categoryPie.length > 0 || ticketPie.length > 0) && (
-            <div className="bg-white rounded-lg border border-slate-200 p-4">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-sm font-semibold text-gray-800">
-                  {pieView === 'category' ? 'Hours by Category' : 'Hours by Ticket'}
-                </h3>
-                <div className="flex gap-1 border border-slate-200 rounded-md p-0.5">
-                  {(['category', 'ticket'] as const).map(v => (
-                    <button key={v} onClick={() => setPieView(v)}
-                      className={`text-xs px-3 py-1 rounded transition-colors ${
-                        pieView === v
-                          ? 'bg-slate-800 text-white'
-                          : 'text-slate-500 hover:text-slate-700'
-                      }`}>
-                      {v === 'category' ? 'By Category' : 'By Ticket'}
-                    </button>
+          {(categoryPie.length > 0 || ticketPie.length > 0) && (() => {
+            const pieData = pieView === 'category' ? categoryPie : ticketPie;
+            return (
+              <div className="bg-white rounded-lg border border-slate-200 p-4">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-sm font-semibold text-gray-800">
+                    {pieView === 'category' ? 'Hours by Category' : 'Hours by Ticket'}
+                  </h3>
+                  <div className="flex gap-1 border border-slate-200 rounded-md p-0.5">
+                    {(['category', 'ticket'] as const).map(v => (
+                      <button key={v} onClick={() => setPieView(v)}
+                        className={`text-xs px-3 py-1 rounded transition-colors ${
+                          pieView === v ? 'bg-slate-800 text-white' : 'text-slate-500 hover:text-slate-700'
+                        }`}>
+                        {v === 'category' ? 'By Category' : 'By Ticket'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <ResponsiveContainer width="100%" height={340}>
+                  <PieChart>
+                    <Pie data={pieData} dataKey="value" nameKey="name"
+                      cx="50%" cy="50%" outerRadius={110}
+                      labelLine={false} label={PieLabel}>
+                      {pieData.map((d, i) => <Cell key={i} fill={d.color} opacity={0.9} />)}
+                    </Pie>
+                    <Tooltip {...TOOLTIP_STYLE} formatter={(v) => typeof v === 'number' ? fmtH(v, locale) : v} />
+                  </PieChart>
+                </ResponsiveContainer>
+                {/* Custom legend — outside SVG so it never overlaps labels */}
+                <div className="flex flex-wrap gap-x-5 gap-y-2 mt-5 px-2">
+                  {pieData.map(d => (
+                    <span key={d.name} className="flex items-center gap-1.5 text-xs text-gray-500">
+                      <span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ backgroundColor: d.color, opacity: 0.9 }} />
+                      {d.name}
+                    </span>
                   ))}
                 </div>
               </div>
-              <ResponsiveContainer width="100%" height={340}>
-                <PieChart>
-                  <Pie
-                    data={pieView === 'category' ? categoryPie : ticketPie}
-                    dataKey="value" nameKey="name"
-                    cx="50%" cy="50%" outerRadius={120}
-                    labelLine={false} label={PieLabel}
-                  >
-                    {(pieView === 'category' ? categoryPie : ticketPie).map((d, i) => (
-                      <Cell key={i} fill={d.color} opacity={0.9} />
-                    ))}
-                  </Pie>
-                  <Tooltip {...TOOLTIP_STYLE} formatter={(v) => typeof v === 'number' ? fmtH(v, locale) : v} />
-                  <Legend wrapperStyle={{ fontSize: '12px' }} />
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
-          )}
+            );
+          })()}
 
           {/* 5. Top Tickets by Hours */}
           {topTicketsChart.length > 0 && (
