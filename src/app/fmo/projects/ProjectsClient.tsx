@@ -150,7 +150,7 @@ function ProjectForm({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[92vh] flex flex-col">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-5xl max-h-[95vh] flex flex-col">
 
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 shrink-0">
@@ -223,7 +223,7 @@ function ProjectForm({
                 )}
               </div>
               <SearchInput value={wbsQuery} onChange={setWbsQuery} placeholder="Search WBS code or label…" />
-              <div className="mt-1.5 border border-slate-200 rounded-lg divide-y divide-slate-100 max-h-64 overflow-y-auto">
+              <div className="mt-1.5 border border-slate-200 rounded-lg divide-y divide-slate-100 max-h-96 overflow-y-auto">
                 {sortedWbs.length === 0 ? (
                   <p className="px-3 py-3 text-xs text-slate-400 text-center">No WBS codes match</p>
                 ) : sortedWbs.map(w => {
@@ -305,7 +305,7 @@ function ProjectForm({
                 )}
               </div>
               <SearchInput value={ticketQuery} onChange={setTicketQuery} placeholder="Search ticket ID or name…" />
-              <div className="mt-1.5 border border-slate-200 rounded-lg divide-y divide-slate-100 max-h-64 overflow-y-auto">
+              <div className="mt-1.5 border border-slate-200 rounded-lg divide-y divide-slate-100 max-h-96 overflow-y-auto">
                 {filteredIndividualTickets.length === 0 ? (
                   <p className="px-3 py-3 text-xs text-slate-400 text-center">No tickets match</p>
                 ) : filteredIndividualTickets.map(t => {
