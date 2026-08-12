@@ -12,6 +12,7 @@ import {
 import { fmtH, fmtEur, type Locale } from '@/lib/i18n';
 import type { FmoProject, FmoEntry, FmoMember, FmoWbsEntry, FmoTicket, WbsSubCategory } from '@/lib/types';
 import { updateFmoProject } from '@/actions/fmoProjects';
+import { ChartTimeFilter, initChartRange, type TimeRange } from '@/components/ChartTimeFilter';
 
 type Tab = 'overview' | 'members' | 'tickets' | 'charts';
 
@@ -38,6 +39,7 @@ export default function ProjectDetailClient({
   const isAdmin = useRole() === 'admin';
   const locale  = useLocale() as Locale;
   const [activeTab, setActiveTab] = useState<Tab>('overview');
+  const [chartRange, setChartRange] = useState<TimeRange>(() => initChartRange(entries));
   const [editingWbs, setEditingWbs]   = useState(false);
   const [selectedWbs, setSelectedWbs] = useState<string[]>(project.wbsCodes);
   const [saving, setSaving] = useState(false);
@@ -46,7 +48,14 @@ export default function ProjectDetailClient({
   const billableHours = useMemo(() => entries.filter(e => e.billingClass === 'V').reduce((s, e) => s + e.spentTime, 0), [entries]);
   const internalHours = totalHours - billableHours;
 
-  const allMonths = useMemo(() => [...new Set(entries.map(e => e.month))].sort(), [entries]);
+  const chartEntries = useMemo(
+    () => chartRange.from
+      ? entries.filter(e => e.month >= chartRange.from && e.month <= chartRange.to)
+      : entries,
+    [entries, chartRange],
+  );
+
+  const allMonths = useMemo(() => [...new Set(chartEntries.map(e => e.month))].sort(), [chartEntries]);
 
   // Member breakdown
   const memberSummary = useMemo(() => {
@@ -79,25 +88,29 @@ export default function ProjectDetailClient({
     return allMonths.map(month => {
       const row: Record<string, any> = { month: month.slice(0, 7) };
       for (const code of project.wbsCodes) {
-        row[code] = entries.filter(e => e.month === month && e.wbsCode === code).reduce((s, e) => s + e.spentTime, 0);
+        row[code] = chartEntries.filter(e => e.month === month && e.wbsCode === code).reduce((s, e) => s + e.spentTime, 0);
       }
       return row;
     });
-  }, [entries, allMonths, project.wbsCodes]);
+  }, [chartEntries, allMonths, project.wbsCodes]);
 
   // Monthly by member (top 5)
   const topMembers = useMemo(() => memberSummary.slice(0, 5).map(m => m.name), [memberSummary]);
   const monthlyByMember = useMemo(() => allMonths.map(month => {
     const row: Record<string, any> = { month: month.slice(0, 7) };
-    for (const name of topMembers) row[name] = entries.filter(e => e.month === month && e.user === name).reduce((s, e) => s + e.spentTime, 0);
+    for (const name of topMembers) row[name] = chartEntries.filter(e => e.month === month && e.user === name).reduce((s, e) => s + e.spentTime, 0);
     return row;
-  }), [entries, allMonths, topMembers]);
+  }), [chartEntries, allMonths, topMembers]);
 
-  // Pie: billable vs internal
-  const pieBV = [
-    { name: 'Billable', value: billableHours, color: '#22c55e' },
-    { name: 'Internal', value: internalHours, color: '#64748b' },
-  ].filter(d => d.value > 0);
+  // Pie: billable vs internal (chart-range aware)
+  const pieBV = useMemo(() => {
+    const chartBillable = chartEntries.filter(e => e.billingClass === 'V').reduce((s, e) => s + e.spentTime, 0);
+    const chartInternal = chartEntries.reduce((s, e) => s + e.spentTime, 0) - chartBillable;
+    return [
+      { name: 'Billable', value: chartBillable, color: '#22c55e' },
+      { name: 'Internal', value: chartInternal, color: '#64748b' },
+    ].filter(d => d.value > 0);
+  }, [chartEntries]);
 
   async function saveWbs() {
     setSaving(true);
@@ -201,7 +214,8 @@ export default function ProjectDetailClient({
 
       {/* Overview */}
       {activeTab === 'overview' && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div className="space-y-4">
+          <ChartTimeFilter value={chartRange} onChange={setChartRange} />
           <div className="bg-white rounded-lg border border-slate-200 p-4">
             <h3 className="text-sm font-semibold text-slate-700 mb-4">Monthly Hours by WBS</h3>
             <ResponsiveContainer width="100%" height={260}>
@@ -337,6 +351,7 @@ export default function ProjectDetailClient({
       {/* Charts */}
       {activeTab === 'charts' && (
         <div className="space-y-4">
+          <ChartTimeFilter value={chartRange} onChange={setChartRange} />
           <div className="bg-white rounded-lg border border-slate-200 p-4">
             <h3 className="text-sm font-semibold text-slate-700 mb-4">Monthly Hours by WBS Code</h3>
             <ResponsiveContainer width="100%" height={280}>
@@ -351,7 +366,7 @@ export default function ProjectDetailClient({
               </BarChart>
             </ResponsiveContainer>
           </div>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div className="space-y-4">
             <div className="bg-white rounded-lg border border-slate-200 p-4">
               <h3 className="text-sm font-semibold text-slate-700 mb-4">Monthly Hours by Member (Top 5)</h3>
               <ResponsiveContainer width="100%" height={240}>

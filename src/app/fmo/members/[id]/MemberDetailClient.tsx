@@ -10,6 +10,7 @@ import {
 import { fmtH, type Locale } from '@/lib/i18n';
 import type { FmoMember, FmoEntry, WbsSubCategory } from '@/lib/types';
 import { updateFmoMember } from '@/actions/fmo';
+import { ChartTimeFilter, initChartRange, type TimeRange } from '@/components/ChartTimeFilter';
 
 type Tab = 'profile' | 'tickets' | 'charts';
 
@@ -45,6 +46,7 @@ export default function MemberDetailClient({
   const locale = useLocale() as Locale;
 
   const [activeTab, setActiveTab] = useState<Tab>('tickets');
+  const [chartRange, setChartRange] = useState<TimeRange>(() => initChartRange(entries));
   const [type, setType]           = useState(member.type);
   const [company, setCompany]     = useState(member.partnerCompany);
   const [costRate, setCostRate]   = useState(String(member.costRate));
@@ -69,6 +71,13 @@ export default function MemberDetailClient({
 
   const totalHours = useMemo(() => entries.reduce((s, e) => s + e.spentTime, 0), [entries]);
 
+  const chartEntries = useMemo(
+    () => chartRange.from
+      ? entries.filter(e => e.month >= chartRange.from && e.month <= chartRange.to)
+      : entries,
+    [entries, chartRange],
+  );
+
   const ticketSummary = useMemo(() => {
     const map = new Map<number | string, { name: string; wbsCode: string | null; billingClass: string | null; subCategory: string | null; hours: number }>();
     for (const e of entries) {
@@ -84,7 +93,7 @@ export default function MemberDetailClient({
   const { chartData, categories } = useMemo(() => {
     const monthMap = new Map<string, Map<string, number>>();
     const catSet = new Set<string>();
-    for (const e of entries) {
+    for (const e of chartEntries) {
       if (!monthMap.has(e.month)) monthMap.set(e.month, new Map());
       const key = e.billingClass === 'V' ? 'V' : (e.subCategory ?? 'unmapped');
       catSet.add(key);
@@ -100,12 +109,12 @@ export default function MemberDetailClient({
       return row;
     });
     return { chartData: data, categories: cats };
-  }, [entries]);
+  }, [chartEntries]);
 
   // For pie: billable vs internal total
   const billablePie = useMemo(() => {
     let billable = 0, internal = 0;
-    for (const e of entries) {
+    for (const e of chartEntries) {
       if (e.billingClass === 'V') billable += e.spentTime;
       else internal += e.spentTime;
     }
@@ -113,17 +122,26 @@ export default function MemberDetailClient({
       { name: tUtil('billable'), value: billable, color: '#22c55e' },
       { name: tUtil('unmapped').replace('Unmapped', 'Internal'), value: internal, color: '#64748b' },
     ].filter(d => d.value > 0);
-  }, [entries, tUtil]);
+  }, [chartEntries, tUtil]);
 
-  // Top tickets chart (horizontal bar)
-  const topTicketsChart = useMemo(() =>
-    ticketSummary.slice(0, 10).map((t, i) => ({
-      name: t.name.length > 35 ? t.name.slice(0, 35) + '…' : t.name,
-      hours: t.hours,
-      fill: COLORS[i % COLORS.length],
-    })),
-    [ticketSummary]
-  );
+  // Top tickets chart (horizontal bar) — derived from chartEntries
+  const topTicketsChart = useMemo(() => {
+    const map = new Map<number | string, { name: string; hours: number }>();
+    for (const e of chartEntries) {
+      const key = e.ticketId ?? e.ticketName;
+      const ex = map.get(key);
+      if (ex) ex.hours += e.spentTime;
+      else map.set(key, { name: e.ticketName, hours: e.spentTime });
+    }
+    return [...map.values()]
+      .sort((a, b) => b.hours - a.hours)
+      .slice(0, 10)
+      .map((t, i) => ({
+        name: t.name.length > 35 ? t.name.slice(0, 35) + '…' : t.name,
+        hours: t.hours,
+        fill: COLORS[i % COLORS.length],
+      }));
+  }, [chartEntries]);
 
   const getLabel = (subCategory: string | null, billingClass: string | null) => {
     if (billingClass === 'V') return tUtil('billable');
@@ -255,6 +273,7 @@ export default function MemberDetailClient({
       {/* ── Charts Tab ── */}
       {activeTab === 'charts' && entries.length > 0 && (
         <div className="space-y-6">
+          <ChartTimeFilter value={chartRange} onChange={setChartRange} />
           {/* Hours by Category per Month */}
           <div className="bg-white rounded-lg border border-slate-200 p-4">
             <h3 className="text-sm font-semibold text-slate-700 mb-4">{t('chartTitle')}</h3>
@@ -275,7 +294,7 @@ export default function MemberDetailClient({
           </div>
 
           {/* Billable vs Internal Pie */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div className="space-y-4">
             <div className="bg-white rounded-lg border border-slate-200 p-4">
               <h3 className="text-sm font-semibold text-slate-700 mb-4">Billable vs Internal</h3>
               <ResponsiveContainer width="100%" height={220}>

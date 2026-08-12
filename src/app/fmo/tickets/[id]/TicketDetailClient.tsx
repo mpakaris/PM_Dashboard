@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useLocale } from 'next-intl';
 import {
@@ -9,6 +9,7 @@ import {
 } from 'recharts';
 import { fmtH, type Locale } from '@/lib/i18n';
 import type { FmoTicket, FmoEntry, FmoMember, FmoWbsEntry } from '@/lib/types';
+import { ChartTimeFilter, initChartRange, type TimeRange } from '@/components/ChartTimeFilter';
 
 const COLORS = ['#6366f1','#22c55e','#f97316','#3b82f6','#a855f7','#eab308','#ef4444','#64748b','#06b6d4','#ec4899'];
 
@@ -24,6 +25,15 @@ export default function TicketDetailClient({
   wbs: Record<string, FmoWbsEntry>;
 }) {
   const locale = useLocale() as Locale;
+
+  const [chartRange, setChartRange] = useState<TimeRange>(() => initChartRange(entries));
+
+  const chartEntries = useMemo(
+    () => chartRange.from
+      ? entries.filter(e => e.month >= chartRange.from && e.month <= chartRange.to)
+      : entries,
+    [entries, chartRange],
+  );
 
   const totalHours = useMemo(() => entries.reduce((s, e) => s + e.spentTime, 0), [entries]);
 
@@ -41,7 +51,7 @@ export default function TicketDetailClient({
 
   const monthlyData = useMemo(() => {
     const map = new Map<string, Map<string, number>>();
-    for (const e of entries) {
+    for (const e of chartEntries) {
       if (!map.has(e.month)) map.set(e.month, new Map());
       const m = map.get(e.month)!;
       m.set(e.user, (m.get(e.user) ?? 0) + e.spentTime);
@@ -54,7 +64,7 @@ export default function TicketDetailClient({
         .reduce((s, [, h]) => s + h, 0);
       return row;
     });
-  }, [entries, topMembers]);
+  }, [chartEntries, topMembers]);
 
   // Cumulative hours over time
   const cumulativeData = useMemo(() => {
@@ -117,7 +127,9 @@ export default function TicketDetailClient({
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <ChartTimeFilter value={chartRange} onChange={setChartRange} />
+
+      <div className="space-y-6">
         {/* Members table */}
         <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
           <div className="px-4 py-3 border-b border-slate-100">
