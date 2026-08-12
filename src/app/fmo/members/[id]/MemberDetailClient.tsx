@@ -334,7 +334,7 @@ export default function MemberDetailClient({
       {/* ── Charts Tab ── */}
       {activeTab === 'charts' && entries.length > 0 && (
         <div className="space-y-6">
-          <ChartTimeFilter value={chartRange} onChange={setChartRange} />
+          <ChartTimeFilter value={chartRange} defaultRange={initChartRange(entries)} onChange={setChartRange} />
 
           {/* 1. Hours by Category per Month */}
           <div className="bg-white rounded-lg border border-slate-200 p-4">

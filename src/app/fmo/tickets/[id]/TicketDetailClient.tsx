@@ -134,7 +134,7 @@ export default function TicketDetailClient({
         </div>
       )}
 
-      <ChartTimeFilter value={chartRange} onChange={setChartRange} />
+      <ChartTimeFilter value={chartRange} defaultRange={initChartRange(entries)} onChange={setChartRange} />
 
       <div className="space-y-6">
         {/* Members table */}

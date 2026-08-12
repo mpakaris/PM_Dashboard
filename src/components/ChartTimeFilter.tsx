@@ -21,9 +21,11 @@ type Preset = typeof PRESETS[number]['key'] | null;
 
 export function ChartTimeFilter({
   value,
+  defaultRange,
   onChange,
 }: {
   value: TimeRange;
+  defaultRange: TimeRange;
   onChange: (r: TimeRange) => void;
 }) {
   const [active, setActive] = useState<Preset>(null);
@@ -32,6 +34,13 @@ export function ChartTimeFilter({
     setActive(key);
     onChange({ from: monthOffset(offset), to: monthOffset(-1) });
   }
+
+  function clear() {
+    setActive(null);
+    onChange(defaultRange);
+  }
+
+  const isFiltered = active !== null || value.from !== defaultRange.from || value.to !== defaultRange.to;
 
   return (
     <div className="flex items-center gap-3 flex-wrap">
@@ -67,6 +76,14 @@ export function ChartTimeFilter({
           className="border border-slate-200 rounded px-2 py-1 text-xs text-slate-600 focus:outline-none focus:border-slate-400"
         />
       </div>
+      {isFiltered && (
+        <button
+          onClick={clear}
+          className="text-xs text-slate-400 hover:text-slate-700 underline underline-offset-2 transition-colors"
+        >
+          Clear filter
+        </button>
+      )}
     </div>
   );
 }

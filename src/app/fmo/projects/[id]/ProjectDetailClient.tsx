@@ -237,7 +237,7 @@ export default function ProjectDetailClient({
       {/* Overview */}
       {activeTab === 'overview' && (
         <div className="space-y-4">
-          <ChartTimeFilter value={chartRange} onChange={setChartRange} />
+          <ChartTimeFilter value={chartRange} defaultRange={initChartRange(entries)} onChange={setChartRange} />
           <div className="bg-white rounded-lg border border-slate-200 p-4">
             <h3 className="text-sm font-semibold text-gray-800 mb-4">Monthly Hours by WBS</h3>
             <ResponsiveContainer width="100%" height={260}>
@@ -376,7 +376,7 @@ export default function ProjectDetailClient({
       {/* Charts */}
       {activeTab === 'charts' && (
         <div className="space-y-4">
-          <ChartTimeFilter value={chartRange} onChange={setChartRange} />
+          <ChartTimeFilter value={chartRange} defaultRange={initChartRange(entries)} onChange={setChartRange} />
           <div className="bg-white rounded-lg border border-slate-200 p-4">
             <h3 className="text-sm font-semibold text-gray-800 mb-4">Monthly Hours by WBS Code</h3>
             <ResponsiveContainer width="100%" height={280}>
