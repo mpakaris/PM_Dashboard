@@ -392,7 +392,7 @@ export default function MemberDetailClient({
                   <XAxis dataKey="month" tick={{ fontSize: 10 }} interval={0} angle={-35} textAnchor="end" height={48} />
                   <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `${v}h`} />
                   <Tooltip {...TOOLTIP_STYLE} formatter={(v) => typeof v === 'number' ? fmtH(v, locale) : v} />
-                  <Legend wrapperStyle={{ fontSize: '11px' }}
+                  <Legend verticalAlign="top" wrapperStyle={{ fontSize: '11px', paddingBottom: '8px' }}
                     formatter={(name) => String(name).length > 26 ? String(name).slice(0, 26) + '…' : String(name)} />
                   {top8Keys.map((key, i) => (
                     <Bar key={key} dataKey={key} stackId="t" fill={COLORS[i % COLORS.length]} opacity={0.88} />
