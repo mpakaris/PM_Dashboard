@@ -11,7 +11,14 @@ import { fmtH, type Locale } from '@/lib/i18n';
 import type { FmoTicket, FmoEntry, FmoMember, FmoWbsEntry } from '@/lib/types';
 import { ChartTimeFilter, initChartRange, type TimeRange } from '@/components/ChartTimeFilter';
 
-const COLORS = ['#6366f1','#22c55e','#f97316','#3b82f6','#a855f7','#eab308','#ef4444','#64748b','#06b6d4','#ec4899'];
+const COLORS = [
+  '#4338ca', '#0f766e', '#c2410c', '#1d4ed8',
+  '#7c3aed', '#a16207', '#b91c1c', '#475569', '#0e7490', '#9d174d',
+];
+
+const TOOLTIP_STYLE = {
+  contentStyle: { fontSize: 12, borderRadius: 6, border: '1px solid #e2e8f0', boxShadow: '0 1px 4px rgba(0,0,0,.06)' },
+};
 
 export default function TicketDetailClient({
   ticket,
@@ -183,15 +190,15 @@ export default function TicketDetailClient({
 
         {/* Cumulative line chart */}
         <div className="bg-white rounded-lg border border-slate-200 p-4">
-          <h3 className="text-sm font-semibold text-slate-700 mb-4">Cumulative Hours</h3>
+          <h3 className="text-sm font-semibold text-gray-800 mb-4">Cumulative Hours</h3>
           <ResponsiveContainer width="100%" height={240}>
-            <LineChart data={cumulativeData} margin={{ top: 4, right: 16, left: 0, bottom: 4 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+            <LineChart data={cumulativeData} margin={{ top: 4, right: 8, left: 0, bottom: 8 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
               <XAxis dataKey="month" tick={{ fontSize: 10 }} interval={0} angle={-35} textAnchor="end" height={48} />
-              <YAxis tick={{ fontSize: 10 }} />
-              <Tooltip formatter={(v) => typeof v === 'number' ? fmtH(v, locale) : v} />
-              <Line type="monotone" dataKey="cumulative" stroke="#6366f1" strokeWidth={2} dot={false} name="Cumulative" />
-              <Bar dataKey="total" fill="#e0e7ff" name="Monthly" />
+              <YAxis tick={{ fontSize: 10 }} tickFormatter={(v) => `${v}h`} />
+              <Tooltip {...TOOLTIP_STYLE} formatter={(v) => typeof v === 'number' ? fmtH(v, locale) : v} />
+              <Line type="monotone" dataKey="cumulative" stroke="#4338ca" strokeWidth={2} dot={{ r: 3 }} name="Cumulative" />
+              <Bar dataKey="total" fill="#dde1ff" name="Monthly" />
             </LineChart>
           </ResponsiveContainer>
         </div>
@@ -200,15 +207,16 @@ export default function TicketDetailClient({
       {/* Monthly stacked bar */}
       {monthlyData.length > 0 && (
         <div className="bg-white rounded-lg border border-slate-200 p-4">
-          <h3 className="text-sm font-semibold text-slate-700 mb-4">Monthly Breakdown by Member</h3>
+          <h3 className="text-sm font-semibold text-gray-800 mb-4">Monthly Breakdown by Member</h3>
           <ResponsiveContainer width="100%" height={260}>
-            <BarChart data={monthlyData} margin={{ top: 4, right: 16, left: 0, bottom: 4 }}>
+            <BarChart data={monthlyData} margin={{ top: 4, right: 8, left: 0, bottom: 8 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
               <XAxis dataKey="month" tick={{ fontSize: 10 }} interval={0} angle={-35} textAnchor="end" height={48} />
-              <YAxis tick={{ fontSize: 11 }} />
-              <Tooltip formatter={(v) => typeof v === 'number' ? fmtH(v, locale) : v} />
-              <Legend />
+              <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `${v}h`} />
+              <Tooltip {...TOOLTIP_STYLE} formatter={(v) => typeof v === 'number' ? fmtH(v, locale) : v} />
+              <Legend wrapperStyle={{ fontSize: '12px' }} />
               {topMembers.map((name, i) => (
-                <Bar key={name} dataKey={name} stackId="a" fill={COLORS[i % COLORS.length]} />
+                <Bar key={name} dataKey={name} stackId="a" fill={COLORS[i % COLORS.length]} opacity={0.88} />
               ))}
               {monthlyData.some(d => (d['others'] ?? 0) > 0) && (
                 <Bar dataKey="others" stackId="a" fill="#cbd5e1" name="Others" />

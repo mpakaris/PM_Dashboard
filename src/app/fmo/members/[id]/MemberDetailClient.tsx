@@ -5,8 +5,8 @@ import Link from 'next/link';
 import { useTranslations, useLocale } from 'next-intl';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer,
-  PieChart, Pie, Cell,
-  ComposedChart, Line, CartesianGrid,
+  PieChart, Pie, Cell, CartesianGrid,
+  ComposedChart, Line,
 } from 'recharts';
 import { fmtH, type Locale } from '@/lib/i18n';
 import type { FmoMember, FmoEntry, WbsSubCategory } from '@/lib/types';
@@ -15,17 +15,46 @@ import { ChartTimeFilter, initChartRange, type TimeRange } from '@/components/Ch
 
 type Tab = 'profile' | 'tickets' | 'charts';
 
-const COLORS = ['#6366f1','#22c55e','#f97316','#3b82f6','#a855f7','#eab308','#ef4444','#64748b','#06b6d4','#ec4899'];
+// Muted, dignified palette — 700-level Tailwind equivalents
+const COLORS = [
+  '#4338ca', '#0f766e', '#c2410c', '#1d4ed8',
+  '#7c3aed', '#a16207', '#b91c1c', '#475569', '#0e7490', '#9d174d',
+];
 
 const SUB_COLORS: Record<string, string> = {
-  V:'#22c55e', admin:'#64748b', presales:'#3b82f6', opm:'#f97316',
-  portfolio:'#a855f7', training:'#eab308', absence:'#ef4444', unmapped:'#fb7185',
+  V:         '#0f766e', // teal-700   (billable)
+  admin:     '#475569', // slate-600
+  presales:  '#1d4ed8', // blue-700
+  opm:       '#c2410c', // orange-700
+  portfolio: '#7c3aed', // violet-600
+  training:  '#a16207', // yellow-700
+  absence:   '#b91c1c', // red-700
+  unmapped:  '#9d174d', // pink-800
+};
+
+const TOOLTIP_STYLE = {
+  contentStyle: { fontSize: 12, borderRadius: 6, border: '1px solid #e2e8f0', boxShadow: '0 1px 4px rgba(0,0,0,.06)' },
 };
 
 function getColor(subCategory: string | null, billingClass: string | null) {
   if (billingClass === 'V') return SUB_COLORS['V'];
   if (subCategory && SUB_COLORS[subCategory]) return SUB_COLORS[subCategory];
   return SUB_COLORS['unmapped'];
+}
+
+function PieLabel({ cx, cy, midAngle, outerRadius, name, percent }: any) {
+  const RADIAN = Math.PI / 180;
+  const r = outerRadius + 22;
+  const x = cx + r * Math.cos(-midAngle * RADIAN);
+  const y = cy + r * Math.sin(-midAngle * RADIAN);
+  const pct = Math.round((percent ?? 0) * 100);
+  if (pct < 4) return null;
+  return (
+    <text x={x} y={y} fill="#6b7280" textAnchor={x > cx ? 'start' : 'end'}
+      dominantBaseline="central" fontSize={11}>
+      {name} {pct}%
+    </text>
+  );
 }
 
 export default function MemberDetailClient({
@@ -121,7 +150,7 @@ export default function MemberDetailClient({
     });
   }, [chartEntries]);
 
-  // 3. Hours by Ticket per Month (stacked, top 8 tickets)
+  // 3. Hours by Ticket per Month (stacked, top 8)
   const { ticketBarData, top8Keys, ticketHasOthers } = useMemo(() => {
     const totals = new Map<string, number>();
     for (const e of chartEntries) totals.set(e.ticketName, (totals.get(e.ticketName) ?? 0) + e.spentTime);
@@ -166,7 +195,7 @@ export default function MemberDetailClient({
       }));
   }, [chartEntries, subCategories, tUtil]);
 
-  // 5. Top Tickets horizontal bar (fixed)
+  // 5. Top Tickets horizontal bar
   const topTicketsChart = useMemo(() => {
     const map = new Map<number | string, { name: string; hours: number }>();
     for (const e of chartEntries) {
@@ -233,15 +262,12 @@ export default function MemberDetailClient({
       {/* Tabs */}
       <div className="flex gap-1 border-b border-slate-200">
         {TABS.map(tab => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
+          <button key={tab.id} onClick={() => setActiveTab(tab.id)}
             className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
               activeTab === tab.id
                 ? 'border-slate-700 text-slate-900'
                 : 'border-transparent text-slate-400 hover:text-slate-600 hover:border-slate-300'
-            }`}
-          >
+            }`}>
             {tab.label}
           </button>
         ))}
@@ -250,9 +276,7 @@ export default function MemberDetailClient({
       {/* ── Tickets Tab ── */}
       {activeTab === 'tickets' && (
         <div className="space-y-3">
-          {dateRange && (
-            <p className="text-xs text-slate-400">{dateRange.from} → {dateRange.to}</p>
-          )}
+          {dateRange && <p className="text-xs text-slate-400">{dateRange.from} → {dateRange.to}</p>}
           {entries.length === 0 ? (
             <p className="text-slate-400 text-sm">{t('noData')}</p>
           ) : (
@@ -283,7 +307,7 @@ export default function MemberDetailClient({
                       <td className="px-4 py-2.5 font-mono text-xs text-slate-500">{tk.wbsCode ?? '—'}</td>
                       <td className="px-4 py-2.5">
                         <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium"
-                          style={{ background: getColor(tk.subCategory, tk.billingClass) + '20', color: getColor(tk.subCategory, tk.billingClass) }}>
+                          style={{ background: getColor(tk.subCategory, tk.billingClass) + '22', color: getColor(tk.subCategory, tk.billingClass) }}>
                           {getLabel(tk.subCategory, tk.billingClass)}
                         </span>
                       </td>
@@ -314,15 +338,16 @@ export default function MemberDetailClient({
 
           {/* 1. Hours by Category per Month */}
           <div className="bg-white rounded-lg border border-slate-200 p-4">
-            <h3 className="text-sm font-semibold text-slate-700 mb-4">{t('chartTitle')}</h3>
+            <h3 className="text-sm font-semibold text-gray-800 mb-4">{t('chartTitle')}</h3>
             <ResponsiveContainer width="100%" height={260}>
-              <BarChart data={chartData} margin={{ top: 4, right: 16, left: 0, bottom: 4 }}>
+              <BarChart data={chartData} margin={{ top: 4, right: 8, left: 0, bottom: 8 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                 <XAxis dataKey="month" tick={{ fontSize: 10 }} interval={0} angle={-35} textAnchor="end" height={48} />
-                <YAxis tick={{ fontSize: 11 }} />
-                <Tooltip formatter={(v) => typeof v === 'number' ? fmtH(v, locale) : v} />
-                <Legend />
+                <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `${v}h`} />
+                <Tooltip {...TOOLTIP_STYLE} formatter={(v) => typeof v === 'number' ? fmtH(v, locale) : v} />
+                <Legend wrapperStyle={{ fontSize: '12px' }} />
                 {categories.map(cat => (
-                  <Bar key={cat} dataKey={cat} stackId="a"
+                  <Bar key={cat} dataKey={cat} stackId="a" opacity={0.9}
                     fill={getColor(cat === 'V' ? null : cat, cat === 'V' ? 'V' : 'I')}
                     name={getLabel(cat === 'V' ? null : cat, cat === 'V' ? 'V' : 'I')}
                   />
@@ -334,36 +359,45 @@ export default function MemberDetailClient({
           {/* 2. Velocity + 3M Rolling Average */}
           {velocityData.length > 0 && (
             <div className="bg-white rounded-lg border border-slate-200 p-4">
-              <h3 className="text-sm font-semibold text-slate-700 mb-1">Velocity &amp; 3-Month Average</h3>
-              <p className="text-xs text-slate-400 mb-4">Monthly hours (bars) with 3-month rolling average (line)</p>
+              <h3 className="text-sm font-semibold text-gray-800 mb-1">Velocity &amp; 3-Month Average</h3>
+              <p className="text-xs text-gray-400 mb-4">Monthly hours (bars) with 3-month rolling average (line)</p>
               <ResponsiveContainer width="100%" height={260}>
-                <ComposedChart data={velocityData} margin={{ top: 4, right: 16, left: 0, bottom: 4 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                <ComposedChart data={velocityData} margin={{ top: 4, right: 8, left: 0, bottom: 8 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                   <XAxis dataKey="month" tick={{ fontSize: 10 }} interval={0} angle={-35} textAnchor="end" height={48} />
-                  <YAxis tick={{ fontSize: 11 }} />
-                  <Tooltip formatter={(v) => typeof v === 'number' ? fmtH(v, locale) : v} />
-                  <Legend />
-                  <Bar dataKey="hours" fill="#e0e7ff" name="Monthly Hours" radius={[3, 3, 0, 0]} />
-                  <Line type="monotone" dataKey="avg3m" stroke="#6366f1" strokeWidth={2} dot={false} name="3M Avg" />
+                  <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `${v}h`} />
+                  <Tooltip {...TOOLTIP_STYLE} formatter={(v) => typeof v === 'number' ? fmtH(v, locale) : v} />
+                  <Bar dataKey="hours" fill="#dde1ff" name="Monthly Hours" radius={[3, 3, 0, 0]} opacity={0.9} />
+                  <Line type="monotone" dataKey="avg3m" stroke="#4338ca" strokeWidth={2} dot={{ r: 3 }} name="3M Avg" />
                 </ComposedChart>
               </ResponsiveContainer>
+              <div className="flex gap-4 mt-2">
+                <span className="flex items-center gap-1.5 text-xs text-gray-500">
+                  <span className="w-2.5 h-2.5 rounded-sm bg-indigo-200 inline-block" /> Monthly Hours
+                </span>
+                <span className="flex items-center gap-1.5 text-xs text-gray-500">
+                  <span className="w-4 border-t-2 border-indigo-700 inline-block" /> 3M Avg
+                </span>
+              </div>
             </div>
           )}
 
           {/* 3. Hours by Ticket per Month */}
           {ticketBarData.length > 0 && (
             <div className="bg-white rounded-lg border border-slate-200 p-4">
-              <h3 className="text-sm font-semibold text-slate-700 mb-4">Hours by Ticket per Month</h3>
+              <h3 className="text-sm font-semibold text-gray-800 mb-4">Hours by Ticket per Month</h3>
               <ResponsiveContainer width="100%" height={280}>
-                <BarChart data={ticketBarData} margin={{ top: 4, right: 16, left: 0, bottom: 4 }}>
+                <BarChart data={ticketBarData} margin={{ top: 4, right: 8, left: 0, bottom: 8 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                   <XAxis dataKey="month" tick={{ fontSize: 10 }} interval={0} angle={-35} textAnchor="end" height={48} />
-                  <YAxis tick={{ fontSize: 11 }} />
-                  <Tooltip formatter={(v) => typeof v === 'number' ? fmtH(v, locale) : v} />
-                  <Legend formatter={(name) => String(name).length > 26 ? String(name).slice(0, 26) + '…' : String(name)} />
+                  <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `${v}h`} />
+                  <Tooltip {...TOOLTIP_STYLE} formatter={(v) => typeof v === 'number' ? fmtH(v, locale) : v} />
+                  <Legend wrapperStyle={{ fontSize: '11px' }}
+                    formatter={(name) => String(name).length > 26 ? String(name).slice(0, 26) + '…' : String(name)} />
                   {top8Keys.map((key, i) => (
-                    <Bar key={key} dataKey={key} stackId="t" fill={COLORS[i % COLORS.length]} />
+                    <Bar key={key} dataKey={key} stackId="t" fill={COLORS[i % COLORS.length]} opacity={0.88} />
                   ))}
-                  {ticketHasOthers && <Bar dataKey="Others" stackId="t" fill="#cbd5e1" />}
+                  {ticketHasOthers && <Bar dataKey="Others" stackId="t" fill="#94a3b8" opacity={0.7} />}
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -372,38 +406,32 @@ export default function MemberDetailClient({
           {/* 4. Category Breakdown Pie */}
           {categoryPie.length > 0 && (
             <div className="bg-white rounded-lg border border-slate-200 p-4">
-              <h3 className="text-sm font-semibold text-slate-700 mb-4">Hours by Category</h3>
-              <ResponsiveContainer width="100%" height={300}>
+              <h3 className="text-sm font-semibold text-gray-800 mb-4">Hours by Category</h3>
+              <ResponsiveContainer width="100%" height={320}>
                 <PieChart>
-                  <Pie
-                    data={categoryPie}
-                    dataKey="value"
-                    nameKey="name"
-                    cx="50%"
-                    cy="50%"
-                    outerRadius={110}
-                    label={({ name, percent }) => `${name} ${Math.round((percent ?? 0) * 100)}%`}
-                    labelLine
-                  >
-                    {categoryPie.map((d, i) => <Cell key={i} fill={d.color} />)}
+                  <Pie data={categoryPie} dataKey="value" nameKey="name"
+                    cx="50%" cy="50%" outerRadius={110}
+                    labelLine={false} label={PieLabel}>
+                    {categoryPie.map((d, i) => <Cell key={i} fill={d.color} opacity={0.9} />)}
                   </Pie>
-                  <Tooltip formatter={(v) => typeof v === 'number' ? fmtH(v, locale) : v} />
-                  <Legend />
+                  <Tooltip {...TOOLTIP_STYLE} formatter={(v) => typeof v === 'number' ? fmtH(v, locale) : v} />
+                  <Legend wrapperStyle={{ fontSize: '12px' }} />
                 </PieChart>
               </ResponsiveContainer>
             </div>
           )}
 
-          {/* 5. Top Tickets by Hours — dynamic height */}
+          {/* 5. Top Tickets by Hours */}
           {topTicketsChart.length > 0 && (
             <div className="bg-white rounded-lg border border-slate-200 p-4">
-              <h3 className="text-sm font-semibold text-slate-700 mb-4">Top Tickets by Hours</h3>
+              <h3 className="text-sm font-semibold text-gray-800 mb-4">Top Tickets by Hours</h3>
               <ResponsiveContainer width="100%" height={topTicketsChart.length * 44 + 24}>
-                <BarChart data={topTicketsChart} layout="vertical" margin={{ left: 0, right: 40, top: 4, bottom: 4 }}>
-                  <XAxis type="number" tick={{ fontSize: 10 }} />
+                <BarChart data={topTicketsChart} layout="vertical" margin={{ left: 0, right: 48, top: 4, bottom: 4 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" horizontal={false} />
+                  <XAxis type="number" tick={{ fontSize: 10 }} tickFormatter={(v) => `${v}h`} />
                   <YAxis type="category" dataKey="name" tick={{ fontSize: 10 }} width={190} />
-                  <Tooltip formatter={(v) => typeof v === 'number' ? fmtH(v, locale) : v} />
-                  <Bar dataKey="hours" radius={[0, 3, 3, 0]} barSize={20}>
+                  <Tooltip {...TOOLTIP_STYLE} formatter={(v) => typeof v === 'number' ? fmtH(v, locale) : v} />
+                  <Bar dataKey="hours" radius={[0, 3, 3, 0]} barSize={20} opacity={0.88}>
                     {topTicketsChart.map((d, i) => <Cell key={i} fill={d.fill} />)}
                   </Bar>
                 </BarChart>

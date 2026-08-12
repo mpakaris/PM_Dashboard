@@ -7,7 +7,7 @@ import { useRole } from '@/components/RoleProvider';
 import { useLocale } from 'next-intl';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer,
-  PieChart, Pie, Cell,
+  PieChart, Pie, Cell, CartesianGrid,
 } from 'recharts';
 import { fmtH, fmtEur, type Locale } from '@/lib/i18n';
 import type { FmoProject, FmoEntry, FmoMember, FmoWbsEntry, FmoTicket, WbsSubCategory } from '@/lib/types';
@@ -16,7 +16,29 @@ import { ChartTimeFilter, initChartRange, type TimeRange } from '@/components/Ch
 
 type Tab = 'overview' | 'members' | 'tickets' | 'charts';
 
-const COLORS = ['#6366f1','#22c55e','#f97316','#3b82f6','#a855f7','#eab308','#ef4444','#64748b','#06b6d4','#ec4899'];
+const COLORS = [
+  '#4338ca', '#0f766e', '#c2410c', '#1d4ed8',
+  '#7c3aed', '#a16207', '#b91c1c', '#475569', '#0e7490', '#9d174d',
+];
+
+const TOOLTIP_STYLE = {
+  contentStyle: { fontSize: 12, borderRadius: 6, border: '1px solid #e2e8f0', boxShadow: '0 1px 4px rgba(0,0,0,.06)' },
+};
+
+function PieLabel({ cx, cy, midAngle, outerRadius, name, percent }: any) {
+  const RADIAN = Math.PI / 180;
+  const r = outerRadius + 22;
+  const x = cx + r * Math.cos(-midAngle * RADIAN);
+  const y = cy + r * Math.sin(-midAngle * RADIAN);
+  const pct = Math.round((percent ?? 0) * 100);
+  if (pct < 4) return null;
+  return (
+    <text x={x} y={y} fill="#6b7280" textAnchor={x > cx ? 'start' : 'end'}
+      dominantBaseline="central" fontSize={11}>
+      {name} {pct}%
+    </text>
+  );
+}
 
 export default function ProjectDetailClient({
   project,
@@ -107,8 +129,8 @@ export default function ProjectDetailClient({
     const chartBillable = chartEntries.filter(e => e.billingClass === 'V').reduce((s, e) => s + e.spentTime, 0);
     const chartInternal = chartEntries.reduce((s, e) => s + e.spentTime, 0) - chartBillable;
     return [
-      { name: 'Billable', value: chartBillable, color: '#22c55e' },
-      { name: 'Internal', value: chartInternal, color: '#64748b' },
+      { name: 'Billable', value: chartBillable, color: '#0f766e' },
+      { name: 'Internal', value: chartInternal, color: '#475569' },
     ].filter(d => d.value > 0);
   }, [chartEntries]);
 
@@ -217,28 +239,30 @@ export default function ProjectDetailClient({
         <div className="space-y-4">
           <ChartTimeFilter value={chartRange} onChange={setChartRange} />
           <div className="bg-white rounded-lg border border-slate-200 p-4">
-            <h3 className="text-sm font-semibold text-slate-700 mb-4">Monthly Hours by WBS</h3>
+            <h3 className="text-sm font-semibold text-gray-800 mb-4">Monthly Hours by WBS</h3>
             <ResponsiveContainer width="100%" height={260}>
-              <BarChart data={monthlyByWbs} margin={{ top: 4, right: 16, left: 0, bottom: 4 }}>
+              <BarChart data={monthlyByWbs} margin={{ top: 4, right: 8, left: 0, bottom: 8 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                 <XAxis dataKey="month" tick={{ fontSize: 10 }} interval={0} angle={-35} textAnchor="end" height={48} />
-                <YAxis tick={{ fontSize: 10 }} />
-                <Tooltip formatter={(v) => typeof v === 'number' ? fmtH(v, locale) : v} />
-                <Legend formatter={code => wbs[code]?.label ?? code} />
+                <YAxis tick={{ fontSize: 10 }} tickFormatter={(v) => `${v}h`} />
+                <Tooltip {...TOOLTIP_STYLE} formatter={(v) => typeof v === 'number' ? fmtH(v, locale) : v} />
+                <Legend wrapperStyle={{ fontSize: '12px' }} formatter={code => wbs[code]?.label ?? code} />
                 {project.wbsCodes.map((code, i) => (
-                  <Bar key={code} dataKey={code} stackId="a" fill={COLORS[i % COLORS.length]} />
+                  <Bar key={code} dataKey={code} stackId="a" fill={COLORS[i % COLORS.length]} opacity={0.88} />
                 ))}
               </BarChart>
             </ResponsiveContainer>
           </div>
           <div className="bg-white rounded-lg border border-slate-200 p-4">
-            <h3 className="text-sm font-semibold text-slate-700 mb-4">Billable vs Internal</h3>
-            <ResponsiveContainer width="100%" height={260}>
+            <h3 className="text-sm font-semibold text-gray-800 mb-4">Billable vs Internal</h3>
+            <ResponsiveContainer width="100%" height={300}>
               <PieChart>
-                <Pie data={pieBV} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={90}
-                  label={({ name, percent }) => `${name} ${Math.round((percent ?? 0) * 100)}%`}>
+                <Pie data={pieBV} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={100}
+                  labelLine={false} label={PieLabel} opacity={0.9}>
                   {pieBV.map((d, i) => <Cell key={i} fill={d.color} />)}
                 </Pie>
-                <Tooltip formatter={(v) => typeof v === 'number' ? fmtH(v, locale) : v} />
+                <Tooltip {...TOOLTIP_STYLE} formatter={(v) => typeof v === 'number' ? fmtH(v, locale) : v} />
+                <Legend wrapperStyle={{ fontSize: '12px' }} />
               </PieChart>
             </ResponsiveContainer>
           </div>
@@ -293,14 +317,15 @@ export default function ProjectDetailClient({
           </div>
           {monthlyByMember.length > 0 && (
             <div className="bg-white rounded-lg border border-slate-200 p-4">
-              <h3 className="text-sm font-semibold text-slate-700 mb-4">Monthly by Member</h3>
+              <h3 className="text-sm font-semibold text-gray-800 mb-4">Monthly by Member</h3>
               <ResponsiveContainer width="100%" height={240}>
-                <BarChart data={monthlyByMember} margin={{ top: 4, right: 16, left: 0, bottom: 4 }}>
+                <BarChart data={monthlyByMember} margin={{ top: 4, right: 8, left: 0, bottom: 8 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                   <XAxis dataKey="month" tick={{ fontSize: 10 }} interval={0} angle={-35} textAnchor="end" height={48} />
-                  <YAxis tick={{ fontSize: 10 }} />
-                  <Tooltip formatter={(v) => typeof v === 'number' ? fmtH(v, locale) : v} />
-                  <Legend />
-                  {topMembers.map((name, i) => <Bar key={name} dataKey={name} stackId="a" fill={COLORS[i % COLORS.length]} />)}
+                  <YAxis tick={{ fontSize: 10 }} tickFormatter={(v) => `${v}h`} />
+                  <Tooltip {...TOOLTIP_STYLE} formatter={(v) => typeof v === 'number' ? fmtH(v, locale) : v} />
+                  <Legend wrapperStyle={{ fontSize: '12px' }} />
+                  {topMembers.map((name, i) => <Bar key={name} dataKey={name} stackId="a" fill={COLORS[i % COLORS.length]} opacity={0.88} />)}
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -353,44 +378,45 @@ export default function ProjectDetailClient({
         <div className="space-y-4">
           <ChartTimeFilter value={chartRange} onChange={setChartRange} />
           <div className="bg-white rounded-lg border border-slate-200 p-4">
-            <h3 className="text-sm font-semibold text-slate-700 mb-4">Monthly Hours by WBS Code</h3>
+            <h3 className="text-sm font-semibold text-gray-800 mb-4">Monthly Hours by WBS Code</h3>
             <ResponsiveContainer width="100%" height={280}>
-              <BarChart data={monthlyByWbs} margin={{ top: 4, right: 16, left: 0, bottom: 4 }}>
+              <BarChart data={monthlyByWbs} margin={{ top: 4, right: 8, left: 0, bottom: 8 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                 <XAxis dataKey="month" tick={{ fontSize: 10 }} interval={0} angle={-35} textAnchor="end" height={48} />
-                <YAxis tick={{ fontSize: 11 }} />
-                <Tooltip formatter={(v) => typeof v === 'number' ? fmtH(v, locale) : v} />
-                <Legend formatter={code => wbs[code]?.label ?? code} />
+                <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `${v}h`} />
+                <Tooltip {...TOOLTIP_STYLE} formatter={(v) => typeof v === 'number' ? fmtH(v, locale) : v} />
+                <Legend wrapperStyle={{ fontSize: '12px' }} formatter={code => wbs[code]?.label ?? code} />
                 {project.wbsCodes.map((code, i) => (
-                  <Bar key={code} dataKey={code} stackId="a" fill={COLORS[i % COLORS.length]} />
+                  <Bar key={code} dataKey={code} stackId="a" fill={COLORS[i % COLORS.length]} opacity={0.88} />
                 ))}
               </BarChart>
             </ResponsiveContainer>
           </div>
-          <div className="space-y-4">
-            <div className="bg-white rounded-lg border border-slate-200 p-4">
-              <h3 className="text-sm font-semibold text-slate-700 mb-4">Monthly Hours by Member (Top 5)</h3>
-              <ResponsiveContainer width="100%" height={240}>
-                <BarChart data={monthlyByMember} margin={{ top: 4, right: 16, left: 0, bottom: 4 }}>
-                  <XAxis dataKey="month" tick={{ fontSize: 10 }} interval={0} angle={-35} textAnchor="end" height={48} />
-                  <YAxis tick={{ fontSize: 10 }} />
-                  <Tooltip formatter={(v) => typeof v === 'number' ? fmtH(v, locale) : v} />
-                  <Legend />
-                  {topMembers.map((name, i) => <Bar key={name} dataKey={name} stackId="a" fill={COLORS[i % COLORS.length]} />)}
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-            <div className="bg-white rounded-lg border border-slate-200 p-4">
-              <h3 className="text-sm font-semibold text-slate-700 mb-4">Billable vs Internal</h3>
-              <ResponsiveContainer width="100%" height={240}>
-                <PieChart>
-                  <Pie data={pieBV} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80}
-                    label={({ name, percent }) => `${name} ${Math.round((percent ?? 0) * 100)}%`}>
-                    {pieBV.map((d, i) => <Cell key={i} fill={d.color} />)}
-                  </Pie>
-                  <Tooltip formatter={(v) => typeof v === 'number' ? fmtH(v, locale) : v} />
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
+          <div className="bg-white rounded-lg border border-slate-200 p-4">
+            <h3 className="text-sm font-semibold text-gray-800 mb-4">Monthly Hours by Member (Top 5)</h3>
+            <ResponsiveContainer width="100%" height={240}>
+              <BarChart data={monthlyByMember} margin={{ top: 4, right: 8, left: 0, bottom: 8 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                <XAxis dataKey="month" tick={{ fontSize: 10 }} interval={0} angle={-35} textAnchor="end" height={48} />
+                <YAxis tick={{ fontSize: 10 }} tickFormatter={(v) => `${v}h`} />
+                <Tooltip {...TOOLTIP_STYLE} formatter={(v) => typeof v === 'number' ? fmtH(v, locale) : v} />
+                <Legend wrapperStyle={{ fontSize: '12px' }} />
+                {topMembers.map((name, i) => <Bar key={name} dataKey={name} stackId="a" fill={COLORS[i % COLORS.length]} opacity={0.88} />)}
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="bg-white rounded-lg border border-slate-200 p-4">
+            <h3 className="text-sm font-semibold text-gray-800 mb-4">Billable vs Internal</h3>
+            <ResponsiveContainer width="100%" height={300}>
+              <PieChart>
+                <Pie data={pieBV} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={100}
+                  labelLine={false} label={PieLabel} opacity={0.9}>
+                  {pieBV.map((d, i) => <Cell key={i} fill={d.color} />)}
+                </Pie>
+                <Tooltip {...TOOLTIP_STYLE} formatter={(v) => typeof v === 'number' ? fmtH(v, locale) : v} />
+                <Legend wrapperStyle={{ fontSize: '12px' }} />
+              </PieChart>
+            </ResponsiveContainer>
           </div>
         </div>
       )}
