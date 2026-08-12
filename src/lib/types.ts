@@ -265,3 +265,101 @@ export interface ProjektAnalysisProject {
   memberSettings: ProjektAnalysisMemberSettings[];
   forecast: ProjektAnalysisForecast;
 }
+
+// ─── FMO Types ────────────────────────────────────────────────────────────────
+
+export type SyncSource = 'manual' | 'excel' | 'sectrack' | 'sap';
+
+/**
+ * Type 1 — Billing Class.
+ * Always derived from the WBS code prefix. Never overridable — it is contractual.
+ *   'V' → Billable (Verrechenbar)
+ *   'I' → Internal (Intern)
+ * Additional prefix letters can be registered in FmoMappingStore.billingClasses
+ * when new WBS types appear without touching the parser.
+ */
+export type WbsBillingClass = string; // 'V' | 'I' | future letters
+
+/**
+ * Type 2 — Sub-Category.
+ * Only applies to Internal ('I.*') WBS entries; Billable entries need no sub-type.
+ * Pre-seeded from the IWBS table; admins can add new values in the WBS admin view.
+ */
+export interface WbsSubCategory {
+  id: string;     // stable slug, e.g. 'admin' | 'training' | 'presales'
+  label: string;  // display name, e.g. 'Administration' | 'Training' | 'Presales'
+}
+
+export interface FmoWbsEntry {
+  code: string;
+  label: string;
+  billingClass: WbsBillingClass;
+  subCategory?: string;
+  subCategoryOverride?: string;
+  budgetHours?: number;
+  budgetValue?: number;
+  syncSource: SyncSource;
+  syncedAt?: string;
+}
+
+export interface FmoTicket {
+  id: number;
+  name: string;
+  project: string;
+  wbsCode: string | null;
+  billingClass: WbsBillingClass | null;
+  subCategory: string | null;
+  syncSource: SyncSource;
+  syncedAt?: string;
+}
+
+export interface FmoMember {
+  id: string;
+  name: string;
+  type: 'intern' | 'extern';
+  partnerCompany: string;
+  costRate: number; // €/h
+}
+
+export interface FmoEntry {
+  id: string;         // dedup key: `${date}|${user}|${ticketId ?? ticketName}|${activity}|${spentTime}`
+  date: string;       // "YYYY-MM-DD"
+  month: string;      // "YYYY-MM"
+  project: string;
+  ticketId: number | null;
+  ticketName: string;
+  user: string;
+  activity: string;   // "Work" | "Operations"
+  comment: string;
+  spentTime: number;
+  source: string;     // original filename
+  wbsCode: string | null;
+  billingClass: WbsBillingClass | null;
+  subCategory: string | null;
+  billingType: 'fixprice' | '';
+  customer: string;
+}
+
+export interface FmoImportStats {
+  added: number;
+  duplicates: number;
+  updated: number;
+  newTickets: number;
+  newMembers: number;
+  unmapped: number;
+}
+
+export interface FmoStore {
+  entries: FmoEntry[];
+  lastUpload: string;
+  sources: string[];
+  importStats: FmoImportStats;
+}
+
+export interface FmoMappingStore {
+  wbs: Record<string, FmoWbsEntry>;
+  tickets: Record<string, FmoTicket>;
+  members: Record<string, FmoMember>;
+  billingClasses: Record<string, string>;         // prefix → label, e.g. { 'V': 'Billable', 'I': 'Internal' }
+  subCategories: Record<string, WbsSubCategory>;  // keyed by slug
+}

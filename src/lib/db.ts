@@ -1,5 +1,5 @@
 import { Redis } from '@upstash/redis';
-import { AppData, Assignment, Project, Forecast, ElsapMirror, TimesheetStore, InvoicingStore, SubContractorStore, ProjektAnalysisProject } from './types';
+import { AppData, Assignment, Project, Forecast, ElsapMirror, TimesheetStore, InvoicingStore, SubContractorStore, ProjektAnalysisProject, FmoStore, FmoMappingStore } from './types';
 import { getMonthsBetween } from './utils';
 
 const redis = new Redis({
@@ -164,4 +164,55 @@ export async function readProjektAnalysis(): Promise<ProjektAnalysisProject[]> {
 
 export async function writeProjektAnalysis(projects: ProjektAnalysisProject[]): Promise<void> {
   await withRetry(() => redis.set(PROJEKT_ANALYSIS_KEY, projects));
+}
+
+// ─── FMO ─────────────────────────────────────────────────────────────────────
+
+const FMO_STORE_KEY   = 'app:fmo:store';
+const FMO_MAPPING_KEY = 'app:fmo:mappings';
+
+const EMPTY_FMO_STORE: FmoStore = {
+  entries: [],
+  lastUpload: '',
+  sources: [],
+  importStats: { added: 0, duplicates: 0, updated: 0, newTickets: 0, newMembers: 0, unmapped: 0 },
+};
+
+const EMPTY_FMO_MAPPINGS: FmoMappingStore = {
+  wbs: {},
+  tickets: {},
+  members: {},
+  billingClasses: {},
+  subCategories: {},
+};
+
+export async function readFmoStore(): Promise<FmoStore> {
+  const raw = await withRetry(() => redis.get<any>(FMO_STORE_KEY));
+  if (!raw) return { ...EMPTY_FMO_STORE, importStats: { ...EMPTY_FMO_STORE.importStats } };
+  return {
+    entries: raw.entries ?? [],
+    lastUpload: raw.lastUpload ?? '',
+    sources: raw.sources ?? [],
+    importStats: raw.importStats ?? { ...EMPTY_FMO_STORE.importStats },
+  };
+}
+
+export async function writeFmoStore(store: FmoStore): Promise<void> {
+  await withRetry(() => redis.set(FMO_STORE_KEY, store));
+}
+
+export async function readFmoMappings(): Promise<FmoMappingStore> {
+  const raw = await withRetry(() => redis.get<any>(FMO_MAPPING_KEY));
+  if (!raw) return { ...EMPTY_FMO_MAPPINGS };
+  return {
+    wbs: raw.wbs ?? {},
+    tickets: raw.tickets ?? {},
+    members: raw.members ?? {},
+    billingClasses: raw.billingClasses ?? {},
+    subCategories: raw.subCategories ?? {},
+  };
+}
+
+export async function writeFmoMappings(mappings: FmoMappingStore): Promise<void> {
+  await withRetry(() => redis.set(FMO_MAPPING_KEY, mappings));
 }
