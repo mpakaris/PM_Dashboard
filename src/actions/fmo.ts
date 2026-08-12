@@ -113,6 +113,63 @@ export async function setWbsSubCategoryOverride(code: string, override: string |
   return { ok: true };
 }
 
+// ─── Ticket WBS assignment (US-008) ──────────────────────────────────────────
+
+export async function assignTicketWbs(ticketId: number, wbsCode: string | null) {
+  const [store, mappings] = await Promise.all([readFmoStore(), readFmoMappings()]);
+  const key = String(ticketId);
+  if (!mappings.tickets[key]) return { ok: false, error: 'Ticket not found' };
+
+  const c = wbsCode ? classifyWbs(wbsCode, mappings.wbs) : { billingClass: null, subCategory: null };
+  Object.assign(mappings.tickets[key], { wbsCode, billingClass: c.billingClass, subCategory: c.subCategory });
+
+  let reclassified = 0;
+  for (const entry of store.entries) {
+    if (entry.ticketId === ticketId) {
+      entry.wbsCode = wbsCode; entry.billingClass = c.billingClass; entry.subCategory = c.subCategory;
+      reclassified++;
+    }
+  }
+
+  await Promise.all([writeFmoStore(store), writeFmoMappings(mappings)]);
+  revalidatePath('/fmo/tickets');
+  revalidatePath('/fmo/utilization');
+  return { ok: true, reclassified };
+}
+
+// ─── Reclassify all entries (US-015) ─────────────────────────────────────────
+
+export async function reclassifyAllEntries() {
+  const [store, mappings] = await Promise.all([readFmoStore(), readFmoMappings()]);
+  let reclassified = 0, unmapped = 0;
+
+  for (const entry of store.entries) {
+    const ticket = entry.ticketId ? mappings.tickets[String(entry.ticketId)] : null;
+    const wbsCode = ticket?.wbsCode ?? entry.wbsCode ?? null;
+    entry.wbsCode = wbsCode;
+    if (wbsCode) {
+      const c = classifyWbs(wbsCode, mappings.wbs);
+      entry.billingClass = c.billingClass; entry.subCategory = c.subCategory;
+      reclassified++;
+    } else {
+      entry.billingClass = null; entry.subCategory = null;
+      unmapped++;
+    }
+  }
+
+  for (const ticket of Object.values(mappings.tickets)) {
+    if (ticket.wbsCode) {
+      const c = classifyWbs(ticket.wbsCode, mappings.wbs);
+      ticket.billingClass = c.billingClass; ticket.subCategory = c.subCategory;
+    }
+  }
+
+  await Promise.all([writeFmoStore(store), writeFmoMappings(mappings)]);
+  revalidatePath('/fmo/utilization');
+  revalidatePath('/fmo/tickets');
+  return { ok: true, reclassified, unmapped };
+}
+
 // ─── CSV Import (US-005 + US-023) ────────────────────────────────────────────
 
 function parseCSVRow(line: string): string[] {
