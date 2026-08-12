@@ -47,6 +47,8 @@ import {
 } from './ProjektAnalysisCharts';
 import OperationsTab from './OperationsTab';
 import { opAmount, totalOpsIncome, buildOpTicketSet } from '@/lib/operationsUtils';
+import { useChartPrefs } from '@/lib/useChartPrefs';
+import ChartPanel from '@/components/ChartPanel';
 
 const TABS = ['Overview', 'Employees', 'Tickets', 'Operations', 'Trends', 'Forecast'] as const;
 type Tab = (typeof TABS)[number];
@@ -370,6 +372,8 @@ export default function ProjektAnalysisDetailClient({ project, forecasts, teamMe
   const isAdmin = useRole() === 'admin';
   const [activeTab, setActiveTab] = useState<Tab>('Overview');
   const [isPending, startTransition] = useTransition();
+  const [showChartPanel, setShowChartPanel] = useState(false);
+  const { prefs: chartPrefs } = useChartPrefs('projekt-analysis');
 
   // ── Period filter ──────────────────────────────────────────────────────────
   const allMonthsSorted = useMemo(() => [...new Set(project.entries.map(e => e.month))].sort(), [project.entries]);
@@ -1177,27 +1181,80 @@ export default function ProjektAnalysisDetailClient({ project, forecasts, teamMe
       {/* ── Trends Tab ── */}
       {activeTab === 'Trends' && (
         <div className="space-y-4">
-          {/* Dev vs Operations split — only when ops contracts are configured */}
-          {operationTicketSet.size > 0 && (
-            <DevOpsMonthlyChart entries={filteredEntries} operationTicketSet={operationTicketSet} />
+          {showChartPanel && (
+            <ChartPanel pageId="projekt-analysis" onClose={() => setShowChartPanel(false)} />
           )}
-          {/* Universal */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <VelocityChart entries={filteredEntries} operationTicketSet={operationTicketSet} />
-            <TeamCompositionChart entries={filteredEntries} />
+          <div className="flex justify-end">
+            <button
+              onClick={() => setShowChartPanel(true)}
+              className="text-xs text-gray-500 hover:text-gray-700 border border-gray-200 hover:border-gray-300 rounded-md px-3 py-1.5 transition-colors flex items-center gap-1.5"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+              </svg>
+              Charts
+            </button>
           </div>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <MonthlyByTicketChart entries={filteredEntries} operationTicketSet={operationTicketSet} />
-            <MonthlyByUserChart entries={filteredEntries} />
-          </div>
-          <ActivitySplitChart entries={filteredEntries} />
+
+          {/* Dev vs Operations split — only when ops contracts are configured */}
+          {operationTicketSet.size > 0 && chartPrefs['pa-devops']?.visible !== false && (
+            <div className={chartPrefs['pa-devops']?.width === 'half' ? 'max-w-xl' : ''}>
+              <DevOpsMonthlyChart entries={filteredEntries} operationTicketSet={operationTicketSet} />
+            </div>
+          )}
+
+          {/* Velocity + Team Composition */}
+          {(chartPrefs['pa-velocity']?.visible !== false || chartPrefs['pa-team-composition']?.visible !== false) && (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              {chartPrefs['pa-velocity']?.visible !== false && (
+                <div className={chartPrefs['pa-velocity']?.width === 'full' ? 'lg:col-span-2' : ''}>
+                  <VelocityChart entries={filteredEntries} operationTicketSet={operationTicketSet} />
+                </div>
+              )}
+              {chartPrefs['pa-team-composition']?.visible !== false && (
+                <div className={chartPrefs['pa-team-composition']?.width === 'full' ? 'lg:col-span-2' : ''}>
+                  <TeamCompositionChart entries={filteredEntries} />
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Monthly by Ticket + by User */}
+          {(chartPrefs['pa-monthly-ticket']?.visible !== false || chartPrefs['pa-monthly-user']?.visible !== false) && (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              {chartPrefs['pa-monthly-ticket']?.visible !== false && (
+                <div className={chartPrefs['pa-monthly-ticket']?.width === 'full' ? 'lg:col-span-2' : ''}>
+                  <MonthlyByTicketChart entries={filteredEntries} operationTicketSet={operationTicketSet} />
+                </div>
+              )}
+              {chartPrefs['pa-monthly-user']?.visible !== false && (
+                <div className={chartPrefs['pa-monthly-user']?.width === 'full' ? 'lg:col-span-2' : ''}>
+                  <MonthlyByUserChart entries={filteredEntries} />
+                </div>
+              )}
+            </div>
+          )}
+
+          {chartPrefs['pa-activity-split']?.visible !== false && (
+            <ActivitySplitChart entries={filteredEntries} />
+          )}
 
           {/* T&M specific */}
           {projectSettings.projectType === 'time-and-material' && (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              <MonthlyBillingChart entries={filteredEntries} memberSettings={project.memberSettings} operationContracts={operationContracts} operationTicketSet={operationTicketSet} />
-              <EconomicsChart entries={filteredEntries} memberSettings={project.memberSettings} operationContracts={operationContracts} operationTicketSet={operationTicketSet} />
-            </div>
+            (chartPrefs['pa-billing']?.visible !== false || chartPrefs['pa-economics']?.visible !== false) && (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                {chartPrefs['pa-billing']?.visible !== false && (
+                  <div className={chartPrefs['pa-billing']?.width === 'full' ? 'lg:col-span-2' : ''}>
+                    <MonthlyBillingChart entries={filteredEntries} memberSettings={project.memberSettings} operationContracts={operationContracts} operationTicketSet={operationTicketSet} />
+                  </div>
+                )}
+                {chartPrefs['pa-economics']?.visible !== false && (
+                  <div className={chartPrefs['pa-economics']?.width === 'full' ? 'lg:col-span-2' : ''}>
+                    <EconomicsChart entries={filteredEntries} memberSettings={project.memberSettings} operationContracts={operationContracts} operationTicketSet={operationTicketSet} />
+                  </div>
+                )}
+              </div>
+            )
           )}
 
           {/* Festpreis specific */}
@@ -1226,7 +1283,9 @@ export default function ProjektAnalysisDetailClient({ project, forecasts, teamMe
             </>
           )}
 
-          <CumulativeChart entries={filteredEntries} totalExpectedHours={forecastDraft.totalExpectedHours} />
+          {chartPrefs['pa-cumulative']?.visible !== false && (
+            <CumulativeChart entries={filteredEntries} totalExpectedHours={forecastDraft.totalExpectedHours} />
+          )}
         </div>
       )}
 
