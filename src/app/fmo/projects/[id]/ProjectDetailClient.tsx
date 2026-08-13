@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, Fragment } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useRole } from '@/components/RoleProvider';
@@ -1480,6 +1480,19 @@ export default function ProjectDetailClient({
     return [...map.entries()].map(([id, v]) => ({ id, ...v })).sort((a, b) => b.hours - a.hours);
   }, [dashboardEntries]);
 
+  const [expandedTickets, setExpandedTickets] = useState<Set<number | string>>(new Set());
+
+  const ticketMonthly = useMemo(() => {
+    const map = new Map<number | string, Map<string, number>>();
+    for (const e of dashboardEntries) {
+      const key = e.ticketId ?? e.ticketName;
+      if (!map.has(key)) map.set(key, new Map());
+      const m = map.get(key)!;
+      m.set(e.month, (m.get(e.month) ?? 0) + e.spentTime);
+    }
+    return map;
+  }, [dashboardEntries]);
+
   // Economics totals (period-scoped)
   const totalEconAll = useMemo(() => {
     let cost = 0, revenue = 0;
@@ -2280,33 +2293,69 @@ export default function ProjectDetailClient({
                   <th className="px-4 py-3 text-left">Category</th>
                   <th className="px-4 py-3 text-right">Hours</th>
                   <th className="px-4 py-3 text-right">%</th>
+                  <th className="px-4 py-3 w-8" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
                 {ticketSummary.map(tk => {
-                  const isFixOps = typeof tk.id === 'number' && fixOpsTicketSet.has(tk.id as number);
-                  const isHrOps  = typeof tk.id === 'number' && !isFixOps && allOpsTicketSet.has(tk.id as number);
+                  const isFixOps   = typeof tk.id === 'number' && fixOpsTicketSet.has(tk.id as number);
+                  const isHrOps    = typeof tk.id === 'number' && !isFixOps && allOpsTicketSet.has(tk.id as number);
+                  const isExpanded = expandedTickets.has(tk.id);
+                  const monthly    = ticketMonthly.get(tk.id);
                   return (
-                    <tr key={String(tk.id)} className={`hover:bg-slate-50 ${isFixOps ? 'bg-violet-50/30' : ''}`}>
-                      <td className="px-4 py-2.5">
-                        <div className="flex items-center gap-2">
-                          {typeof tk.id === 'number' && (
-                            <Link href={`/fmo/tickets/${tk.id}`} className="font-mono text-xs text-indigo-600 hover:text-indigo-800 shrink-0">#{tk.id}</Link>
-                          )}
-                          <span className="text-slate-700 truncate max-w-sm" title={tk.name}>{tk.name}</span>
-                          {isFixOps && <span className="text-xs px-1.5 py-0.5 rounded bg-violet-100 text-violet-600 shrink-0">Pauschal Ops</span>}
-                          {isHrOps  && <span className="text-xs px-1.5 py-0.5 rounded bg-blue-50 text-blue-600 shrink-0">Ops / Hr</span>}
-                        </div>
-                      </td>
-                      <td className="px-4 py-2.5 font-mono text-xs text-slate-500">{tk.wbsCode ?? '—'}</td>
-                      <td className="px-4 py-2.5">
-                        <span className={`text-xs px-1.5 py-0.5 rounded ${tk.billingClass === 'V' ? 'bg-green-50 text-green-700' : 'bg-slate-100 text-slate-500'}`}>
-                          {tk.billingClass === 'V' ? 'Billable' : 'Internal'}
-                        </span>
-                      </td>
-                      <td className="px-4 py-2.5 text-right text-slate-700">{fmtH(tk.hours, locale)}</td>
-                      <td className="px-4 py-2.5 text-right text-slate-400 text-xs">{totalHours > 0 ? `${Math.round(tk.hours / totalHours * 100)}%` : '—'}</td>
-                    </tr>
+                    <Fragment key={String(tk.id)}>
+                      <tr
+                        className={`hover:bg-slate-50 cursor-pointer ${isFixOps ? 'bg-violet-50/30' : ''}`}
+                        onClick={() => setExpandedTickets(prev => {
+                          const next = new Set(prev);
+                          if (next.has(tk.id)) next.delete(tk.id); else next.add(tk.id);
+                          return next;
+                        })}
+                      >
+                        <td className="px-4 py-2.5">
+                          <div className="flex items-center gap-2">
+                            {typeof tk.id === 'number' && (
+                              <Link href={`/fmo/tickets/${tk.id}`} onClick={e => e.stopPropagation()} className="font-mono text-xs text-indigo-600 hover:text-indigo-800 shrink-0">#{tk.id}</Link>
+                            )}
+                            <span className="text-slate-700 truncate max-w-sm" title={tk.name}>{tk.name}</span>
+                            {isFixOps && <span className="text-xs px-1.5 py-0.5 rounded bg-violet-100 text-violet-600 shrink-0">Pauschal Ops</span>}
+                            {isHrOps  && <span className="text-xs px-1.5 py-0.5 rounded bg-blue-50 text-blue-600 shrink-0">Ops / Hr</span>}
+                          </div>
+                        </td>
+                        <td className="px-4 py-2.5 font-mono text-xs text-slate-500">{tk.wbsCode ?? '—'}</td>
+                        <td className="px-4 py-2.5">
+                          <span className={`text-xs px-1.5 py-0.5 rounded ${tk.billingClass === 'V' ? 'bg-green-50 text-green-700' : 'bg-slate-100 text-slate-500'}`}>
+                            {tk.billingClass === 'V' ? 'Billable' : 'Internal'}
+                          </span>
+                        </td>
+                        <td className="px-4 py-2.5 text-right text-slate-700">{fmtH(tk.hours, locale)}</td>
+                        <td className="px-4 py-2.5 text-right text-slate-400 text-xs">{totalHours > 0 ? `${Math.round(tk.hours / totalHours * 100)}%` : '—'}</td>
+                        <td className="px-4 py-2.5 text-center text-slate-400">
+                          <svg className={`w-3.5 h-3.5 mx-auto transition-transform ${isExpanded ? 'rotate-180' : ''}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round">
+                            <path d="m6 9 6 6 6-6" />
+                          </svg>
+                        </td>
+                      </tr>
+                      {isExpanded && monthly && (() => {
+                        const bars = [...monthly.entries()]
+                          .sort(([a], [b]) => a.localeCompare(b))
+                          .map(([month, hours]) => ({ month: month.slice(0, 7), hours }));
+                        return (
+                          <tr className="bg-indigo-50/30">
+                            <td colSpan={6} className="px-6 py-4">
+                              <ResponsiveContainer width="100%" height={160}>
+                                <BarChart data={bars} margin={{ top: 4, right: 8, left: 0, bottom: 4 }}>
+                                  <XAxis dataKey="month" tick={{ fontSize: 9 }} interval={0} angle={-35} textAnchor="end" height={36} />
+                                  <YAxis tick={{ fontSize: 9 }} tickFormatter={v => `${v}h`} width={32} />
+                                  <Tooltip {...TOOLTIP_STYLE} formatter={v => typeof v === 'number' ? fmtH(v, locale) : v} />
+                                  <Bar dataKey="hours" fill="#6366f1" radius={[3, 3, 0, 0]} opacity={0.85} />
+                                </BarChart>
+                              </ResponsiveContainer>
+                            </td>
+                          </tr>
+                        );
+                      })()}
+                    </Fragment>
                   );
                 })}
               </tbody>
@@ -2315,6 +2364,7 @@ export default function ProjectDetailClient({
                   <td colSpan={3} className="px-4 py-2.5 font-medium text-slate-700">Total</td>
                   <td className="px-4 py-2.5 text-right font-bold text-slate-800">{fmtH(totalHours, locale)}</td>
                   <td className="px-4 py-2.5 text-right text-slate-500 text-xs">100%</td>
+                  <td />
                 </tr>
               </tfoot>
             </table>
