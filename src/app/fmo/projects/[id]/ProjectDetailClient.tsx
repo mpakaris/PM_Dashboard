@@ -1430,6 +1430,7 @@ export default function ProjectDetailClient({
   const [showChangeForm, setShowChangeForm]       = useState(false);
   const [showWpForm, setShowWpForm]               = useState(false);
   const [showMilestoneForm, setShowMilestoneForm] = useState(false);
+  const [wpSectionOpen, setWpSectionOpen]         = useState(false);
   // Dashboard period filter (KPI cards) — default: Jan → today of current year
   const [dashboardRange, setDashboardRange] = useState<{ from: string; to: string }>(() => {
     const now  = new Date();
@@ -2895,42 +2896,57 @@ export default function ProjectDetailClient({
 
           {/* Arbeitspakete */}
           <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
-            <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100 bg-slate-50">
-              <div>
-                <h3 className="text-sm font-semibold text-gray-800">Arbeitspakete (Work Packages)</h3>
-                <p className="text-xs text-slate-400 mt-0.5">
-                  {(project.workPackages ?? []).length} packages
-                  {(project.workPackages ?? []).some(w => w.budgetHours > 0) && (
-                    <> · {(project.workPackages ?? []).reduce((s, w) => s + w.budgetHours, 0)}h allocated{totalBudgetHours > 0 && ` of ${totalBudgetHours}h`}</>
-                  )}
-                </p>
+            <div
+              className="flex items-center justify-between px-5 py-3 bg-slate-50 cursor-pointer select-none"
+              onClick={() => setWpSectionOpen(o => !o)}
+            >
+              <div className="flex items-center gap-2">
+                <svg
+                  className={`w-4 h-4 text-slate-400 transition-transform ${wpSectionOpen ? 'rotate-180' : ''}`}
+                  viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}
+                >
+                  <path d="m6 9 6 6 6-6" />
+                </svg>
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-800">Arbeitspakete (Work Packages)</h3>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    {(project.workPackages ?? []).length} packages
+                    {(project.workPackages ?? []).some(w => w.budgetHours > 0) && (
+                      <> · {(project.workPackages ?? []).reduce((s, w) => s + w.budgetHours, 0)}h allocated{totalBudgetHours > 0 && ` of ${totalBudgetHours}h`}</>
+                    )}
+                  </p>
+                </div>
               </div>
               {isAdmin && !showWpForm && (
-                <button onClick={() => setShowWpForm(true)}
-                  className="text-xs text-indigo-600 hover:text-indigo-800 border border-indigo-200 rounded px-3 py-1.5">
+                <button
+                  onClick={e => { e.stopPropagation(); setShowWpForm(true); setWpSectionOpen(true); }}
+                  className="text-xs text-indigo-600 hover:text-indigo-800 border border-indigo-200 rounded px-3 py-1.5"
+                >
                   + Add
                 </button>
               )}
             </div>
-            <div className="p-5 space-y-4">
-              {showWpForm && isAdmin && (
-                <WorkPackageForm projectId={project.id}
-                  allTickets={Object.values(tickets)}
-                  onDone={() => { setShowWpForm(false); router.refresh(); }}
-                  onCancel={() => setShowWpForm(false)} />
-              )}
-              {(project.workPackages ?? []).map(wp => (
-                <WorkPackageCard
-                  key={wp.id} wp={wp} projectId={project.id}
-                  totalBudgetHours={totalBudgetHours} totalBudgetEur={totalBudgetEur}
-                  isAdmin={isAdmin} onDone={() => router.refresh()}
-                  entries={entries} allTickets={Object.values(tickets)}
-                />
-              ))}
-              {(project.workPackages ?? []).length === 0 && !showWpForm && (
-                <p className="text-sm text-slate-400">No work packages yet.</p>
-              )}
-            </div>
+            {wpSectionOpen && (
+              <div className="p-5 space-y-4 border-t border-slate-100">
+                {showWpForm && isAdmin && (
+                  <WorkPackageForm projectId={project.id}
+                    allTickets={Object.values(tickets)}
+                    onDone={() => { setShowWpForm(false); router.refresh(); }}
+                    onCancel={() => setShowWpForm(false)} />
+                )}
+                {(project.workPackages ?? []).map(wp => (
+                  <WorkPackageCard
+                    key={wp.id} wp={wp} projectId={project.id}
+                    totalBudgetHours={totalBudgetHours} totalBudgetEur={totalBudgetEur}
+                    isAdmin={isAdmin} onDone={() => router.refresh()}
+                    entries={entries} allTickets={Object.values(tickets)}
+                  />
+                ))}
+                {(project.workPackages ?? []).length === 0 && !showWpForm && (
+                  <p className="text-sm text-slate-400">No work packages yet.</p>
+                )}
+              </div>
+            )}
           </div>
         </div>
       )}
