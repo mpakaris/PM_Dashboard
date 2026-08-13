@@ -13,7 +13,7 @@ import type { FmoMember, FmoEntry, WbsSubCategory } from '@/lib/types';
 import { updateFmoMember } from '@/actions/fmo';
 import { ChartTimeFilter, initChartRange, type TimeRange } from '@/components/ChartTimeFilter';
 
-type Tab = 'profile' | 'tickets' | 'charts';
+type Tab = 'profile' | 'tickets' | 'charts' | 'utilization';
 
 // Muted, dignified palette — 700-level Tailwind equivalents
 const COLORS = [
@@ -78,9 +78,12 @@ export default function MemberDetailClient({
   const [ticketRange, setTicketRange] = useState<TimeRange>({ from: '', to: '' });
   const [expandedTickets, setExpandedTickets] = useState<Set<number | string>>(new Set());
   const [pieView, setPieView] = useState<'category' | 'ticket'>('category');
-  const [type, setType]           = useState(member.type);
-  const [company, setCompany]     = useState(member.partnerCompany);
-  const [costRate, setCostRate]   = useState(String(member.costRate));
+  const [type, setType]                 = useState(member.type);
+  const [company, setCompany]           = useState(member.partnerCompany);
+  const [costRate, setCostRate]         = useState(String(member.costRate));
+  const [capacity, setCapacity]         = useState(String(member.monthlyCapacity ?? 160));
+  const [billableTarget, setBillTarget] = useState(String(member.monthlyBillableTarget ?? 120));
+  const [utilRange, setUtilRange]       = useState<TimeRange>({ from: '', to: '' });
   const [saving, setSaving]       = useState(false);
   const [saved, setSaved]         = useState(false);
   const [error, setError]         = useState('');
@@ -92,6 +95,8 @@ export default function MemberDetailClient({
       type,
       partnerCompany: type === 'extern' ? company : '',
       costRate: parseFloat(costRate) || 0,
+      monthlyCapacity: parseFloat(capacity) || 160,
+      monthlyBillableTarget: parseFloat(billableTarget) || 120,
     });
     setSaving(false);
     if (r.ok) setSaved(true);
@@ -131,6 +136,46 @@ export default function MemberDetailClient({
     () => ticketEntries.reduce((s, e) => s + e.spentTime, 0),
     [ticketEntries],
   );
+
+  // ── Utilization per month ────────────────────────────────────────────────────
+  const utilizationData = useMemo(() => {
+    const cap        = member.monthlyCapacity      ?? 160;
+    const billTarget = member.monthlyBillableTarget ?? 120;
+    const isIntern   = member.type === 'intern';
+
+    const ranged = utilRange.from
+      ? entries.filter(e => e.month >= utilRange.from && e.month <= utilRange.to)
+      : entries;
+
+    const monthMap = new Map<string, { total: number; billable: number; vacation: number }>();
+    for (const e of ranged) {
+      if (!monthMap.has(e.month)) monthMap.set(e.month, { total: 0, billable: 0, vacation: 0 });
+      const m = monthMap.get(e.month)!;
+      m.total += e.spentTime;
+      if (e.billingClass === 'V') m.billable += e.spentTime;
+      if (isIntern && e.subCategory === 'absence') m.vacation += e.spentTime;
+    }
+
+    const months = [...monthMap.keys()].sort();
+    return months.map(month => {
+      const { total, billable, vacation } = monthMap.get(month)!;
+      const trueBillable   = isIntern ? Math.max(0, billable - vacation) : billable;
+      const effectiveBillT = isIntern ? Math.max(0, billTarget - vacation) : billTarget;
+      const capUtil  = cap > 0          ? Math.round((total        / cap)          * 100) : 0;
+      const billUtil = effectiveBillT > 0 ? Math.round((trueBillable / effectiveBillT) * 100) : 0;
+      return {
+        month: month.slice(0, 7),
+        total: Math.round(total * 10) / 10,
+        billable: Math.round(trueBillable * 10) / 10,
+        admin: Math.round(Math.max(0, total - billable) * 10) / 10,
+        vacation: isIntern ? Math.round(vacation * 10) / 10 : 0,
+        cap,
+        billTarget: effectiveBillT,
+        capUtil,
+        billUtil,
+      };
+    });
+  }, [entries, member, utilRange]);
 
   const ticketSummary = useMemo(() => {
     const map = new Map<number | string, { name: string; wbsCode: string | null; billingClass: string | null; subCategory: string | null; hours: number }>();
@@ -316,9 +361,10 @@ export default function MemberDetailClient({
   };
 
   const TABS: { id: Tab; label: string }[] = [
-    { id: 'tickets', label: 'Tickets' },
-    { id: 'charts',  label: 'Charts' },
-    { id: 'profile', label: t('profile') },
+    { id: 'tickets',     label: 'Tickets' },
+    { id: 'utilization', label: 'Utilization' },
+    { id: 'charts',      label: 'Charts' },
+    { id: 'profile',     label: t('profile') },
   ];
 
   return (
@@ -673,6 +719,127 @@ export default function MemberDetailClient({
         </div>
       )}
 
+      {/* ── Utilization Tab ── */}
+      {activeTab === 'utilization' && (() => {
+        const cap        = member.monthlyCapacity      ?? 160;
+        const billTarget = member.monthlyBillableTarget ?? 120;
+        const isIntern   = member.type === 'intern';
+        const data       = utilizationData;
+
+        const avgCapUtil  = data.length ? Math.round(data.reduce((s, r) => s + r.capUtil, 0)  / data.length) : 0;
+        const avgBillUtil = data.length ? Math.round(data.reduce((s, r) => s + r.billUtil, 0) / data.length) : 0;
+        const monthsAtCap  = data.filter(r => r.capUtil  >= 100).length;
+        const monthsAtBill = data.filter(r => r.billUtil >= 100).length;
+
+        return (
+          <div className="space-y-5">
+            <ChartTimeFilter value={utilRange} onChange={setUtilRange} defaultPreset="all" />
+
+            {/* KPI cards */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              {[
+                { label: 'Avg Capacity Util.', value: `${avgCapUtil}%`, sub: `target ${cap}h/mo` },
+                { label: 'Avg Billable Util.', value: `${avgBillUtil}%`, sub: `target ${billTarget}h/mo` },
+                { label: 'Months ≥ Capacity',  value: String(monthsAtCap),  sub: `of ${data.length}` },
+                { label: 'Months ≥ Billable',  value: String(monthsAtBill), sub: `of ${data.length}` },
+              ].map(k => (
+                <div key={k.label} className="bg-white rounded-lg border border-slate-200 px-4 py-3">
+                  <p className="text-xs text-slate-400 mb-1">{k.label}</p>
+                  <p className="text-xl font-bold text-slate-800">{k.value}</p>
+                  <p className="text-xs text-slate-400 mt-0.5">{k.sub}</p>
+                </div>
+              ))}
+            </div>
+
+            {data.length === 0 && <p className="text-slate-400 text-sm">{t('noData')}</p>}
+
+            {/* Chart 1 — Hours vs targets */}
+            {data.length > 0 && (
+              <div className="bg-white rounded-lg border border-slate-200 p-4">
+                <h3 className="text-sm font-semibold text-gray-800 mb-1">Hours per Month vs. Targets</h3>
+                <p className="text-xs text-gray-400 mb-4">
+                  Billable (teal) · Admin (slate){isIntern ? ' · Vacation (amber)' : ''} · dashed lines = capacity & billable targets
+                </p>
+                <ResponsiveContainer width="100%" height={280}>
+                  <ComposedChart data={data} margin={{ top: 4, right: 16, left: 0, bottom: 8 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                    <XAxis dataKey="month" tick={{ fontSize: 10 }} interval={0} angle={-35} textAnchor="end" height={48} />
+                    <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `${v}h`} />
+                    <Tooltip {...TOOLTIP_STYLE} formatter={(v) => typeof v === 'number' ? fmtH(v, locale) : v} />
+                    <Legend wrapperStyle={{ fontSize: '12px' }} />
+                    <Bar dataKey="billable" stackId="h" fill="#0f766e" opacity={0.85} radius={[0, 0, 0, 0]} name="Billable" />
+                    <Bar dataKey="admin"    stackId="h" fill="#475569" opacity={0.7}  radius={[0, 0, 0, 0]} name="Admin" />
+                    {isIntern && <Bar dataKey="vacation" stackId="h" fill="#f59e0b" opacity={0.75} radius={[3, 3, 0, 0]} name="Vacation" />}
+                    <Line type="monotone" dataKey="cap"        stroke="#ef4444" strokeWidth={1.5} strokeDasharray="6 3" dot={false} name={`Capacity (${cap}h)`} />
+                    <Line type="monotone" dataKey="billTarget" stroke="#6366f1" strokeWidth={1.5} strokeDasharray="6 3" dot={false} name={`Billable target`} />
+                  </ComposedChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+
+            {/* Chart 2 — Utilization % */}
+            {data.length > 0 && (
+              <div className="bg-white rounded-lg border border-slate-200 p-4">
+                <h3 className="text-sm font-semibold text-gray-800 mb-1">Utilization %</h3>
+                <p className="text-xs text-gray-400 mb-4">Capacity util (blue) · Billable util (teal) · 100% reference</p>
+                <ResponsiveContainer width="100%" height={240}>
+                  <ComposedChart data={data} margin={{ top: 4, right: 16, left: 0, bottom: 8 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                    <XAxis dataKey="month" tick={{ fontSize: 10 }} interval={0} angle={-35} textAnchor="end" height={48} />
+                    <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `${v}%`} domain={[0, 'auto']} />
+                    <Tooltip {...TOOLTIP_STYLE} formatter={(v, name) => [`${v}%`, name]} />
+                    <Legend wrapperStyle={{ fontSize: '12px' }} />
+                    <Line type="monotone" dataKey="capUtil"  stroke="#1d4ed8" strokeWidth={2} dot={{ r: 3 }} name="Capacity %" connectNulls />
+                    <Line type="monotone" dataKey="billUtil" stroke="#0f766e" strokeWidth={2} dot={{ r: 3 }} name="Billable %"  connectNulls />
+                    <Line type="monotone" dataKey={() => 100} stroke="#ef4444" strokeWidth={1} strokeDasharray="4 3" dot={false} name="100% target" />
+                  </ComposedChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+
+            {/* Monthly detail table */}
+            {data.length > 0 && (
+              <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-50 border-b border-slate-200 text-xs text-slate-500 font-medium">
+                    <tr>
+                      <th className="px-4 py-3 text-left">Month</th>
+                      <th className="px-4 py-3 text-right">Total</th>
+                      <th className="px-4 py-3 text-right">Billable</th>
+                      <th className="px-4 py-3 text-right">Admin</th>
+                      {isIntern && <th className="px-4 py-3 text-right">Vacation</th>}
+                      <th className="px-4 py-3 text-right">Cap. Util.</th>
+                      <th className="px-4 py-3 text-right">Bill. Util.</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50">
+                    {data.map(row => (
+                      <tr key={row.month} className="hover:bg-slate-50">
+                        <td className="px-4 py-2.5 text-slate-600 tabular-nums">{row.month}</td>
+                        <td className="px-4 py-2.5 text-right text-slate-700 tabular-nums">{fmtH(row.total, locale)}</td>
+                        <td className="px-4 py-2.5 text-right text-teal-700 tabular-nums">{fmtH(row.billable, locale)}</td>
+                        <td className="px-4 py-2.5 text-right text-slate-500 tabular-nums">{fmtH(row.admin, locale)}</td>
+                        {isIntern && <td className="px-4 py-2.5 text-right text-amber-600 tabular-nums">{fmtH(row.vacation, locale)}</td>}
+                        <td className="px-4 py-2.5 text-right tabular-nums">
+                          <span className={row.capUtil >= 100 ? 'text-green-700 font-semibold' : row.capUtil >= 80 ? 'text-slate-700' : 'text-red-600'}>
+                            {row.capUtil}%
+                          </span>
+                        </td>
+                        <td className="px-4 py-2.5 text-right tabular-nums">
+                          <span className={row.billUtil >= 100 ? 'text-green-700 font-semibold' : row.billUtil >= 80 ? 'text-slate-700' : 'text-red-600'}>
+                            {row.billUtil}%
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
       {/* ── Profile Tab ── */}
       {activeTab === 'profile' && (
         <form onSubmit={save} className="bg-white rounded-lg border border-slate-200 p-4 space-y-4 max-w-lg">
@@ -701,6 +868,26 @@ export default function MemberDetailClient({
             <input type="number" min="0" step="0.01" value={costRate}
               onChange={e => setCostRate(e.target.value)}
               className="border border-slate-300 rounded px-3 py-1.5 text-sm w-32" />
+          </div>
+          <div className="border-t border-slate-100 pt-3">
+            <p className="text-xs font-medium text-slate-500 mb-3">Utilization targets</p>
+            <div className="flex gap-6">
+              <div>
+                <label className="block text-sm text-slate-600 mb-1">Monthly capacity (h)</label>
+                <input type="number" min="0" step="1" value={capacity}
+                  onChange={e => setCapacity(e.target.value)}
+                  className="border border-slate-300 rounded px-3 py-1.5 text-sm w-28" />
+              </div>
+              <div>
+                <label className="block text-sm text-slate-600 mb-1">Billable target (h)</label>
+                <input type="number" min="0" step="1" value={billableTarget}
+                  onChange={e => setBillTarget(e.target.value)}
+                  className="border border-slate-300 rounded px-3 py-1.5 text-sm w-28" />
+              </div>
+            </div>
+            {member.type === 'intern' && (
+              <p className="text-xs text-slate-400 mt-2">For internals, vacation hours (absence category) reduce the effective billable target.</p>
+            )}
           </div>
           <div className="flex items-center gap-3">
             <button type="submit" disabled={saving}

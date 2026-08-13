@@ -319,6 +319,8 @@ export interface FmoMember {
   type: 'intern' | 'extern';
   partnerCompany: string;
   costRate: number; // €/h
+  monthlyCapacity?: number;      // total working hours/month — default 160
+  monthlyBillableTarget?: number; // target external billing hours/month — default 120
 }
 
 export interface FmoEntry {

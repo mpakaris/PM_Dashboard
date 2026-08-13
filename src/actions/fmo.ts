@@ -117,7 +117,7 @@ export async function setWbsSubCategoryOverride(code: string, override: string |
 
 export async function updateFmoMember(
   id: string,
-  updates: { type?: 'intern' | 'extern'; partnerCompany?: string; costRate?: number }
+  updates: { type?: 'intern' | 'extern'; partnerCompany?: string; costRate?: number; monthlyCapacity?: number; monthlyBillableTarget?: number }
 ) {
   const mappings = await readFmoMappings();
   if (!mappings.members[id]) return { ok: false, error: 'Member not found' };
@@ -315,7 +315,7 @@ export async function uploadFmoCSV(formData: FormData): Promise<{
 
       const memberId = slugifyName(user);
       if (!mappings.members[memberId]) {
-        mappings.members[memberId] = { id: memberId, name: user, type: 'extern', partnerCompany: '', costRate: 0 };
+        mappings.members[memberId] = { id: memberId, name: user, type: 'extern', partnerCompany: '', costRate: 0, monthlyCapacity: 160, monthlyBillableTarget: 120 };
         stats.newMembers++;
       }
     }
