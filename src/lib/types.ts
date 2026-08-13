@@ -55,6 +55,7 @@ export interface ForecastProject {
   overallHours: number;
   startMonth: string;
   endMonth: string;
+  fmoProjectId?: string;         // optional link to an FMO project for actual vs. planned overlay
   operationContracts?: OperationContract[];
 }
 
@@ -467,24 +468,3 @@ export interface FmoProject {
   milestones?: FmoProjectMilestone[];
 }
 
-// ─── FMO Planning ─────────────────────────────────────────────────────────────
-
-export interface FmoForecast {
-  id: string;
-  name: string;
-  startMonth: string;   // "YYYY-MM"
-  endMonth: string;
-  createdAt: string;
-  projects: FmoForecastProject[];
-}
-
-export interface FmoForecastProject {
-  projectId: string;
-  overallHours: number;
-  assignments: FmoForecastAssignment[];
-}
-
-export interface FmoForecastAssignment {
-  memberId: string;
-  plannedHours: Record<string, number>;  // "YYYY-MM" → hours
-}

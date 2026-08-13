@@ -8,6 +8,7 @@ import { useLocale } from 'next-intl';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer,
   ComposedChart, Line, CartesianGrid, ReferenceLine,
+  PieChart, Pie, Cell,
 } from 'recharts';
 import { fmtH, fmtEur, type Locale } from '@/lib/i18n';
 import { opsContractActiveInMonth } from '@/lib/utils';
@@ -19,6 +20,7 @@ import type {
   FmoProjectChange, FmoWorkPackage, FmoProjectMilestone,
   FmoChangeStatus, FmoMilestoneStatus, FmoMilestoneType,
   FmoWorkPackageTask, FmoAcceptanceCriterion,
+  Forecast,
 } from '@/lib/types';
 import {
   updateFmoProject, updateProjectConfig, setProjectMemberRate,
@@ -29,7 +31,7 @@ import {
   upsertMilestone, removeMilestone,
 } from '@/actions/fmoProjects';
 
-type Tab = 'overview' | 'team' | 'tickets' | 'trends' | 'financials' | 'milestones' | 'settings';
+type Tab = 'overview' | 'team' | 'tickets' | 'trends' | 'financials' | 'milestones' | 'forecast' | 'settings';
 
 const COLORS = [
   '#4338ca', '#0f766e', '#c2410c', '#1d4ed8',
@@ -1372,7 +1374,7 @@ function MilestoneForm({ projectId, onDone, onCancel, defaultType = 'milestone',
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export default function ProjectDetailClient({
-  project, entries, wbs, members, tickets, subCategories,
+  project, entries, wbs, members, tickets, subCategories, forecasts,
 }: {
   project: FmoProject;
   entries: FmoEntry[];
@@ -1381,6 +1383,7 @@ export default function ProjectDetailClient({
   tickets: Record<string, FmoTicket>;
   subCategories: Record<string, WbsSubCategory>;
   allProjects: FmoProject[];
+  forecasts: Forecast[];
 }) {
   const router  = useRouter();
   const isAdmin = useRole() === 'admin';
@@ -1406,6 +1409,7 @@ export default function ProjectDetailClient({
   const [budgetEur, setBudgetEur]     = useState(String(project.budgetEur ?? ''));
   const [fteHours, setFteHours]       = useState(String(project.fteHours ?? 1600));
   const [savingFrame, setSavingFrame] = useState(false);
+  const [retroHover, setRetroHover] = useState<{ month: string; planned: Array<{ label: string; value: number }>; actual: Array<{ label: string; value: number }> } | null>(null);
   // Inline add forms
   const [showChangeForm, setShowChangeForm]       = useState(false);
   const [showWpForm, setShowWpForm]               = useState(false);
@@ -1517,7 +1521,7 @@ export default function ProjectDetailClient({
   // Reset active tab when category/type changes make it unavailable
   useEffect(() => {
     const validTabs = new Set<Tab>([
-      'overview', 'team', 'tickets', 'trends', 'settings',
+      'overview', 'team', 'tickets', 'trends', 'forecast', 'settings',
       ...(isClientProject ? ['financials' as Tab] : []),
       ...(isClientProject && projType === 'fixprice' ? ['milestones' as Tab] : []),
     ]);
@@ -1788,6 +1792,184 @@ export default function ProjectDetailClient({
     });
   }, [entries, totalBudgetHours]);
 
+  // ── Forecast tab data ──────────────────────────────────────────────────────
+
+  const linkedForecastScenarios = useMemo(() => {
+    const result: Array<{ forecast: Forecast; forecastProjectId: string; forecastProjectName: string }> = [];
+    for (const fc of forecasts) {
+      for (const fp of fc.projects) {
+        if (fp.fmoProjectId === project.id) {
+          result.push({ forecast: fc, forecastProjectId: fp.id, forecastProjectName: fp.name });
+        }
+      }
+    }
+    return result;
+  }, [forecasts, project.id]);
+
+  // Per-project planned hours: key → month → hours
+  const plannedByMonthByProject = useMemo(() => {
+    const result = new Map<string, Map<string, number>>();
+    for (const { forecast: fc, forecastProjectId, forecastProjectName } of linkedForecastScenarios) {
+      const key = `p_${forecastProjectId}`;
+      const monthMap = new Map<string, number>();
+      for (const asgn of fc.assignments.filter(a => a.projectId === forecastProjectId)) {
+        for (const [month, hours] of Object.entries(asgn.plannedHours)) {
+          monthMap.set(month, (monthMap.get(month) ?? 0) + hours);
+        }
+      }
+      result.set(key, monthMap);
+    }
+    return result;
+  }, [linkedForecastScenarios]);
+
+  // Forecast project display metadata (key, label, colour)
+  const forecastProjectKeys = useMemo(() =>
+    linkedForecastScenarios.map(({ forecast: fc, forecastProjectId, forecastProjectName }, i) => ({
+      key: `p_${forecastProjectId}`,
+      label: linkedForecastScenarios.length > 1
+        ? `${fc.name} → ${forecastProjectName}`
+        : 'Planned',
+      color: COLORS[(i + 1) % COLORS.length], // offset from 0 so planned colours don't clash with actual/line indigo
+    }))
+  , [linkedForecastScenarios]);
+
+  // Total planned per month (sum across all projects — used for avg3m extension + retrospective)
+  const plannedByMonth = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const monthMap of plannedByMonthByProject.values()) {
+      for (const [month, hours] of monthMap) {
+        map.set(month, (map.get(month) ?? 0) + hours);
+      }
+    }
+    return map;
+  }, [plannedByMonthByProject]);
+
+  const actualByMonthAll = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const e of entries) {
+      if (dashboardRange.from && e.month < dashboardRange.from) continue;
+      if (dashboardRange.to   && e.month > dashboardRange.to)   continue;
+      map.set(e.month, (map.get(e.month) ?? 0) + e.spentTime);
+    }
+    return map;
+  }, [entries, dashboardRange]);
+
+  const lastActualMonth = useMemo(() => {
+    const months = [...actualByMonthAll.keys()].sort();
+    return months.length > 0 ? months[months.length - 1] : null;
+  }, [actualByMonthAll]);
+
+  const combinedChartData = useMemo(() => {
+    const allMonths = [...new Set([...actualByMonthAll.keys(), ...plannedByMonth.keys()])].sort();
+    return allMonths.map((m, idx) => {
+      const isActual = !lastActualMonth || m <= lastActualMonth;
+      const actual   = isActual ? (actualByMonthAll.get(m) ?? null) : null;
+
+      // Per-project planned bars (only for future months)
+      const perProject: Record<string, number | null> = {};
+      for (const [key, monthMap] of plannedByMonthByProject) {
+        perProject[key] = !isActual ? (monthMap.get(m) ?? null) : null;
+      }
+
+      // 3M avg extends across both actual and planned
+      const slice = allMonths.slice(Math.max(0, idx - 2), idx + 1);
+      const avg3m = Math.round(
+        slice.reduce((s, am) => s + ((!lastActualMonth || am <= lastActualMonth)
+          ? (actualByMonthAll.get(am) ?? 0)
+          : (plannedByMonth.get(am) ?? 0)), 0)
+        / slice.length * 10
+      ) / 10;
+
+      return { month: m.slice(0, 7), actual, ...perProject, avg3m };
+    });
+  }, [actualByMonthAll, plannedByMonthByProject, plannedByMonth, lastActualMonth]);
+
+  const retroData = useMemo(() => {
+    return [...plannedByMonth.keys()]
+      .filter(m => actualByMonthAll.has(m))
+      .sort()
+      .map(m => ({
+        month: m.slice(0, 7),
+        planned: plannedByMonth.get(m) ?? 0,
+        actual: actualByMonthAll.get(m) ?? 0,
+      }));
+  }, [plannedByMonth, actualByMonthAll]);
+
+  // Cumulative actual (solid line) + projected (dashed line from last actual onward)
+  const cumulativeData = useMemo(() => {
+    const allMonths = [...new Set([...actualByMonthAll.keys(), ...plannedByMonth.keys()])].sort();
+    let cumA = 0; let cumP = 0;
+    return allMonths.map(m => {
+      const isActual = !lastActualMonth || m <= lastActualMonth;
+      if (isActual) cumA += actualByMonthAll.get(m) ?? 0;
+      else          cumP += plannedByMonth.get(m) ?? 0;
+      return {
+        month: m.slice(0, 7),
+        cumActual:    isActual ? cumA : null,
+        cumProjected: !isActual ? (cumA + cumP) : null,
+      };
+    });
+  }, [actualByMonthAll, plannedByMonth, lastActualMonth]);
+
+  // Per-ticket actual hours in retro months: ticketLabel → month → hours
+  const actualByTicketMonth = useMemo(() => {
+    const result = new Map<string, Map<string, number>>();
+    for (const e of entries) {
+      if (dashboardRange.from && e.month < dashboardRange.from) continue;
+      if (dashboardRange.to   && e.month > dashboardRange.to)   continue;
+      const label = e.ticketName || (e.ticketId != null ? `#${e.ticketId}` : 'No ticket');
+      if (!result.has(label)) result.set(label, new Map());
+      result.get(label)!.set(e.month, (result.get(label)!.get(e.month) ?? 0) + e.spentTime);
+    }
+    return result;
+  }, [entries, dashboardRange]);
+
+  // Top 8 tickets by total hours in retro months; rest collapsed into "Other"
+  const retroTicketSlices = useMemo(() => {
+    const retroMonths = new Set(retroData.map(r => r.month));
+    const totals = [...actualByTicketMonth.entries()]
+      .map(([label, mm]) => ({
+        label,
+        total: [...mm.entries()].filter(([m]) => retroMonths.has(m)).reduce((s, [, h]) => s + h, 0),
+      }))
+      .filter(t => t.total > 0)
+      .sort((a, b) => b.total - a.total);
+
+    const top   = totals.slice(0, 8);
+    const other = totals.slice(8);
+    return { top, hasOther: other.length > 0 };
+  }, [actualByTicketMonth, retroData]);
+
+  // Retro chart: planned by ForecastProject, actual by ticket
+  const retroBreakdownData = useMemo(() =>
+    retroData.map(r => {
+      const entry: Record<string, string | number | null> = { month: r.month };
+      // Planned — one segment per linked forecast project
+      for (const { key } of forecastProjectKeys) {
+        entry[`plan_${key}`] = plannedByMonthByProject.get(key)?.get(r.month) ?? null;
+      }
+      // Actual — one segment per top ticket, one for "Other"
+      let otherHours = 0;
+      for (const [label, mm] of actualByTicketMonth) {
+        const isTop = retroTicketSlices.top.some(t => t.label === label);
+        const h = mm.get(r.month) ?? 0;
+        if (isTop) entry[`act_${label}`] = h || null;
+        else       otherHours += h;
+      }
+      if (retroTicketSlices.hasOther) entry['act_Other'] = otherHours || null;
+      return entry;
+    })
+  , [retroData, forecastProjectKeys, plannedByMonthByProject, actualByTicketMonth, retroTicketSlices]);
+
+  // Pie chart: total planned hours per linked forecast project
+  const forecastPieData = useMemo(() =>
+    forecastProjectKeys.map(({ key, label, color }) => ({
+      name: label,
+      value: [...(plannedByMonthByProject.get(key)?.values() ?? [])].reduce((s, h) => s + h, 0),
+      color,
+    })).filter(d => d.value > 0)
+  , [forecastProjectKeys, plannedByMonthByProject]);
+
   const TABS: { id: Tab; label: string }[] = [
     { id: 'overview',   label: 'Overview' },
     { id: 'team',       label: 'Team' },
@@ -1795,6 +1977,7 @@ export default function ProjectDetailClient({
     { id: 'trends',     label: 'Trends' },
     ...(isClientProject ? [{ id: 'financials' as Tab, label: 'Financials' }] : []),
     ...(isClientProject && projType === 'fixprice' ? [{ id: 'milestones' as Tab, label: 'Milestones' }] : []),
+    { id: 'forecast',   label: 'Forecast' },
     { id: 'settings',   label: 'Settings' },
   ];
 
@@ -2980,6 +3163,365 @@ export default function ProjectDetailClient({
               </div>
             )}
           </div>
+        </div>
+      )}
+
+      {/* ── FORECAST ── */}
+      {activeTab === 'forecast' && (
+        <div className="space-y-6">
+
+          {linkedForecastScenarios.length === 0 ? (
+            <div className="bg-white rounded-lg border border-slate-200 px-6 py-12 text-center text-slate-400 text-sm">
+              <p className="mb-2 font-medium text-slate-600">No forecast linked to this project.</p>
+              <p className="text-xs max-w-sm mx-auto">
+                In <a href="/planning" className="underline text-indigo-600">Planning</a>, open a forecast scenario, add or edit a project, and choose <strong>&quot;{project.name}&quot;</strong> in the &quot;Link to FMO Project&quot; selector.
+              </p>
+            </div>
+          ) : (
+            <>
+              {/* Linked scenario badges */}
+              <div className="flex flex-wrap gap-2">
+                {linkedForecastScenarios.map(({ forecast: fc, forecastProjectId, forecastProjectName }) => (
+                  <a key={forecastProjectId} href={`/planning/${fc.id}`}
+                    className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100 transition-colors">
+                    {fc.name} → {forecastProjectName} ↗
+                  </a>
+                ))}
+              </div>
+
+              {combinedChartData.length === 0 && (
+                <div className="bg-white rounded-lg border border-slate-200 px-6 py-8 text-center text-slate-400 text-sm">
+                  No planned hours found in the linked forecast scenario(s). Add member assignments in{' '}
+                  <a href={`/planning/${linkedForecastScenarios[0].forecast.id}`} className="underline text-indigo-600">Planning</a>.
+                </div>
+              )}
+
+              {/* Chart 1: Monthly Hours — actual bars + planned bars + 3M avg */}
+              {combinedChartData.length > 0 && (
+                <div className="bg-white rounded-lg border border-slate-200 p-4">
+                  <h3 className="text-sm font-semibold text-gray-800 mb-1">Velocity & 3-Month Average</h3>
+                  <p className="text-xs text-gray-400 mb-4">
+                    Monthly hours (bars) · 3-month rolling average (line) · Boundary: <span className="font-medium text-slate-600">{lastActualMonth ?? 'no actuals yet'}</span>
+                  </p>
+                  <ResponsiveContainer width="100%" height={260}>
+                    <ComposedChart data={combinedChartData} margin={{ top: 4, right: 8, left: 0, bottom: 8 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                      <XAxis dataKey="month" tick={{ fontSize: 10 }} interval={0} angle={-35} textAnchor="end" height={48} />
+                      <YAxis tick={{ fontSize: 11 }} tickFormatter={v => `${v}h`} />
+                      <Tooltip {...TOOLTIP_STYLE} formatter={v => typeof v === 'number' ? fmtH(v, locale) : v} />
+                      <Bar dataKey="actual" stackId="col" fill="#dde1ff" opacity={0.9} name="Actual" radius={[3,3,0,0]} />
+                      {forecastProjectKeys.map(({ key, label, color }, i) => (
+                        <Bar key={key} dataKey={key} stackId="col" fill={color} opacity={0.75} name={label}
+                          radius={i === forecastProjectKeys.length - 1 ? [3,3,0,0] : [0,0,0,0]} />
+                      ))}
+                      <Line type="monotone" dataKey="avg3m" stroke="#4338ca" strokeWidth={2} dot={{ r: 3 }} name="3M Avg" connectNulls />
+                    </ComposedChart>
+                  </ResponsiveContainer>
+                  <div className="flex flex-wrap gap-4 mt-2">
+                    <span className="flex items-center gap-1.5 text-xs text-gray-500"><span className="w-2.5 h-2.5 rounded-sm bg-indigo-200 inline-block" /> Actual</span>
+                    {forecastProjectKeys.map(({ key, label, color }) => (
+                      <span key={key} className="flex items-center gap-1.5 text-xs text-gray-500">
+                        <span className="w-2.5 h-2.5 rounded-sm inline-block" style={{ background: color }} /> {label}
+                      </span>
+                    ))}
+                    <span className="flex items-center gap-1.5 text-xs text-gray-500"><span className="w-4 border-t-2 border-indigo-700 inline-block" /> 3M Avg</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Chart 2: Cumulative Actual vs Projected */}
+              {cumulativeData.length > 0 && (
+                <div className="bg-white rounded-lg border border-slate-200 p-4">
+                  <h3 className="text-sm font-semibold text-gray-800 mb-1">Cumulative Hours — Actual vs. Projected</h3>
+                  <p className="text-xs text-gray-400 mb-4">Running total of booked hours (indigo) continuing into forecast (amber)</p>
+                  <ResponsiveContainer width="100%" height={240}>
+                    <ComposedChart data={cumulativeData} margin={{ top: 4, right: 8, left: 0, bottom: 8 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                      <XAxis dataKey="month" tick={{ fontSize: 10 }} interval={0} angle={-35} textAnchor="end" height={48} />
+                      <YAxis tick={{ fontSize: 11 }} tickFormatter={v => `${v}h`} />
+                      <Tooltip {...TOOLTIP_STYLE} formatter={v => typeof v === 'number' ? fmtH(v, locale) : v} />
+                      <Line type="monotone" dataKey="cumActual"    stroke="#4338ca" strokeWidth={2.5} dot={{ r: 3, fill: '#4338ca' }} name="Actual"    connectNulls={false} />
+                      <Line type="monotone" dataKey="cumProjected" stroke="#f59e0b" strokeWidth={2.5} dot={{ r: 3, fill: '#f59e0b' }} name="Projected" strokeDasharray="6 3" connectNulls={false} />
+                    </ComposedChart>
+                  </ResponsiveContainer>
+                  <div className="flex gap-4 mt-2">
+                    <span className="flex items-center gap-1.5 text-xs text-gray-500"><span className="w-4 border-t-2 border-indigo-700 inline-block" /> Actual (cumulative)</span>
+                    <span className="flex items-center gap-1.5 text-xs text-gray-500"><span className="w-4 border-t-2 border-dashed border-amber-400 inline-block" /> Projected (cumulative)</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Chart 3: Planned distribution pie — only when ≥ 2 linked projects */}
+              {forecastPieData.length >= 2 && (
+                <div className="bg-white rounded-lg border border-slate-200 p-4">
+                  <h3 className="text-sm font-semibold text-gray-800 mb-1">Planned Hours Distribution</h3>
+                  <p className="text-xs text-gray-400 mb-4">Share of total planned hours per linked forecast project</p>
+                  <div className="flex items-center justify-center gap-8">
+                    <PieChart width={180} height={180}>
+                      <Pie data={forecastPieData} cx={85} cy={85} innerRadius={50} outerRadius={80} dataKey="value" paddingAngle={2}>
+                        {forecastPieData.map((d, i) => <Cell key={i} fill={d.color} opacity={0.85} />)}
+                      </Pie>
+                      <Tooltip {...TOOLTIP_STYLE} formatter={(v) => typeof v === 'number' ? fmtH(v, locale) : v} />
+                    </PieChart>
+                    <div className="space-y-2.5">
+                      {forecastPieData.map((d) => {
+                        const total = forecastPieData.reduce((s, x) => s + x.value, 0);
+                        const pct   = total > 0 ? Math.round(d.value / total * 100) : 0;
+                        return (
+                          <div key={d.name} className="flex items-center gap-2">
+                            <span className="w-2.5 h-2.5 rounded-sm shrink-0 inline-block" style={{ background: d.color }} />
+                            <span className="text-xs text-gray-700 font-medium">{d.name}</span>
+                            <span className="text-xs text-gray-400">{fmtH(d.value, locale)} · {pct}%</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Chart 4: Retrospective — grouped bars + accuracy table */}
+              {retroData.length > 0 && (() => {
+                const tp  = retroData.reduce((s, r) => s + r.planned, 0);
+                const ta  = retroData.reduce((s, r) => s + r.actual,  0);
+                const acc = tp > 0 ? Math.round((ta / tp) * 100) : null;
+                // deviation from 100% (symmetric: over-run and under-run are both bad)
+                const dev = acc !== null ? Math.abs(acc - 100) : null;
+                const badge = dev === null ? null
+                  : dev <=  5 ? { label: 'Excellent', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' }
+                  : dev <= 20 ? { label: 'Good',      cls: 'bg-green-50  text-green-700  border-green-200'   }
+                  : dev <= 40 ? { label: 'Average',   cls: 'bg-amber-50  text-amber-700  border-amber-200'   }
+                  : dev <= 60 ? { label: 'Poor',      cls: 'bg-orange-50 text-orange-700 border-orange-200'  }
+                  :             { label: 'Bad',        cls: 'bg-red-50    text-red-700    border-red-200'     };
+                const overrun = acc !== null && acc > 100;
+                return (
+                <div className="bg-white rounded-lg border border-slate-200 p-4">
+                  <div className="flex items-start justify-between mb-1">
+                    <h3 className="text-sm font-semibold text-gray-800">Retrospective — Planned vs. Actual</h3>
+                    {badge && (
+                      <div className="flex items-center gap-2 shrink-0">
+                        {acc !== null && (
+                          <span className={`text-xs font-medium ${overrun ? 'text-red-600' : 'text-slate-500'}`}>
+                            {acc}% {overrun ? '↑ over-run' : ''}
+                          </span>
+                        )}
+                        <span className={`text-xs font-semibold px-2.5 py-1 rounded-full border ${badge.cls}`}>
+                          {badge.label}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                  <p className="text-xs text-gray-400 mb-4">Months where both a plan and actual bookings exist — how accurate was the forecast?</p>
+                  <ResponsiveContainer width="100%" height={260}>
+                    <BarChart
+                      data={retroBreakdownData}
+                      margin={{ top: 4, right: 8, left: 0, bottom: 8 }}
+                      onMouseMove={(state: any) => {
+                        if (!state.isTooltipActive || !state.activePayload?.length) { setRetroHover(null); return; }
+                        const payload: any[] = state.activePayload;
+                        setRetroHover({
+                          month: String(state.activeLabel ?? ''),
+                          planned: payload.filter((p: any) => String(p.dataKey).startsWith('plan_') && Number(p.value) > 0)
+                            .map((p: any) => ({ label: forecastProjectKeys.find(k => `plan_${k.key}` === p.dataKey)?.label ?? String(p.dataKey).slice(8), value: Number(p.value) })),
+                          actual: payload.filter((p: any) => String(p.dataKey).startsWith('act_') && Number(p.value) > 0)
+                            .map((p: any) => ({ label: String(p.dataKey).slice(4), value: Number(p.value) })),
+                        });
+                      }}
+                      onMouseLeave={() => setRetroHover(null)}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                      <XAxis dataKey="month" tick={{ fontSize: 10 }} interval={0} angle={-35} textAnchor="end" height={48} />
+                      <YAxis tick={{ fontSize: 11 }} tickFormatter={v => `${v}h`} />
+                      {/* Planned stacks — one segment per linked forecast project */}
+                      {forecastProjectKeys.map(({ key, label, color }, i) => (
+                        <Bar key={`plan_${key}`} dataKey={`plan_${key}`} stackId="planned"
+                          fill={color} opacity={0.4} name={`plan_${key}`}
+                          radius={i === forecastProjectKeys.length - 1 ? [3,3,0,0] : [0,0,0,0]} />
+                      ))}
+                      {/* Actual stacks — one segment per ticket (top 8 + Other) */}
+                      {retroTicketSlices.top.map(({ label }, i) => (
+                        <Bar key={`act_${label}`} dataKey={`act_${label}`} stackId="actual"
+                          fill={COLORS[i % COLORS.length]} opacity={0.85} name={`act_${label}`}
+                          radius={!retroTicketSlices.hasOther && i === retroTicketSlices.top.length - 1 ? [3,3,0,0] : [0,0,0,0]} />
+                      ))}
+                      {retroTicketSlices.hasOther && (
+                        <Bar dataKey="act_Other" stackId="actual" fill="#94a3b8" opacity={0.6} name="act_Other" radius={[3,3,0,0]} />
+                      )}
+                    </BarChart>
+                  </ResponsiveContainer>
+                  <div className="flex flex-wrap gap-x-6 gap-y-2 mt-3">
+                    <div className="flex flex-wrap gap-2 items-center">
+                      <span className="text-xs font-medium text-slate-500 shrink-0">Planned:</span>
+                      {forecastProjectKeys.map(({ key, label, color }) => (
+                        <span key={key} className="flex items-center gap-1.5 text-xs text-gray-500">
+                          <span className="w-2.5 h-2.5 rounded-sm inline-block opacity-40" style={{ background: color }} />
+                          {label}
+                        </span>
+                      ))}
+                    </div>
+                    <div className="flex flex-wrap gap-2 items-center">
+                      <span className="text-xs font-medium text-slate-500 shrink-0">Actual:</span>
+                      {retroTicketSlices.top.map(({ label }, i) => (
+                        <span key={label} className="flex items-center gap-1.5 text-xs text-gray-500">
+                          <span className="w-2.5 h-2.5 rounded-sm inline-block" style={{ background: COLORS[i % COLORS.length] }} />
+                          {label}
+                        </span>
+                      ))}
+                      {retroTicketSlices.hasOther && (
+                        <span className="flex items-center gap-1.5 text-xs text-gray-500">
+                          <span className="w-2.5 h-2.5 rounded-sm bg-slate-400 inline-block opacity-60" />
+                          Other
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Hover detail panel — sits below chart, never overlaps bars */}
+                  {retroHover ? (
+                    <div className="mt-3 bg-slate-50 border border-slate-100 rounded-lg px-4 py-3 flex gap-8 text-xs">
+                      <span className="font-semibold text-slate-700 shrink-0">{retroHover.month}</span>
+                      {retroHover.planned.length > 0 && (
+                        <div>
+                          <p className="font-medium text-slate-500 mb-1">Planned — {fmtH(retroHover.planned.reduce((s, i) => s + i.value, 0), locale)}</p>
+                          {retroHover.planned.map(item => (
+                            <p key={item.label} className="text-slate-400 pl-2">· {item.label}: {fmtH(item.value, locale)}</p>
+                          ))}
+                        </div>
+                      )}
+                      {retroHover.actual.length > 0 && (
+                        <div>
+                          <p className="font-medium text-slate-500 mb-1">Actual — {fmtH(retroHover.actual.reduce((s, i) => s + i.value, 0), locale)}</p>
+                          {retroHover.actual.map(item => (
+                            <p key={item.label} className="text-slate-400 pl-2">· {item.label}: {fmtH(item.value, locale)}</p>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="mt-3 h-[52px] bg-slate-50/50 border border-dashed border-slate-100 rounded-lg flex items-center justify-center text-xs text-slate-300">
+                      Hover a bar to see breakdown
+                    </div>
+                  )}
+
+                  {/* Pivoted table: months as columns */}
+                  {(() => {
+                    const tp  = retroData.reduce((s, r) => s + r.planned, 0);
+                    const ta  = retroData.reduce((s, r) => s + r.actual,  0);
+                    const td  = ta - tp;
+                    const tAcc = tp > 0 ? Math.round((ta / tp) * 100) : null;
+
+                    function accuracyBadge(acc: number | null) {
+                      if (acc === null) return null;
+                      const dev = Math.abs(acc - 100);
+                      if (dev <=  5) return { label: 'Excellent', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
+                      if (dev <= 20) return { label: 'Good',      cls: 'bg-green-50  text-green-700  border-green-200'   };
+                      if (dev <= 40) return { label: 'Average',   cls: 'bg-amber-50  text-amber-700  border-amber-200'   };
+                      if (dev <= 60) return { label: 'Poor',      cls: 'bg-orange-50 text-orange-700 border-orange-200'  };
+                      return               { label: 'Bad',        cls: 'bg-red-50    text-red-700    border-red-200'     };
+                    }
+
+                    const months = retroData.map(r => r.month);
+                    const hasTotal = retroData.length > 1;
+
+                    return (
+                      <div className="mt-4 overflow-x-auto">
+                        <table className="text-xs border-collapse w-full">
+                          <thead>
+                            <tr className="border-b border-slate-100">
+                              <th className="text-left py-2 pr-4 font-medium text-slate-500 min-w-[72px]"></th>
+                              {months.map(m => (
+                                <th key={m} className="text-center px-3 py-2 font-medium text-slate-600 min-w-[80px]">{m}</th>
+                              ))}
+                              {hasTotal && <th className="text-center px-3 py-2 font-semibold text-slate-700 min-w-[80px] border-l border-slate-100">Total</th>}
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-50">
+                            {/* Planned row */}
+                            <tr className="hover:bg-slate-50/40">
+                              <td className="py-2 pr-4 font-medium text-slate-500">Planned</td>
+                              {retroData.map(r => (
+                                <td key={r.month} className="px-3 py-2 text-center text-slate-500">{fmtH(r.planned, locale)}</td>
+                              ))}
+                              {hasTotal && <td className="px-3 py-2 text-center font-semibold text-slate-500 border-l border-slate-100">{fmtH(tp, locale)}</td>}
+                            </tr>
+                            {/* Actual row */}
+                            <tr className="hover:bg-slate-50/40">
+                              <td className="py-2 pr-4 font-medium text-slate-700">Actual</td>
+                              {retroData.map(r => (
+                                <td key={r.month} className="px-3 py-2 text-center font-medium text-slate-700">{fmtH(r.actual, locale)}</td>
+                              ))}
+                              {hasTotal && <td className="px-3 py-2 text-center font-semibold text-slate-700 border-l border-slate-100">{fmtH(ta, locale)}</td>}
+                            </tr>
+                            {/* Delta row */}
+                            <tr className="hover:bg-slate-50/40">
+                              <td className="py-2 pr-4 font-medium text-slate-500">Delta</td>
+                              {retroData.map(r => {
+                                const d = r.actual - r.planned;
+                                return (
+                                  <td key={r.month} className={`px-3 py-2 text-center font-medium ${d > 0 ? 'text-red-600' : d < 0 ? 'text-emerald-600' : 'text-slate-400'}`}>
+                                    {d >= 0 ? '+' : ''}{fmtH(d, locale)}
+                                  </td>
+                                );
+                              })}
+                              {hasTotal && (
+                                <td className={`px-3 py-2 text-center font-semibold border-l border-slate-100 ${td > 0 ? 'text-red-600' : td < 0 ? 'text-emerald-600' : 'text-slate-400'}`}>
+                                  {td >= 0 ? '+' : ''}{fmtH(td, locale)}
+                                </td>
+                              )}
+                            </tr>
+                            {/* Accuracy row */}
+                            <tr className="hover:bg-slate-50/40">
+                              <td className="py-2 pr-4 font-medium text-slate-500">Accuracy</td>
+                              {retroData.map(r => {
+                                const acc = r.planned > 0 ? Math.round((r.actual / r.planned) * 100) : null;
+                                const over = acc !== null && acc > 100;
+                                return (
+                                  <td key={r.month} className={`px-3 py-2 text-center font-medium ${over ? 'text-red-600' : 'text-slate-500'}`}>
+                                    {acc !== null ? `${acc}%` : '—'}
+                                  </td>
+                                );
+                              })}
+                              {hasTotal && (
+                                <td className={`px-3 py-2 text-center font-medium border-l border-slate-100 ${tAcc !== null && tAcc > 100 ? 'text-red-600' : 'text-slate-500'}`}>
+                                  {tAcc !== null ? `${tAcc}%` : '—'}
+                                </td>
+                              )}
+                            </tr>
+                            {/* Rating row */}
+                            <tr className="hover:bg-slate-50/40">
+                              <td className="py-2 pr-4 font-medium text-slate-500">Rating</td>
+                              {retroData.map(r => {
+                                const acc = r.planned > 0 ? Math.round((r.actual / r.planned) * 100) : null;
+                                const b   = accuracyBadge(acc);
+                                return (
+                                  <td key={r.month} className="px-3 py-2 text-center">
+                                    {b ? (
+                                      <span className={`inline-block text-xs font-semibold px-2 py-0.5 rounded-full border ${b.cls}`}>{b.label}</span>
+                                    ) : '—'}
+                                  </td>
+                                );
+                              })}
+                              {hasTotal && (() => {
+                                const b = accuracyBadge(tAcc);
+                                return (
+                                  <td className="px-3 py-2 text-center border-l border-slate-100">
+                                    {b ? (
+                                      <span className={`inline-block text-xs font-semibold px-2 py-0.5 rounded-full border ${b.cls}`}>{b.label}</span>
+                                    ) : '—'}
+                                  </td>
+                                );
+                              })()}
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+                    );
+                  })()}
+                </div>
+                );
+              })()}
+            </>
+          )}
         </div>
       )}
 

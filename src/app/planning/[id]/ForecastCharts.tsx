@@ -5,7 +5,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, ReferenceLine, ComposedChart, Line, LineChart,
 } from 'recharts';
-import { Forecast, ForecastProject, TeamMember } from '@/lib/types';
+import { Forecast, ForecastProject, FmoMember } from '@/lib/types';
 import { getMonthsBetween, formatMonth } from '@/lib/utils';
 
 const FTE_HOURS_PER_YEAR = 1680;
@@ -180,12 +180,12 @@ function ProjectCapacityChart({ project, forecast }: { project: ForecastProject;
 
 function TotalCapacityChart({
   forecast,
-  teamMembers,
+  fmoMembers,
   hiddenProjects,
   projectColors,
 }: {
   forecast: Forecast;
-  teamMembers: TeamMember[];
+  fmoMembers: FmoMember[];
   hiddenProjects: Set<string>;
   projectColors: Map<string, string>;
 }) {
@@ -203,8 +203,8 @@ function TotalCapacityChart({
     forecast.assignments.filter((a) => a.isGhost).map((a) => a.memberId)
   );
   const totalCapacity =
-    Array.from(realMemberIds).reduce((s, id) => s + (teamMembers.find((m) => m.id === id)?.monthlyAvailability ?? 0), 0) +
-    Array.from(ghostMemberIds).reduce((s, id) => s + (forecast.ghostMembers.find((g) => g.id === id)?.monthlyAvailability ?? 0), 0);
+    Array.from(realMemberIds).reduce((s, id) => s + (fmoMembers.find((m) => m.id === id)?.monthlyCapacity ?? 160), 0) +
+    Array.from(ghostMemberIds).reduce((s, id) => s + (forecast.ghostMembers.find((g) => g.id === id)?.monthlyAvailability ?? 160), 0);
 
   const data = allMonths.map((month) => {
     const entry: Record<string, string | number> = { month: formatMonth(month) };
@@ -296,10 +296,10 @@ function TotalCapacityChart({
 
 function ForecastCapacityGapChart({
   forecast,
-  teamMembers,
+  fmoMembers,
 }: {
   forecast: Forecast;
-  teamMembers: TeamMember[];
+  fmoMembers: FmoMember[];
 }) {
   // All unique months across all projects
   const allMonthsSet = new Set<string>();
@@ -313,8 +313,8 @@ function ForecastCapacityGapChart({
   const realIds  = new Set(forecast.assignments.filter((a) => !a.isGhost).map((a) => a.memberId));
   const ghostIds = new Set(forecast.assignments.filter((a) =>  a.isGhost).map((a) => a.memberId));
   const totalCap =
-    Array.from(realIds).reduce((s, id)  => s + (teamMembers.find((m) => m.id === id)?.monthlyAvailability ?? 0), 0) +
-    Array.from(ghostIds).reduce((s, id) => s + (forecast.ghostMembers.find((g) => g.id === id)?.monthlyAvailability ?? 0), 0);
+    Array.from(realIds).reduce((s, id)  => s + (fmoMembers.find((m) => m.id === id)?.monthlyCapacity ?? 160), 0) +
+    Array.from(ghostIds).reduce((s, id) => s + (forecast.ghostMembers.find((g) => g.id === id)?.monthlyAvailability ?? 160), 0);
 
   if (totalCap === 0) return null;
 
@@ -377,8 +377,8 @@ const MEMBER_COLORS = ['#6366f1','#f59e0b','#10b981','#ef4444','#3b82f6','#ec489
 const getMemberColor = (i: number) => MEMBER_COLORS[i % MEMBER_COLORS.length];
 
 function ForecastMemberUtilisationChart({
-  forecast, teamMembers,
-}: { forecast: Forecast; teamMembers: TeamMember[] }) {
+  forecast, fmoMembers,
+}: { forecast: Forecast; fmoMembers: FmoMember[] }) {
   const allMonthsSet = new Set<string>();
   for (const p of forecast.projects)
     for (const m of getMonthsBetween(p.startMonth, p.endMonth)) allMonthsSet.add(m);
@@ -386,9 +386,9 @@ function ForecastMemberUtilisationChart({
 
   type MemberEntry = { id: string; name: string; availability: number; isGhost: boolean };
   const members: MemberEntry[] = [
-    ...teamMembers
-      .filter((m) => forecast.assignments.some((a) => !a.isGhost && a.memberId === m.id) && m.monthlyAvailability > 0)
-      .map((m) => ({ id: m.id, name: m.name, availability: m.monthlyAvailability, isGhost: false })),
+    ...fmoMembers
+      .filter((m) => forecast.assignments.some((a) => !a.isGhost && a.memberId === m.id) && (m.monthlyCapacity ?? 160) > 0)
+      .map((m) => ({ id: m.id, name: m.name, availability: m.monthlyCapacity ?? 160, isGhost: false })),
     ...forecast.ghostMembers
       .filter((g) => forecast.assignments.some((a) => a.isGhost && a.memberId === g.id) && g.monthlyAvailability > 0)
       .map((g) => ({ id: g.id, name: g.name, availability: g.monthlyAvailability, isGhost: true })),
@@ -550,10 +550,10 @@ function ForecastMemberLoadChart({
 
 export default function ForecastCharts({
   forecast,
-  teamMembers,
+  fmoMembers,
 }: {
   forecast: Forecast;
-  teamMembers: TeamMember[];
+  fmoMembers: FmoMember[];
 }) {
   const [chartTab, setChartTab] = useState<'project' | 'member'>('project');
   const [hidden,   setHidden]   = useState<Set<string>>(new Set());
@@ -576,7 +576,7 @@ export default function ForecastCharts({
   const visibleProjects = forecast.projects.filter((p) => !hidden.has(p.id));
 
   // Members with at least one assignment
-  const assignedRealMembers = teamMembers.filter((m) =>
+  const assignedRealMembers = fmoMembers.filter((m) =>
     forecast.assignments.some((a) => !a.isGhost && a.memberId === m.id)
   );
   const assignedGhostMembers = forecast.ghostMembers.filter((g) =>
@@ -611,8 +611,8 @@ export default function ForecastCharts({
             <LegendPills items={legendItems} hidden={hidden} onToggle={toggle} onIsolate={isolate} onShowAll={showAll} onHideAll={hideAll} />
           </div>
 
-          <TotalCapacityChart forecast={forecast} teamMembers={teamMembers} hiddenProjects={hidden} projectColors={projectColors} />
-          <ForecastCapacityGapChart forecast={forecast} teamMembers={teamMembers} />
+          <TotalCapacityChart forecast={forecast} fmoMembers={fmoMembers} hiddenProjects={hidden} projectColors={projectColors} />
+          <ForecastCapacityGapChart forecast={forecast} fmoMembers={fmoMembers} />
 
           {visibleProjects.length > 0 && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
@@ -632,7 +632,7 @@ export default function ForecastCharts({
           ) : (
             <>
               {/* Utilisation overview — all members as lines */}
-              <ForecastMemberUtilisationChart forecast={forecast} teamMembers={teamMembers} />
+              <ForecastMemberUtilisationChart forecast={forecast} fmoMembers={fmoMembers} />
 
               {/* Per-member load charts */}
               {assignedRealMembers.length > 0 && (
@@ -645,7 +645,7 @@ export default function ForecastCharts({
                         memberId={m.id}
                         memberName={m.name}
                         isGhost={false}
-                        availability={m.monthlyAvailability}
+                        availability={m.monthlyCapacity ?? 160}
                         memberAssignments={forecast.assignments.filter((a) => a.memberId === m.id)}
                         forecast={forecast}
                         projectColors={projectColors}

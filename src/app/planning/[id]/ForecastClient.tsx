@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useRole } from '@/components/RoleProvider';
 import {
   Forecast, ForecastProject, ForecastAssignment, GhostMember,
-  TeamMember, Role, Profile,
+  Role, Profile, FmoProject, FmoMember,
 } from '@/lib/types';
 import { getMonthsBetween, formatMonth } from '@/lib/utils';
 import Modal from '@/components/Modal';
@@ -22,9 +22,10 @@ import {
 
 interface Props {
   forecast: Forecast;
-  teamMembers: TeamMember[];
+  fmoMembers: FmoMember[];
   roles: Role[];
   profiles: Profile[];
+  fmoProjects: FmoProject[];
 }
 
 // ─── FTE helpers ──────────────────────────────────────────────────────────────
@@ -118,14 +119,16 @@ function GhostMemberForm({
 // ─── Project Form ─────────────────────────────────────────────────────────────
 
 function ProjectForm({
-  initial, onSubmit,
+  initial, fmoProjects, onSubmit,
 }: {
   initial?: ForecastProject;
+  fmoProjects: FmoProject[];
   onSubmit: (data: Omit<ForecastProject, 'id'>) => Promise<void>;
 }) {
   const [name, setName] = useState(initial?.name ?? '');
   const [startMonth, setStartMonth] = useState(initial?.startMonth ?? '');
   const [endMonth, setEndMonth] = useState(initial?.endMonth ?? '');
+  const [fmoProjectId, setFmoProjectId] = useState(initial?.fmoProjectId ?? '');
   const [saving, setSaving] = useState(false);
 
   // Budget can be entered as hours or FTE — always stored as hours
@@ -167,7 +170,7 @@ function ProjectForm({
     e.preventDefault();
     if (!canSubmit) return;
     setSaving(true);
-    await onSubmit({ name: name.trim(), overallHours: finalHours, startMonth, endMonth });
+    await onSubmit({ name: name.trim(), overallHours: finalHours, startMonth, endMonth, fmoProjectId: fmoProjectId || undefined });
   }
 
   return (
@@ -264,6 +267,20 @@ function ProjectForm({
         </div>
       )}
 
+      {fmoProjects.length > 0 && (
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Link to FMO Project <span className="text-gray-400 text-xs font-normal">(optional)</span>
+          </label>
+          <select value={fmoProjectId} onChange={(e) => setFmoProjectId(e.target.value)}
+            className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500">
+            <option value="">— not linked —</option>
+            {fmoProjects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+          <p className="text-xs text-gray-400 mt-1">Links this project to an FMO project — enables actual vs. planned comparison in the FMO project&apos;s Forecast tab.</p>
+        </div>
+      )}
+
       <div className="pt-1 flex justify-end">
         <button type="submit" disabled={!canSubmit}
           className="bg-slate-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-slate-700 disabled:opacity-40">
@@ -277,11 +294,11 @@ function ProjectForm({
 // ─── Add Member Modal ─────────────────────────────────────────────────────────
 
 function AddMemberModal({
-  project, forecast, teamMembers, roles, onClose, onAdd, onAddAll,
+  project, forecast, fmoMembers, roles, onClose, onAdd, onAddAll,
 }: {
   project: ForecastProject;
   forecast: Forecast;
-  teamMembers: TeamMember[];
+  fmoMembers: FmoMember[];
   roles: Role[];
   onClose: () => void;
   onAdd: (memberId: string, isGhost: boolean, plannedHours: Record<string, number>) => Promise<void>;
@@ -294,6 +311,8 @@ function AddMemberModal({
   const [adding, setAdding] = useState<string | null>(null);
   const [addingAll, setAddingAll] = useState(false);
   const [addedThisSession, setAddedThisSession] = useState<Set<string>>(new Set());
+
+  function memberAvailability(m: FmoMember) { return m.monthlyCapacity ?? 160; }
 
   async function add(memberId: string, isGhost: boolean, availability: number) {
     setAdding(memberId);
@@ -310,7 +329,7 @@ function AddMemberModal({
       ...availableReal.map((m) => ({
         memberId: m.id,
         isGhost: false,
-        plannedHours: Object.fromEntries(months.map((mo) => [mo, m.monthlyAvailability])),
+        plannedHours: Object.fromEntries(months.map((mo) => [mo, memberAvailability(m)])),
       })),
       ...availableGhost.map((g) => ({
         memberId: g.id,
@@ -327,8 +346,12 @@ function AddMemberModal({
 
   // After router.refresh(), forecast.assignments updates → assignedIds grows → available lists shrink.
   // We also keep addedThisSession as a fallback so buttons feel instant before the refresh lands.
-  const availableReal = teamMembers.filter((m) => !assignedIds.has(m.id) && !addedThisSession.has(m.id));
+  const availableReal = fmoMembers.filter((m) => !assignedIds.has(m.id) && !addedThisSession.has(m.id));
   const availableGhost = forecast.ghostMembers.filter((g) => !assignedIds.has(g.id) && !addedThisSession.has(g.id));
+  const [query, setQuery] = useState('');
+  const q = query.toLowerCase();
+  const filteredReal  = availableReal.filter((m) => m.name.toLowerCase().includes(q));
+  const filteredGhost = availableGhost.filter((g) => g.name.toLowerCase().includes(q));
   const totalAdded = addedThisSession.size;
   const allAssigned = availableReal.length === 0 && availableGhost.length === 0;
 
@@ -344,73 +367,89 @@ function AddMemberModal({
           </div>
         ) : (
           <>
-            {/* Add All button */}
-            <button
-              type="button"
-              onClick={addAll}
-              disabled={addingAll || !!adding}
-              className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-md border border-slate-200 bg-slate-50 text-slate-700 text-sm font-medium hover:bg-slate-100 transition-colors disabled:opacity-40"
-            >
-              {addingAll ? (
-                <>
-                  <span className="animate-spin text-base">⟳</span>
-                  Adding {availableReal.length + availableGhost.length} members…
-                </>
-              ) : (
-                <>
-                  + Add All ({availableReal.length + availableGhost.length})
-                </>
-              )}
-            </button>
-            <hr className="border-gray-100" />
-            {availableReal.length > 0 && (
-              <div>
-                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Team Members</p>
-                <div className="border border-gray-200 rounded-md overflow-hidden">
-                  {availableReal.map((m) => (
-                    <div key={m.id} className="flex items-center justify-between px-3 py-2.5 border-b border-gray-50 last:border-0 hover:bg-gray-50">
-                      <div>
-                        <p className="text-sm font-medium text-gray-800">{m.name}</p>
-                        <p className="text-xs text-gray-400">{getRoleName(m.roleId)} · {m.monthlyAvailability}h/month</p>
-                      </div>
-                      <button
-                        onClick={() => add(m.id, false, m.monthlyAvailability)}
-                        disabled={adding === m.id}
-                        className="text-xs px-2.5 py-1 rounded border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-40"
-                      >
-                        {adding === m.id ? '…' : '+ Add'}
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </div>
+            {/* Search */}
+            <input
+              autoFocus
+              type="text"
+              placeholder="Search members…"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              className="w-full border border-gray-200 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400 placeholder:text-gray-300"
+            />
+
+            {/* Add All button — applies to filtered results */}
+            {(filteredReal.length > 0 || filteredGhost.length > 0) && (
+              <button
+                type="button"
+                onClick={addAll}
+                disabled={addingAll || !!adding}
+                className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-md border border-slate-200 bg-slate-50 text-slate-700 text-sm font-medium hover:bg-slate-100 transition-colors disabled:opacity-40"
+              >
+                {addingAll ? (
+                  <>
+                    <span className="animate-spin text-base">⟳</span>
+                    Adding {availableReal.length + availableGhost.length} members…
+                  </>
+                ) : (
+                  <>+ Add All ({filteredReal.length + filteredGhost.length})</>
+                )}
+              </button>
             )}
 
-            {availableGhost.length > 0 && (
-              <div>
-                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Ghost Members</p>
-                <div className="border border-violet-100 rounded-md overflow-hidden">
-                  {availableGhost.map((g) => (
-                    <div key={g.id} className="flex items-center justify-between px-3 py-2.5 border-b border-violet-50 last:border-0 hover:bg-violet-50/40">
-                      <div>
-                        <p className="text-sm font-medium text-gray-800 flex items-center gap-1.5">
-                          <span className="text-violet-500 text-xs">👻</span>
-                          {g.name}
-                        </p>
-                        <p className="text-xs text-gray-400">{getRoleName(g.roleId)} · {g.monthlyAvailability}h/month</p>
+            <div className="max-h-72 overflow-y-auto space-y-3 pr-0.5">
+              {filteredReal.length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">FMO Members</p>
+                  <div className="border border-gray-200 rounded-md overflow-hidden">
+                    {filteredReal.map((m) => (
+                      <div key={m.id} className="flex items-center justify-between px-3 py-2.5 border-b border-gray-50 last:border-0 hover:bg-gray-50">
+                        <div>
+                          <p className="text-sm font-medium text-gray-800">{m.name}</p>
+                          <p className="text-xs text-gray-400">{m.type === 'intern' ? 'Internal' : 'External'} · {memberAvailability(m)}h/month</p>
+                        </div>
+                        <button
+                          onClick={() => add(m.id, false, memberAvailability(m))}
+                          disabled={adding === m.id}
+                          className="text-xs px-2.5 py-1 rounded border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-40"
+                        >
+                          {adding === m.id ? '…' : '+ Add'}
+                        </button>
                       </div>
-                      <button
-                        onClick={() => add(g.id, true, g.monthlyAvailability)}
-                        disabled={adding === g.id}
-                        className="text-xs px-2.5 py-1 rounded border border-violet-200 text-violet-600 hover:bg-violet-50 disabled:opacity-40"
-                      >
-                        {adding === g.id ? '…' : '+ Add'}
-                      </button>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
+
+              {filteredGhost.length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Ghost Members</p>
+                  <div className="border border-violet-100 rounded-md overflow-hidden">
+                    {filteredGhost.map((g) => (
+                      <div key={g.id} className="flex items-center justify-between px-3 py-2.5 border-b border-violet-50 last:border-0 hover:bg-violet-50/40">
+                        <div>
+                          <p className="text-sm font-medium text-gray-800 flex items-center gap-1.5">
+                            <span className="text-violet-500 text-xs">👻</span>
+                            {g.name}
+                          </p>
+                          <p className="text-xs text-gray-400">{getRoleName(g.roleId)} · {g.monthlyAvailability}h/month</p>
+                        </div>
+                        <button
+                          onClick={() => add(g.id, true, g.monthlyAvailability)}
+                          disabled={adding === g.id}
+                          className="text-xs px-2.5 py-1 rounded border border-violet-200 text-violet-600 hover:bg-violet-50 disabled:opacity-40"
+                        >
+                          {adding === g.id ? '…' : '+ Add'}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {filteredReal.length === 0 && filteredGhost.length === 0 && (
+                <p className="text-sm text-gray-400 text-center py-4">No members match &quot;{query}&quot;</p>
+              )}
+            </div>
           </>
         )}
 
@@ -433,12 +472,11 @@ function AddMemberModal({
 // ─── Assignment Matrix ────────────────────────────────────────────────────────
 
 function AssignmentMatrix({
-  project, forecast, teamMembers, roles, forecastId, onRefresh,
+  project, forecast, fmoMembers, forecastId, onRefresh,
 }: {
   project: ForecastProject;
   forecast: Forecast;
-  teamMembers: TeamMember[];
-  roles: Role[];
+  fmoMembers: FmoMember[];
   forecastId: string;
   onRefresh: () => void;
 }) {
@@ -489,12 +527,12 @@ function AssignmentMatrix({
 
   function getMemberName(a: ForecastAssignment): string {
     if (a.isGhost) return forecast.ghostMembers.find((g) => g.id === a.memberId)?.name ?? 'Unknown';
-    return teamMembers.find((m) => m.id === a.memberId)?.name ?? 'Unknown';
+    return fmoMembers.find((m) => m.id === a.memberId)?.name ?? 'Unknown';
   }
 
   function getMemberAvailability(a: ForecastAssignment): number {
     if (a.isGhost) return forecast.ghostMembers.find((g) => g.id === a.memberId)?.monthlyAvailability ?? 0;
-    return teamMembers.find((m) => m.id === a.memberId)?.monthlyAvailability ?? 0;
+    return fmoMembers.find((m) => m.id === a.memberId)?.monthlyCapacity ?? 160;
   }
 
   const budgetPerMonth = months.length > 0 ? Math.round(project.overallHours / months.length) : 0;
@@ -512,7 +550,7 @@ function AssignmentMatrix({
       <table className="text-sm min-w-full">
         <thead>
           <tr className="bg-gray-50/80 border-b border-gray-200 text-xs">
-            <th className="text-left px-4 py-2 font-medium text-gray-600 sticky left-0 bg-gray-50/80 min-w-[160px]">Member</th>
+            <th className="text-left px-4 py-2 font-medium text-gray-600 sticky left-0 bg-gray-50 min-w-[160px]">Member</th>
             {months.map((m) => (
               <th key={m} className="text-right px-2 py-2 font-medium text-gray-500 min-w-[72px]">{formatMonth(m)}</th>
             ))}
@@ -526,7 +564,7 @@ function AssignmentMatrix({
             const avail = getMemberAvailability(a);
             return (
               <tr key={a.id} className={`border-b border-gray-50 hover:bg-white/60 transition-colors ${a.isGhost ? 'bg-violet-50/30' : 'bg-white'}`}>
-                <td className="px-4 py-2 font-medium text-gray-700 sticky left-0 bg-transparent">
+                <td className="px-4 py-2 font-medium text-gray-700 sticky left-0 bg-white">
                   <span className="flex items-center gap-1.5">
                     {a.isGhost && <span className="text-violet-400 text-xs">👻</span>}
                     {getMemberName(a)}
@@ -603,7 +641,7 @@ function AssignmentMatrix({
           </tr>
           {budgetPerMonth > 0 && (
             <tr className="text-xs text-amber-600 bg-amber-50/50">
-              <td className="px-4 py-1.5 sticky left-0 bg-amber-50/50">Budget/month target</td>
+              <td className="px-4 py-1.5 sticky left-0 bg-amber-50">Budget/month target</td>
               {months.map((m) => (
                 <td key={m} className="px-2 py-1.5 text-right">{budgetPerMonth}h</td>
               ))}
@@ -622,11 +660,11 @@ function AssignmentMatrix({
 // ─── Project Card ─────────────────────────────────────────────────────────────
 
 function ProjectCard({
-  project, forecast, teamMembers, roles, forecastId, onEdit, onDelete, onRefresh,
+  project, forecast, fmoMembers, roles, forecastId, onEdit, onDelete, onRefresh,
 }: {
   project: ForecastProject;
   forecast: Forecast;
-  teamMembers: TeamMember[];
+  fmoMembers: FmoMember[];
   roles: Role[];
   forecastId: string;
   onEdit: () => void;
@@ -727,8 +765,7 @@ function ProjectCard({
           <AssignmentMatrix
             project={project}
             forecast={forecast}
-            teamMembers={teamMembers}
-            roles={roles}
+            fmoMembers={fmoMembers}
             forecastId={forecastId}
             onRefresh={onRefresh}
           />
@@ -754,7 +791,7 @@ function ProjectCard({
         <AddMemberModal
           project={project}
           forecast={forecast}
-          teamMembers={teamMembers}
+          fmoMembers={fmoMembers}
           roles={roles}
           onClose={() => setShowAddMember(false)}
           onAdd={async (memberId, isGhost, plannedHours) => {
@@ -797,9 +834,9 @@ function StatCard({ label, hours, fte, sub, accent }: {
   );
 }
 
-function PlanSummary({ forecast, teamMembers, roles }: {
+function PlanSummary({ forecast, fmoMembers, roles }: {
   forecast: Forecast;
-  teamMembers: TeamMember[];
+  fmoMembers: FmoMember[];
   roles: Role[];
 }) {
   if (forecast.projects.length === 0) return null;
@@ -860,11 +897,10 @@ function PlanSummary({ forecast, teamMembers, roles }: {
   const pctGap          = totalBudget > 0 ? Math.round((gap / totalBudget) * 100) : 0;
 
   const MemberRow = ({ memberId, stat, ghost }: { memberId: string; stat: MemberStat; ghost: boolean }) => {
-    const member = ghost
-      ? forecast.ghostMembers.find((g) => g.id === memberId)
-      : teamMembers.find((m) => m.id === memberId);
-    const name  = member?.name ?? 'Unknown';
-    const role  = getRoleName(member?.roleId ?? '');
+    const ghostMember = ghost ? forecast.ghostMembers.find((g) => g.id === memberId) : undefined;
+    const fmoMember   = !ghost ? fmoMembers.find((m) => m.id === memberId) : undefined;
+    const name = ghostMember?.name ?? fmoMember?.name ?? 'Unknown';
+    const role = ghost ? getRoleName(ghostMember?.roleId ?? '') : (fmoMember?.type === 'intern' ? 'Internal' : 'External');
     return (
       <tr className="border-b border-gray-50 last:border-0 hover:bg-gray-50/40 transition-colors">
         <td className="px-4 py-2.5 font-medium text-gray-800 text-sm">
@@ -1134,7 +1170,7 @@ function MemberForecastMatrix({
       <table className="text-sm min-w-full">
         <thead>
           <tr className="bg-gray-50/80 border-b border-gray-200 text-xs">
-            <th className="text-left px-4 py-2 font-medium text-gray-600 sticky left-0 bg-gray-50/80 min-w-[220px]">
+            <th className="text-left px-4 py-2 font-medium text-gray-600 sticky left-0 bg-gray-50 min-w-[220px]">
               Project <span className="font-normal text-gray-300 ml-1">— type h/mo + Enter to fill all</span>
             </th>
             {allMonths.map((m) => (
@@ -1255,7 +1291,7 @@ function MemberForecastMatrix({
           </tr>
           {monthlyAvailability > 0 && (
             <tr className="text-xs text-gray-400 bg-gray-50/40">
-              <td className="px-4 py-1.5 sticky left-0">Available / month</td>
+              <td className="px-4 py-1.5 sticky left-0 bg-gray-50/40">Available / month</td>
               {allMonths.map((m) => (
                 <td key={m} className="px-2 py-1.5 text-right">{monthlyAvailability}h</td>
               ))}
@@ -1269,10 +1305,10 @@ function MemberForecastMatrix({
 }
 
 function MemberCentricPlanView({
-  forecast, teamMembers, roles, forecastId, onRefresh,
+  forecast, fmoMembers, roles, forecastId, onRefresh,
 }: {
   forecast: Forecast;
-  teamMembers: TeamMember[];
+  fmoMembers: FmoMember[];
   roles: Role[];
   forecastId: string;
   onRefresh: () => void;
@@ -1288,15 +1324,15 @@ function MemberCentricPlanView({
     return map;
   }, [forecast.assignments]);
 
-  const realMembers  = teamMembers.filter((m) => byMember.has(m.id));
+  const realMembers  = fmoMembers.filter((m) => byMember.has(m.id));
   const ghostMembers = forecast.ghostMembers.filter((g) => byMember.has(g.id));
 
   const getRoleName = (roleId: string) => roles.find((r) => r.id === roleId)?.name ?? '—';
 
   function toggle(id: string) { setExpanded((prev) => ({ ...prev, [id]: !prev[id] })); }
 
-  function MemberRow({ id, name, roleId, monthlyAvailability, isGhost }: {
-    id: string; name: string; roleId: string; monthlyAvailability: number; isGhost: boolean;
+  function MemberRow({ id, name, roleLabel, monthlyAvailability, isGhost }: {
+    id: string; name: string; roleLabel: string; monthlyAvailability: number; isGhost: boolean;
   }) {
     const { assignments } = byMember.get(id)!;
     const isOpen = !!expanded[id];
@@ -1328,7 +1364,7 @@ function MemberCentricPlanView({
                 {assignments.length} project{assignments.length !== 1 ? 's' : ''}
               </span>
             </div>
-            <p className="text-xs text-gray-400 mt-0.5">{getRoleName(roleId)}</p>
+            <p className="text-xs text-gray-400 mt-0.5">{roleLabel}</p>
           </div>
           <div className="text-right text-xs shrink-0 ml-4 space-y-0.5">
             <p className={`font-semibold text-sm ${isGhost ? 'text-violet-600' : 'text-slate-600'}`}>{totalHours}h</p>
@@ -1360,10 +1396,10 @@ function MemberCentricPlanView({
       {realMembers.length > 0 && (
         <>
           {ghostMembers.length > 0 && (
-            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide px-1">Team Members</p>
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide px-1">FMO Members</p>
           )}
           {realMembers.map((m) => (
-            <MemberRow key={m.id} id={m.id} name={m.name} roleId={m.roleId} monthlyAvailability={m.monthlyAvailability} isGhost={false} />
+            <MemberRow key={m.id} id={m.id} name={m.name} roleLabel={m.type === 'intern' ? 'Internal' : 'External'} monthlyAvailability={m.monthlyCapacity ?? 160} isGhost={false} />
           ))}
         </>
       )}
@@ -1371,7 +1407,7 @@ function MemberCentricPlanView({
         <>
           <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide px-1 pt-1">Ghost Members</p>
           {ghostMembers.map((g) => (
-            <MemberRow key={g.id} id={g.id} name={g.name} roleId={g.roleId} monthlyAvailability={g.monthlyAvailability} isGhost={true} />
+            <MemberRow key={g.id} id={g.id} name={g.name} roleLabel={getRoleName(g.roleId)} monthlyAvailability={g.monthlyAvailability} isGhost={true} />
           ))}
         </>
       )}
@@ -1466,7 +1502,7 @@ function GhostMembersPanel({
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
-export default function ForecastClient({ forecast, teamMembers, roles, profiles }: Props) {
+export default function ForecastClient({ forecast, fmoMembers, roles, profiles, fmoProjects }: Props) {
   const router  = useRouter();
   const isAdmin = useRole() === 'admin';
   const confirm = useConfirm();
@@ -1591,7 +1627,7 @@ export default function ForecastClient({ forecast, teamMembers, roles, profiles 
                     key={p.id}
                     project={p}
                     forecast={forecast}
-                    teamMembers={teamMembers}
+                    fmoMembers={fmoMembers}
                     roles={roles}
                     forecastId={forecast.id}
                     onEdit={() => setEditingProject(p)}
@@ -1612,26 +1648,27 @@ export default function ForecastClient({ forecast, teamMembers, roles, profiles 
           {planView === 'member' && (
             <MemberCentricPlanView
               forecast={forecast}
-              teamMembers={teamMembers}
+              fmoMembers={fmoMembers}
               roles={roles}
               forecastId={forecast.id}
               onRefresh={refresh}
             />
           )}
 
-          <PlanSummary forecast={forecast} teamMembers={teamMembers} roles={roles} />
+          <PlanSummary forecast={forecast} fmoMembers={fmoMembers} roles={roles} />
         </div>
       )}
 
       {/* Charts Tab */}
       {tab === 'charts' && (
-        <ForecastCharts forecast={forecast} teamMembers={teamMembers} />
+        <ForecastCharts forecast={forecast} fmoMembers={fmoMembers} />
       )}
 
       {/* Modals */}
       {isAdmin && showAddProject && (
         <Modal title="Add Project" onClose={() => setShowAddProject(false)}>
           <ProjectForm
+            fmoProjects={fmoProjects}
             onSubmit={async (data) => {
               await createForecastProject(forecast.id, data);
               setShowAddProject(false);
@@ -1645,6 +1682,7 @@ export default function ForecastClient({ forecast, teamMembers, roles, profiles 
         <Modal title="Edit Project" onClose={() => setEditingProject(null)}>
           <ProjectForm
             initial={editingProject}
+            fmoProjects={fmoProjects}
             onSubmit={async (data) => {
               await updateForecastProject(forecast.id, editingProject.id, data);
               setEditingProject(null);

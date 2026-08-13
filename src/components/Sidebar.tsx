@@ -45,7 +45,6 @@ export default function Sidebar({
     {
       key: "forecast",
       items: [
-        { key: "planning", href: "/planning" },
         { key: "timesheets", href: "/timesheets" },
         { key: "projektAnalysis", href: "/projekt-analysis" },
       ],
@@ -70,7 +69,7 @@ export default function Sidebar({
         { key: "members",     href: "/fmo/members" },
         { key: "utilization", href: "/fmo/utilization" },
         { key: "projects",    href: "/fmo/projects" },
-        { key: "planning",    href: "/fmo/planning" },
+        { key: "planning",    href: "/planning" },
       ],
     },
   ];

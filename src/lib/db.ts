@@ -1,5 +1,6 @@
 import { Redis } from '@upstash/redis';
-import { AppData, Assignment, Project, Forecast, ElsapMirror, TimesheetStore, InvoicingStore, SubContractorStore, ProjektAnalysisProject, FmoStore, FmoMappingStore, FmoProject, FmoForecast } from './types';
+import { unstable_cache, revalidateTag } from 'next/cache';
+import { AppData, Assignment, Project, Forecast, ElsapMirror, TimesheetStore, InvoicingStore, SubContractorStore, ProjektAnalysisProject, FmoStore, FmoMappingStore, FmoProject } from './types';
 import { getMonthsBetween } from './utils';
 
 const redis = new Redis({
@@ -47,22 +48,27 @@ function migrateAssignments(raw: any[], projects: Project[]): Assignment[] {
   });
 }
 
-export async function readData(): Promise<AppData> {
-  const raw = await withRetry(() => redis.get<any>(DB_KEY));
-  if (!raw) return { ...EMPTY };
-  const projects: Project[] = raw.projects ?? [];
-  return {
-    roles: raw.roles ?? [],
-    profiles: raw.profiles ?? [],
-    teamMembers: raw.teamMembers ?? [],
-    projects,
-    assignments: migrateAssignments(raw.assignments ?? [], projects),
-    forecasts: (raw.forecasts ?? []) as Forecast[],
-  };
-}
+export const readData = unstable_cache(
+  async (): Promise<AppData> => {
+    const raw = await withRetry(() => redis.get<any>(DB_KEY));
+    if (!raw) return { ...EMPTY };
+    const projects: Project[] = raw.projects ?? [];
+    return {
+      roles: raw.roles ?? [],
+      profiles: raw.profiles ?? [],
+      teamMembers: raw.teamMembers ?? [],
+      projects,
+      assignments: migrateAssignments(raw.assignments ?? [], projects),
+      forecasts: (raw.forecasts ?? []) as Forecast[],
+    };
+  },
+  ['app-data'],
+  { tags: ['app-data'], revalidate: 300 }
+);
 
 export async function writeData(data: AppData): Promise<void> {
   await withRetry(() => redis.set(DB_KEY, data));
+  revalidateTag('app-data', 'default');
 }
 
 const EMPTY_ELSAP: ElsapMirror = {
@@ -72,36 +78,46 @@ const EMPTY_ELSAP: ElsapMirror = {
   importStats: { added: 0, updated: 0, skipped: 0 },
 };
 
-export async function readElsap(): Promise<ElsapMirror> {
-  const raw = await withRetry(() => redis.get<any>(ELSAP_KEY));
-  if (!raw) return { ...EMPTY_ELSAP };
-  return {
-    rows: raw.rows ?? [],
-    lastImport: raw.lastImport ?? '',
-    lastApply: raw.lastApply ?? '',
-    importStats: raw.importStats ?? { added: 0, updated: 0, skipped: 0 },
-  };
-}
+export const readElsap = unstable_cache(
+  async (): Promise<ElsapMirror> => {
+    const raw = await withRetry(() => redis.get<any>(ELSAP_KEY));
+    if (!raw) return { ...EMPTY_ELSAP };
+    return {
+      rows: raw.rows ?? [],
+      lastImport: raw.lastImport ?? '',
+      lastApply: raw.lastApply ?? '',
+      importStats: raw.importStats ?? { added: 0, updated: 0, skipped: 0 },
+    };
+  },
+  ['app-elsap'],
+  { tags: ['app-elsap'], revalidate: 300 }
+);
 
 export async function writeElsap(mirror: ElsapMirror): Promise<void> {
   await withRetry(() => redis.set(ELSAP_KEY, mirror));
+  revalidateTag('app-elsap', 'default');
 }
 
-export async function readTimesheets(): Promise<TimesheetStore> {
-  const raw = await withRetry(() => redis.get<any>(TIMESHEETS_KEY));
-  if (!raw) return { entries: [], lastUpload: '', sources: [], baselines: {}, billingRates: {}, costRates: {} };
-  return {
-    entries: raw.entries ?? [],
-    lastUpload: raw.lastUpload ?? '',
-    sources: raw.sources ?? [],
-    baselines: raw.baselines ?? {},
-    billingRates: raw.billingRates ?? {},
-    costRates: raw.costRates ?? {},
-  };
-}
+export const readTimesheets = unstable_cache(
+  async (): Promise<TimesheetStore> => {
+    const raw = await withRetry(() => redis.get<any>(TIMESHEETS_KEY));
+    if (!raw) return { entries: [], lastUpload: '', sources: [], baselines: {}, billingRates: {}, costRates: {} };
+    return {
+      entries: raw.entries ?? [],
+      lastUpload: raw.lastUpload ?? '',
+      sources: raw.sources ?? [],
+      baselines: raw.baselines ?? {},
+      billingRates: raw.billingRates ?? {},
+      costRates: raw.costRates ?? {},
+    };
+  },
+  ['app-timesheets'],
+  { tags: ['app-timesheets'], revalidate: 300 }
+);
 
 export async function writeTimesheets(store: TimesheetStore): Promise<void> {
   await withRetry(() => redis.set(TIMESHEETS_KEY, store));
+  revalidateTag('app-timesheets', 'default');
 }
 
 const EMPTY_INVOICING: InvoicingStore = {
@@ -111,59 +127,73 @@ const EMPTY_INVOICING: InvoicingStore = {
   invoices: [],
 };
 
-export async function readInvoicing(): Promise<InvoicingStore> {
-  const raw = await withRetry(() => redis.get<any>(INVOICING_KEY));
-  if (!raw) return { ...EMPTY_INVOICING };
-  // Only keep records that match the current InvoiceLineItem shape (role + invoicedHours required)
-  const invoices = (raw.invoices ?? [])
-    .filter((i: any) => typeof i.role === 'string' && typeof i.invoicedHours === 'number')
-    .map((i: any) => ({ ...i, members: i.members ?? [], poNumber: i.poNumber ?? '' }));
-  return {
-    defaultRates: raw.defaultRates ?? {},
-    rateOverrides: raw.rateOverrides ?? {},
-    roleOverrides: raw.roleOverrides ?? [],
-    invoices,
-  };
-}
+export const readInvoicing = unstable_cache(
+  async (): Promise<InvoicingStore> => {
+    const raw = await withRetry(() => redis.get<any>(INVOICING_KEY));
+    if (!raw) return { ...EMPTY_INVOICING };
+    const invoices = (raw.invoices ?? [])
+      .filter((i: any) => typeof i.role === 'string' && typeof i.invoicedHours === 'number')
+      .map((i: any) => ({ ...i, members: i.members ?? [], poNumber: i.poNumber ?? '' }));
+    return {
+      defaultRates: raw.defaultRates ?? {},
+      rateOverrides: raw.rateOverrides ?? {},
+      roleOverrides: raw.roleOverrides ?? [],
+      invoices,
+    };
+  },
+  ['app-invoicing'],
+  { tags: ['app-invoicing'], revalidate: 300 }
+);
 
 export async function writeInvoicing(store: InvoicingStore): Promise<void> {
   await withRetry(() => redis.set(INVOICING_KEY, store));
+  revalidateTag('app-invoicing', 'default');
 }
 
 const SUB_KEY = 'app:subcontractors';
 
-export async function readSubContractors(): Promise<SubContractorStore> {
-  const raw = await withRetry(() => redis.get<any>(SUB_KEY));
-  if (!raw) return { subContractors: [], invoices: [] };
-  return {
-    subContractors: raw.subContractors ?? [],
-    invoices: raw.invoices ?? [],
-  };
-}
+export const readSubContractors = unstable_cache(
+  async (): Promise<SubContractorStore> => {
+    const raw = await withRetry(() => redis.get<any>(SUB_KEY));
+    if (!raw) return { subContractors: [], invoices: [] };
+    return {
+      subContractors: raw.subContractors ?? [],
+      invoices: raw.invoices ?? [],
+    };
+  },
+  ['app-subs'],
+  { tags: ['app-subs'], revalidate: 300 }
+);
 
 export async function writeSubContractors(store: SubContractorStore): Promise<void> {
   await withRetry(() => redis.set(SUB_KEY, store));
+  revalidateTag('app-subs', 'default');
 }
 
 const PROJEKT_ANALYSIS_KEY = 'app:projekt-analysis';
 
-export async function readProjektAnalysis(): Promise<ProjektAnalysisProject[]> {
-  const raw = await withRetry(() => redis.get<any>(PROJEKT_ANALYSIS_KEY));
-  if (!raw) return [];
-  if (!Array.isArray(raw)) return [];
-  return raw.map((p: any) => ({
-    projectType: 'time-and-material',
-    contractHours: 0,
-    contractValue: 0,
-    changes: [],
-    members: [],
-    operationContracts: [],
-    ...p,
-  })) as ProjektAnalysisProject[];
-}
+export const readProjektAnalysis = unstable_cache(
+  async (): Promise<ProjektAnalysisProject[]> => {
+    const raw = await withRetry(() => redis.get<any>(PROJEKT_ANALYSIS_KEY));
+    if (!raw) return [];
+    if (!Array.isArray(raw)) return [];
+    return raw.map((p: any) => ({
+      projectType: 'time-and-material',
+      contractHours: 0,
+      contractValue: 0,
+      changes: [],
+      members: [],
+      operationContracts: [],
+      ...p,
+    })) as ProjektAnalysisProject[];
+  },
+  ['app-projekt-analysis'],
+  { tags: ['app-projekt-analysis'], revalidate: 300 }
+);
 
 export async function writeProjektAnalysis(projects: ProjektAnalysisProject[]): Promise<void> {
   await withRetry(() => redis.set(PROJEKT_ANALYSIS_KEY, projects));
+  revalidateTag('app-projekt-analysis', 'default');
 }
 
 // ─── FMO ─────────────────────────────────────────────────────────────────────
@@ -186,54 +216,60 @@ const EMPTY_FMO_MAPPINGS: FmoMappingStore = {
   subCategories: {},
 };
 
-export async function readFmoStore(): Promise<FmoStore> {
-  const raw = await withRetry(() => redis.get<any>(FMO_STORE_KEY));
-  if (!raw) return { ...EMPTY_FMO_STORE, importStats: { ...EMPTY_FMO_STORE.importStats } };
-  return {
-    entries: raw.entries ?? [],
-    lastUpload: raw.lastUpload ?? '',
-    sources: raw.sources ?? [],
-    importStats: raw.importStats ?? { ...EMPTY_FMO_STORE.importStats },
-  };
-}
+export const readFmoStore = unstable_cache(
+  async (): Promise<FmoStore> => {
+    const raw = await withRetry(() => redis.get<any>(FMO_STORE_KEY));
+    if (!raw) return { ...EMPTY_FMO_STORE, importStats: { ...EMPTY_FMO_STORE.importStats } };
+    return {
+      entries: raw.entries ?? [],
+      lastUpload: raw.lastUpload ?? '',
+      sources: raw.sources ?? [],
+      importStats: raw.importStats ?? { ...EMPTY_FMO_STORE.importStats },
+    };
+  },
+  ['fmo-store'],
+  { tags: ['fmo-store'], revalidate: 300 }
+);
 
 export async function writeFmoStore(store: FmoStore): Promise<void> {
   await withRetry(() => redis.set(FMO_STORE_KEY, store));
+  revalidateTag('fmo-store', 'default');
 }
 
-export async function readFmoMappings(): Promise<FmoMappingStore> {
-  const raw = await withRetry(() => redis.get<any>(FMO_MAPPING_KEY));
-  if (!raw) return { ...EMPTY_FMO_MAPPINGS };
-  return {
-    wbs: raw.wbs ?? {},
-    tickets: raw.tickets ?? {},
-    members: raw.members ?? {},
-    billingClasses: raw.billingClasses ?? {},
-    subCategories: raw.subCategories ?? {},
-  };
-}
+export const readFmoMappings = unstable_cache(
+  async (): Promise<FmoMappingStore> => {
+    const raw = await withRetry(() => redis.get<any>(FMO_MAPPING_KEY));
+    if (!raw) return { ...EMPTY_FMO_MAPPINGS };
+    return {
+      wbs: raw.wbs ?? {},
+      tickets: raw.tickets ?? {},
+      members: raw.members ?? {},
+      billingClasses: raw.billingClasses ?? {},
+      subCategories: raw.subCategories ?? {},
+    };
+  },
+  ['fmo-mappings'],
+  { tags: ['fmo-mappings'], revalidate: 300 }
+);
 
 export async function writeFmoMappings(mappings: FmoMappingStore): Promise<void> {
   await withRetry(() => redis.set(FMO_MAPPING_KEY, mappings));
+  revalidateTag('fmo-mappings', 'default');
 }
 
 const FMO_PROJECTS_KEY  = 'app:fmo:projects';
-const FMO_PLANNING_KEY  = 'app:fmo:planning';
 
-export async function readFmoProjects(): Promise<FmoProject[]> {
-  const raw = await withRetry(() => redis.get<FmoProject[]>(FMO_PROJECTS_KEY));
-  return raw ?? [];
-}
+export const readFmoProjects = unstable_cache(
+  async (): Promise<FmoProject[]> => {
+    const raw = await withRetry(() => redis.get<FmoProject[]>(FMO_PROJECTS_KEY));
+    return raw ?? [];
+  },
+  ['fmo-projects'],
+  { tags: ['fmo-projects'], revalidate: 300 }
+);
 
 export async function writeFmoProjects(projects: FmoProject[]): Promise<void> {
   await withRetry(() => redis.set(FMO_PROJECTS_KEY, projects));
+  revalidateTag('fmo-projects', 'default');
 }
 
-export async function readFmoForecasts(): Promise<FmoForecast[]> {
-  const raw = await withRetry(() => redis.get<FmoForecast[]>(FMO_PLANNING_KEY));
-  return raw ?? [];
-}
-
-export async function writeFmoForecasts(forecasts: FmoForecast[]): Promise<void> {
-  await withRetry(() => redis.set(FMO_PLANNING_KEY, forecasts));
-}

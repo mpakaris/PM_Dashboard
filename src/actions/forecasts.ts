@@ -48,6 +48,7 @@ export async function createForecastProject(
   f.projects.push({ ...project, id: generateId() });
   await writeData(data);
   revalidatePath('/planning', 'layout');
+  revalidatePath('/fmo/projects', 'layout');
 }
 
 export async function updateForecastProject(
@@ -66,6 +67,7 @@ export async function updateForecastProject(
   }
   await writeData(data);
   revalidatePath('/planning', 'layout');
+  revalidatePath('/fmo/projects', 'layout');
 }
 
 export async function deleteForecastProject(forecastId: string, projectId: string): Promise<void> {
