@@ -636,6 +636,262 @@ function WorkPackageCard({
   );
 }
 
+// ─── Gantt Chart ─────────────────────────────────────────────────────────────
+
+const ROW_H   = 32;   // px — height of each data row
+const LABEL_W = 192;  // px — fixed label column width
+
+function d2t(dateStr: string): number {
+  return new Date(dateStr + 'T00:00:00').getTime();
+}
+
+function ProjectGantt({ project }: { project: FmoProject }) {
+  const wps        = (project.workPackages  ?? []);
+  const milestones = [...(project.milestones ?? [])].sort((a, b) => a.date.localeCompare(b.date));
+
+  const datedWps    = wps.filter(wp => wp.startDate && wp.endDate);
+  const undatedWps  = wps.filter(wp => !wp.startDate || !wp.endDate);
+
+  if (datedWps.length === 0 && milestones.length === 0) return null;
+
+  // ── Time range ──────────────────────────────────────────────────────────────
+  const allDates: string[] = [
+    ...datedWps.flatMap(wp => [wp.startDate!, wp.endDate!]),
+    ...milestones.map(ms => ms.date),
+    ...(project.startDate ? [project.startDate] : []),
+    ...(project.endDate   ? [project.endDate]   : []),
+  ];
+
+  const rawMin = allDates.reduce((a, b) => a < b ? a : b);
+  const rawMax = allDates.reduce((a, b) => a > b ? a : b);
+
+  // Pad to full-month boundaries
+  const rangeStart = new Date(rawMin + 'T00:00:00');
+  rangeStart.setDate(1);
+  const rangeEnd = new Date(rawMax + 'T00:00:00');
+  rangeEnd.setMonth(rangeEnd.getMonth() + 1, 1); // first day of next month
+
+  const span = rangeEnd.getTime() - rangeStart.getTime();
+
+  function pct(dateStr: string): number {
+    return Math.max(0, Math.min(100, (d2t(dateStr) - rangeStart.getTime()) / span * 100));
+  }
+
+  // ── Month header ticks ───────────────────────────────────────────────────────
+  const months: { label: string; p: number }[] = [];
+  const cur = new Date(rangeStart);
+  while (cur < rangeEnd) {
+    months.push({
+      label: cur.toLocaleString('default', { month: 'short', year: '2-digit' }),
+      p: (cur.getTime() - rangeStart.getTime()) / span * 100,
+    });
+    cur.setMonth(cur.getMonth() + 1);
+  }
+
+  const today     = new Date().toISOString().slice(0, 10);
+  const todayPct  = pct(today);
+  const showToday = todayPct > 0 && todayPct < 100;
+
+  // ── Section heights ──────────────────────────────────────────────────────────
+  const HEADER_H   = 28;
+  const SECTION_H  = 24;
+
+  const wpSectionH   = datedWps.length > 0
+    ? SECTION_H + datedWps.length * ROW_H + (undatedWps.length > 0 ? undatedWps.length * 22 : 0)
+    : 0;
+  const msSectionH   = milestones.length > 0 ? SECTION_H + milestones.length * ROW_H : 0;
+  const totalBarH    = wpSectionH + (datedWps.length > 0 && milestones.length > 0 ? 8 : 0) + msSectionH;
+
+  return (
+    <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
+      <div className="px-5 py-3 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
+        <div>
+          <h3 className="text-sm font-semibold text-gray-800">Project Timeline</h3>
+          <p className="text-xs text-slate-400 mt-0.5">
+            {datedWps.length} work package{datedWps.length !== 1 ? 's' : ''} · {milestones.length} milestone{milestones.length !== 1 ? 's' : ''}
+            {showToday && <span className="ml-2 text-red-400">· red line = today</span>}
+          </p>
+        </div>
+      </div>
+
+      <div className="overflow-x-auto">
+        <div style={{ minWidth: 560 }} className="px-5 pb-5 pt-4">
+
+          {/* ── Month header ─────────────────────────────────────────── */}
+          <div className="flex" style={{ height: HEADER_H }}>
+            <div style={{ width: LABEL_W, minWidth: LABEL_W }} className="shrink-0" />
+            <div className="flex-1 relative">
+              {months.map(m => (
+                <div key={m.label} style={{ left: `${m.p}%` }}
+                  className="absolute top-0 flex flex-col items-start select-none pointer-events-none">
+                  <span className="text-[10px] text-slate-400 whitespace-nowrap pr-1">{m.label}</span>
+                  <div className="w-px h-2 bg-slate-200 mt-0.5" />
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* ── Chart body: labels + bars ────────────────────────────── */}
+          <div className="flex">
+            {/* Label column */}
+            <div style={{ width: LABEL_W, minWidth: LABEL_W }} className="shrink-0 pr-3">
+
+              {datedWps.length > 0 && (
+                <>
+                  <div style={{ height: SECTION_H }} className="flex items-end pb-1">
+                    <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide">Work Packages</span>
+                  </div>
+                  {datedWps.map(wp => {
+                    const completion = wp.notes.length > 0 ? wp.notes[wp.notes.length - 1].completion : 0;
+                    return (
+                      <div key={wp.id} style={{ height: ROW_H }} className="flex flex-col justify-center">
+                        <span className="text-xs text-slate-700 truncate leading-tight" title={wp.name}>{wp.name}</span>
+                        <span className="text-[10px] text-slate-400 leading-none">
+                          {wp.budgetHours > 0 ? `${wp.budgetHours}h` : ''}{completion > 0 ? ` · ${completion}%` : ''}
+                        </span>
+                      </div>
+                    );
+                  })}
+                  {undatedWps.map(wp => (
+                    <div key={wp.id} style={{ height: 22 }} className="flex items-center">
+                      <span className="text-[10px] text-slate-400 italic truncate" title={wp.name}>{wp.name} (no dates)</span>
+                    </div>
+                  ))}
+                </>
+              )}
+
+              {datedWps.length > 0 && milestones.length > 0 && <div style={{ height: 8 }} />}
+
+              {milestones.length > 0 && (
+                <>
+                  <div style={{ height: SECTION_H }} className="flex items-end pb-1">
+                    <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide">Milestones</span>
+                  </div>
+                  {milestones.map(ms => {
+                    const color = ms.status === 'reached' ? '#16a34a' : ms.status === 'delayed' ? '#dc2626' : '#64748b';
+                    return (
+                      <div key={ms.id} style={{ height: ROW_H }} className="flex flex-col justify-center">
+                        <span className="text-xs truncate leading-tight" style={{ color }} title={ms.name}>{ms.name}</span>
+                        <span className="text-[10px] text-slate-400 leading-none">{ms.date}</span>
+                      </div>
+                    );
+                  })}
+                </>
+              )}
+            </div>
+
+            {/* Bar / marker column */}
+            <div className="flex-1 relative" style={{ height: totalBarH }}>
+
+              {/* Month grid lines */}
+              {months.slice(1).map(m => (
+                <div key={m.label} style={{ left: `${m.p}%` }}
+                  className="absolute inset-y-0 w-px bg-slate-100 pointer-events-none" />
+              ))}
+
+              {/* Today line */}
+              {showToday && (
+                <div style={{ left: `${todayPct}%`, opacity: 0.7 }}
+                  className="absolute inset-y-0 w-px bg-red-400 z-10 pointer-events-none" />
+              )}
+
+              {/* ── Work package bars ───────────────────────── */}
+              {datedWps.length > 0 && (() => {
+                let offsetY = SECTION_H;
+                return datedWps.map(wp => {
+                  const top   = offsetY;
+                  offsetY += ROW_H;
+                  const l    = pct(wp.startDate!);
+                  const r    = pct(wp.endDate!);
+                  const w    = Math.max(r - l, 0.5);
+                  const completion = wp.notes.length > 0 ? wp.notes[wp.notes.length - 1].completion : 0;
+                  return (
+                    <div key={wp.id}
+                      title={`${wp.name}\n${wp.startDate} → ${wp.endDate}${completion > 0 ? ` · ${completion}% done` : ''}`}
+                      style={{ position: 'absolute', top: top + 6, left: `${l}%`, width: `${w}%`, height: ROW_H - 12 }}
+                      className="rounded overflow-hidden border border-indigo-300 bg-indigo-50"
+                    >
+                      {completion > 0 && (
+                        <div style={{ width: `${completion}%` }}
+                          className="h-full bg-indigo-400 opacity-50" />
+                      )}
+                      {w > 4 && (
+                        <span className="absolute inset-0 flex items-center px-1.5 text-[10px] font-medium text-indigo-800 truncate">
+                          {completion > 0 ? `${completion}%` : ''}
+                        </span>
+                      )}
+                    </div>
+                  );
+                });
+              })()}
+
+              {/* ── Milestone markers ───────────────────────── */}
+              {milestones.length > 0 && (() => {
+                const msTop0 = (datedWps.length > 0 ? wpSectionH + 8 : 0) + SECTION_H;
+                return milestones.map((ms, i) => {
+                  const topCenter = msTop0 + i * ROW_H + ROW_H / 2;
+                  const l = pct(ms.date);
+                  const isPayment = ms.milestoneType === 'payment';
+                  const borderColor = ms.status === 'reached' ? '#16a34a' : ms.status === 'delayed' ? '#dc2626' : '#64748b';
+                  const bgColor     = isPayment
+                    ? (ms.status === 'reached' ? '#fef9c3' : '#fef3c7')
+                    : (ms.status === 'reached' ? '#dcfce7' : ms.status === 'delayed' ? '#fee2e2' : '#f1f5f9');
+                  const DIAMOND = 14;
+                  return (
+                    <div key={ms.id} title={`${ms.name} — ${ms.date} (${ms.status})`}
+                      style={{
+                        position: 'absolute',
+                        top: topCenter - DIAMOND / 2,
+                        left: `${l}%`,
+                        width: DIAMOND,
+                        height: DIAMOND,
+                        transform: 'translateX(-50%) rotate(45deg)',
+                        background: bgColor,
+                        border: `2px solid ${borderColor}`,
+                        borderRadius: 2,
+                        zIndex: 5,
+                      }}
+                    />
+                  );
+                });
+              })()}
+
+              {/* Today label at bottom */}
+              {showToday && (
+                <div style={{ position: 'absolute', bottom: -18, left: `${todayPct}%`, transform: 'translateX(-50%)' }}>
+                  <span className="text-[10px] text-red-400 whitespace-nowrap select-none">Today</span>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Legend */}
+          <div className="flex flex-wrap gap-4 mt-6 pt-3 border-t border-slate-100">
+            <span className="flex items-center gap-1.5 text-[10px] text-slate-400">
+              <span className="inline-block w-4 h-3 rounded border border-indigo-300 bg-indigo-50" /> Work package
+            </span>
+            <span className="flex items-center gap-1.5 text-[10px] text-slate-400">
+              <span className="inline-block w-4 h-3 rounded border border-indigo-300 bg-indigo-400 opacity-50" /> Completion fill
+            </span>
+            <span className="flex items-center gap-1.5 text-[10px] text-slate-400">
+              <span className="inline-block w-3 h-3 rotate-45 border-2 border-slate-500 bg-slate-100" /> Milestone
+            </span>
+            <span className="flex items-center gap-1.5 text-[10px] text-slate-400">
+              <span className="inline-block w-3 h-3 rotate-45 border-2 border-amber-400 bg-amber-100" /> Payment
+            </span>
+            <span className="flex items-center gap-1.5 text-[10px] text-slate-400">
+              <span className="inline-block w-px h-3 bg-green-600" /> Reached
+            </span>
+            <span className="flex items-center gap-1.5 text-[10px] text-slate-400">
+              <span className="inline-block w-px h-3 bg-red-500" /> Delayed
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Milestones Tab ───────────────────────────────────────────────────────────
 
 function MilestonesTab({
@@ -2619,6 +2875,7 @@ export default function ProjectDetailClient({
       {/* ── MILESTONES ── */}
       {activeTab === 'milestones' && (
         <div className="space-y-8">
+          <ProjectGantt project={project} />
           <MilestonesTab
             project={project}
             isAdmin={isAdmin}
