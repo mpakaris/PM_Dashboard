@@ -675,8 +675,8 @@ function ProjectGantt({ project }: { project: FmoProject }) {
   const datedWps   = wps.filter(wp => wp.startDate && wp.endDate);
   const undatedWps = wps.filter(wp => !wp.startDate || !wp.endDate);
 
-  const [wpOpen, setWpOpen] = useState(true);
-  const [msOpen, setMsOpen] = useState(true);
+  const [wpOpen, setWpOpen] = useState(false);
+  const [msOpen, setMsOpen] = useState(false);
 
   if (datedWps.length === 0 && milestones.length === 0) return null;
 
