@@ -936,7 +936,8 @@ function MilestonesTab({
   const router  = useRouter();
   const confirm = useConfirm();
   const toast   = useToast();
-  const [editingMs, setEditingMs] = useState<FmoProjectMilestone | null>(null);
+  const [editingMs, setEditingMs]     = useState<FmoProjectMilestone | null>(null);
+  const [msTableOpen, setMsTableOpen] = useState(false);
 
   const today  = new Date().toISOString().slice(0, 10);
   const sorted = [...(project.milestones ?? [])].sort((a, b) => a.date.localeCompare(b.date));
@@ -1076,13 +1077,29 @@ function MilestonesTab({
       {/* ── Milestone table ── */}
       {sorted.length > 0 && (
         <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
-          <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100 bg-slate-50">
-            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Milestones</p>
+          <div
+            className="flex items-center justify-between px-5 py-3 bg-slate-50 cursor-pointer select-none"
+            onClick={() => setMsTableOpen(o => !o)}
+          >
+            <div className="flex items-center gap-2">
+              <svg className={`w-4 h-4 text-slate-400 transition-transform ${msTableOpen ? '' : '-rotate-90'}`}
+                viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round">
+                <path d="m6 9 6 6 6-6" />
+              </svg>
+              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
+                Milestones ({sorted.length})
+              </span>
+            </div>
             {isAdmin && !showMilestoneForm && (
-              <button onClick={() => setShowMilestoneForm(true)} className="text-xs text-indigo-500 hover:text-indigo-700">+ Add</button>
+              <button
+                onClick={e => { e.stopPropagation(); setShowMilestoneForm(true); setMsTableOpen(true); }}
+                className="text-xs text-indigo-500 hover:text-indigo-700"
+              >
+                + Add
+              </button>
             )}
           </div>
-          <table className="w-full text-sm">
+          {msTableOpen && <table className="w-full text-sm">
             <thead className="text-xs text-slate-400 font-medium border-b border-slate-100 bg-slate-50/50">
               <tr>
                 <th className="px-5 py-2.5 text-left">Name</th>
@@ -1195,7 +1212,7 @@ function MilestonesTab({
                 );
               })}
             </tbody>
-          </table>
+          </table>}
         </div>
       )}
     </div>
