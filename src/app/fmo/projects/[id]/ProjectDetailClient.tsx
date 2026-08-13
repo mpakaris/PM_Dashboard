@@ -12,7 +12,7 @@ import {
 import { fmtH, fmtEur, type Locale } from '@/lib/i18n';
 import type {
   FmoProject, FmoEntry, FmoMember, FmoWbsEntry, FmoTicket,
-  WbsSubCategory,
+  WbsSubCategory, FmoOperationContract,
 } from '@/lib/types';
 import {
   updateFmoProject, updateProjectConfig, setProjectMemberRate,
@@ -33,17 +33,19 @@ const TOOLTIP_STYLE = {
 // ─── Ops Contract form ────────────────────────────────────────────────────────
 
 function OpsContractForm({
-  projectId, allTickets, onDone, onCancel,
+  projectId, allTickets, initialContract, onDone, onCancel,
 }: {
   projectId: string;
   allTickets: FmoTicket[];
+  initialContract?: FmoOperationContract;
   onDone: () => void;
   onCancel: () => void;
 }) {
-  const [name, setName]                   = useState('');
-  const [type, setType]                   = useState<'fixprice' | 'hourly'>('fixprice');
-  const [monthlyAmount, setMonthlyAmount] = useState('');
-  const [selected, setSelected]           = useState<number[]>([]);
+  const isEdit = !!initialContract;
+  const [name, setName]                   = useState(initialContract?.name ?? '');
+  const [type, setType]                   = useState<'fixprice' | 'hourly'>(initialContract?.type ?? 'fixprice');
+  const [monthlyAmount, setMonthlyAmount] = useState(String(initialContract?.defaultMonthlyAmount ?? ''));
+  const [selected, setSelected]           = useState<number[]>(initialContract?.ticketIds ?? []);
   const [query, setQuery]                 = useState('');
   const [saving, setSaving]               = useState(false);
 
@@ -55,9 +57,10 @@ function OpsContractForm({
     if (!name.trim()) return;
     setSaving(true);
     await upsertProjectOperationContract(projectId, {
+      ...(initialContract ?? {}),
       name: name.trim(), type, ticketIds: selected,
       defaultMonthlyAmount: type === 'fixprice' ? (parseFloat(monthlyAmount) || 0) : 0,
-      monthlyOverrides: {},
+      monthlyOverrides: initialContract?.monthlyOverrides ?? {},
     });
     setSaving(false);
     onDone();
@@ -65,6 +68,7 @@ function OpsContractForm({
 
   return (
     <div className="border border-indigo-100 rounded-lg p-4 bg-indigo-50/30 space-y-3">
+      <p className="text-xs font-semibold text-slate-600">{isEdit ? `Editing: ${initialContract!.name}` : 'New Operations Contract'}</p>
       <div className="grid grid-cols-2 gap-3">
         <div>
           <label className="block text-xs font-medium text-slate-500 mb-1">Contract Name</label>
@@ -114,7 +118,7 @@ function OpsContractForm({
         <button type="button" onClick={onCancel} className="text-sm text-slate-500 px-3 py-1.5">Cancel</button>
         <button type="button" onClick={save} disabled={saving || !name.trim()}
           className="bg-slate-800 text-white text-sm px-4 py-1.5 rounded hover:bg-slate-700 disabled:opacity-50">
-          {saving ? 'Adding…' : 'Add Contract'}
+          {saving ? 'Saving…' : isEdit ? 'Save Changes' : 'Add Contract'}
         </button>
       </div>
     </div>
@@ -147,7 +151,8 @@ export default function ProjectDetailClient({
   const [editingWbs, setEditingWbs]       = useState(false);
   const [selectedWbs, setSelectedWbs]     = useState<string[]>(project.wbsCodes);
   const [savingWbs, setSavingWbs]         = useState(false);
-  const [showOpsForm, setShowOpsForm]     = useState(false);
+  const [showOpsForm, setShowOpsForm]         = useState(false);
+  const [editingContract, setEditingContract] = useState<FmoOperationContract | null>(null);
 
   // ── Lookups ────────────────────────────────────────────────────────────────
 
@@ -905,27 +910,45 @@ export default function ProjectDetailClient({
                 onDone={() => { setShowOpsForm(false); router.refresh(); }}
                 onCancel={() => setShowOpsForm(false)} />
             )}
-            {(project.operationContracts ?? []).length === 0 && !showOpsForm && (
+            {(project.operationContracts ?? []).length === 0 && !showOpsForm && !editingContract && (
               <p className="text-sm text-slate-400">No operations contracts yet.</p>
             )}
             {(project.operationContracts ?? []).map(c => (
-              <div key={c.id} className="flex items-center gap-3 p-3 rounded-lg bg-slate-50 border border-slate-200">
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-slate-800">{c.name}</p>
-                  <p className="text-xs text-slate-500">
-                    {c.type === 'fixprice' ? `${fmtEur(c.defaultMonthlyAmount)}/mo flat` : 'Per hour billed'}
-                    {' · '}{c.ticketIds.length} ticket{c.ticketIds.length !== 1 ? 's' : ''}
-                  </p>
-                </div>
-                <span className={`text-xs px-2 py-0.5 rounded-full shrink-0 ${c.type === 'fixprice' ? 'bg-violet-50 text-violet-700' : 'bg-blue-50 text-blue-700'}`}>
-                  {c.type === 'fixprice' ? 'Pauschal' : 'Per Hour'}
-                </span>
-                {isAdmin && (
-                  <button onClick={async () => {
-                    if (!confirm(`Remove "${c.name}"?`)) return;
-                    await removeProjectOperationContract(project.id, c.id);
-                    router.refresh();
-                  }} className="text-gray-300 hover:text-red-400 shrink-0">×</button>
+              <div key={c.id} className="space-y-2">
+                {editingContract?.id === c.id ? (
+                  <OpsContractForm
+                    projectId={project.id}
+                    allTickets={Object.values(tickets)}
+                    initialContract={c}
+                    onDone={() => { setEditingContract(null); router.refresh(); }}
+                    onCancel={() => setEditingContract(null)}
+                  />
+                ) : (
+                  <div className="flex items-center gap-3 p-3 rounded-lg bg-slate-50 border border-slate-200">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-slate-800">{c.name}</p>
+                      <p className="text-xs text-slate-500">
+                        {c.type === 'fixprice' ? `${fmtEur(c.defaultMonthlyAmount)}/mo flat` : 'Per hour billed'}
+                        {' · '}{c.ticketIds.length} ticket{c.ticketIds.length !== 1 ? 's' : ''}
+                      </p>
+                    </div>
+                    <span className={`text-xs px-2 py-0.5 rounded-full shrink-0 ${c.type === 'fixprice' ? 'bg-violet-50 text-violet-700' : 'bg-blue-50 text-blue-700'}`}>
+                      {c.type === 'fixprice' ? 'Pauschal' : 'Per Hour'}
+                    </span>
+                    {isAdmin && (
+                      <>
+                        <button onClick={() => { setShowOpsForm(false); setEditingContract(c); }}
+                          className="text-xs text-slate-400 hover:text-slate-700 border border-slate-200 rounded px-2 py-1 shrink-0">
+                          Edit
+                        </button>
+                        <button onClick={async () => {
+                          if (!confirm(`Remove "${c.name}"?`)) return;
+                          await removeProjectOperationContract(project.id, c.id);
+                          router.refresh();
+                        }} className="text-gray-300 hover:text-red-400 shrink-0">×</button>
+                      </>
+                    )}
+                  </div>
                 )}
               </div>
             ))}
