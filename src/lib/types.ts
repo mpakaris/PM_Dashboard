@@ -368,6 +368,8 @@ export interface FmoMappingStore {
 
 export type FmoProjectType = 'tm' | 'fixprice';
 
+export type FmoProjectCategory = 'client' | 'internal' | 'presales' | 'training' | 'portfolio';
+
 export interface FmoProjectMemberRate {
   billingRate: number; // €/h billed to client on this project
 }
@@ -379,6 +381,8 @@ export interface FmoOperationContract {
   ticketIds: number[];
   defaultMonthlyAmount: number; // for fixprice type
   monthlyOverrides: Record<string, number>; // "YYYY-MM" → override €
+  startDate?: string; // "YYYY-MM-DD" — flat fee applies from this month onward
+  endDate?: string;   // "YYYY-MM-DD" — flat fee stops after this month (optional)
 }
 
 export type FmoChangeStatus    = 'pending' | 'approved' | 'rejected';
@@ -444,6 +448,7 @@ export interface FmoProject {
   ticketIds: number[];
   excludedTicketIds: number[];
   createdAt: string;
+  projectCategory?: FmoProjectCategory; // 'client' if missing
   projectType: FmoProjectType;
   contractValue: number;
   contractHours: number;

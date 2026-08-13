@@ -223,10 +223,21 @@
     "title": "Projects",
     "newProject": "+ New Project",
     "noProjects": "No projects yet. Create one to group WBS codes and analyse your data.",
+    "searchPlaceholder": "Search by name, WBS code…",
+    "noSearchMatch": "No projects match \"{query}\".",
     "deleteConfirm": "Delete project \"{name}\"?",
     "type": {
       "tm": "Time & Material",
       "fixprice": "Fixed Price"
+    },
+    "category": {
+      "client": "Client",
+      "internal": "Internal",
+      "presales": "Pre-Sales",
+      "training": "Training",
+      "portfolio": "Portfolio",
+      "clientTm": "Client · Time & Material",
+      "clientFix": "Client · Fixed Price"
     },
     "financialsGrid": {
       "development": "Development",

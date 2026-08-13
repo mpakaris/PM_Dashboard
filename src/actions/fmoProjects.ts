@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { readFmoProjects, writeFmoProjects } from '@/lib/db';
 import {
-  FmoProject, FmoProjectType, FmoOperationContract,
+  FmoProject, FmoProjectType, FmoProjectCategory, FmoOperationContract,
   FmoProjectChange, FmoWorkPackage, FmoWorkPackageNote, FmoProjectMilestone,
   FmoAcceptanceCriterion,
 } from '@/lib/types';
@@ -70,7 +70,7 @@ export async function deleteFmoProject(id: string): Promise<{ ok: boolean }> {
 
 export async function updateProjectConfig(
   id: string,
-  config: { projectType: FmoProjectType; contractValue: number; contractHours: number }
+  config: { projectType: FmoProjectType; contractValue: number; contractHours: number; projectCategory?: FmoProjectCategory }
 ): Promise<{ ok: boolean }> {
   const projects = await readFmoProjects();
   const idx = projects.findIndex(p => p.id === id);

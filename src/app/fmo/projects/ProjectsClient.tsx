@@ -457,6 +457,18 @@ export default function ProjectsClient({
   const isAdmin = useRole() === 'admin';
   const [showForm, setShowForm]             = useState(false);
   const [editingProject, setEditingProject] = useState<FmoProject | null>(null);
+  const [query, setQuery]                   = useState('');
+  const [expanded, setExpanded]             = useState<Set<string>>(new Set());
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return projects;
+    return projects.filter(p =>
+      p.name.toLowerCase().includes(q) ||
+      (p.description ?? '').toLowerCase().includes(q) ||
+      p.wbsCodes.some(c => c.toLowerCase().includes(q))
+    );
+  }, [projects, query]);
 
   async function handleDelete(id: string, name: string) {
     if (!confirm(t('deleteConfirm', { name }))) return;
@@ -483,14 +495,46 @@ export default function ProjectsClient({
         )}
       </div>
 
+      {projects.length > 0 && (
+        <div className="relative max-w-sm">
+          <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+            <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
+          </svg>
+          <input
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+            placeholder={t('searchPlaceholder')}
+            className="w-full pl-8 pr-7 py-1.5 border border-slate-200 rounded-md text-sm focus:outline-none focus:border-slate-400"
+          />
+          {query && (
+            <button type="button" onClick={() => setQuery('')}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">×</button>
+          )}
+        </div>
+      )}
+
       {projects.length === 0 ? (
         <div className="bg-white rounded-lg border border-slate-200 px-6 py-12 text-center text-slate-400">
           {t('noProjects')}
         </div>
+      ) : filtered.length === 0 ? (
+        <div className="bg-white rounded-lg border border-slate-200 px-6 py-8 text-center text-slate-400 text-sm">
+          {t('noSearchMatch', { query })}
+        </div>
       ) : (
         <div className="space-y-3">
-          {projects.map(project => {
+          {filtered.map(project => {
             const fin = financials[project.id];
+            const isOpen = expanded.has(project.id);
+            const hasDetails = !!fin && (fin.total.cost > 0 || fin.total.revenue > 0);
+            function toggleExpand(e: React.MouseEvent) {
+              e.stopPropagation();
+              setExpanded(prev => {
+                const next = new Set(prev);
+                next.has(project.id) ? next.delete(project.id) : next.add(project.id);
+                return next;
+              });
+            }
             return (
               <div
                 key={project.id}
@@ -501,13 +545,22 @@ export default function ProjectsClient({
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <p className="text-base font-semibold text-slate-800">{project.name}</p>
-                      <span className={`text-xs font-medium px-2 py-0.5 rounded-full border ${
-                        (project.projectType ?? 'tm') === 'tm'
-                          ? 'bg-blue-50 border-blue-200 text-blue-700'
-                          : 'bg-violet-50 border-violet-200 text-violet-700'
-                      }`}>
-                        {(project.projectType ?? 'tm') === 'tm' ? t('type.tm') : t('type.fixprice')}
-                      </span>
+                      {(() => {
+                        const cat = project.projectCategory ?? 'client';
+                        const ptType = project.projectType ?? 'tm';
+                        const isClient = cat === 'client';
+                        const label = isClient
+                          ? (ptType === 'tm' ? t('category.clientTm') : t('category.clientFix'))
+                          : t(`category.${cat}` as Parameters<typeof t>[0]);
+                        const cls = isClient
+                          ? (ptType === 'tm' ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-violet-50 border-violet-200 text-violet-700')
+                          : 'bg-slate-100 border-slate-200 text-slate-600';
+                        return (
+                          <span className={`text-xs font-medium px-2 py-0.5 rounded-full border ${cls}`}>
+                            {label}
+                          </span>
+                        );
+                      })()}
                     </div>
                     {project.description && (
                       <p className="text-sm text-slate-500 mt-0.5">{project.description}</p>
@@ -542,15 +595,34 @@ export default function ProjectsClient({
                     {isAdmin && (
                       <button
                         onClick={e => { e.stopPropagation(); handleDelete(project.id, project.name); }}
-                        className="text-xs text-gray-300 hover:text-red-400 transition-colors"
+                        className="p-1.5 rounded text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors"
+                        title="Delete project"
                       >
-                        ×
+                        <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                          <polyline points="3 6 5 6 21 6" />
+                          <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                          <path d="M10 11v6M14 11v6" />
+                          <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+                        </svg>
                       </button>
                     )}
                   </div>
                 </div>
 
-                {fin && <FinancialsGrid fin={fin} />}
+                {isOpen && fin && <FinancialsGrid fin={fin} />}
+
+                {hasDetails && (
+                  <button
+                    onClick={toggleExpand}
+                    className="mt-3 w-full flex items-center justify-center gap-1 text-xs text-slate-400 hover:text-slate-600 pt-2 border-t border-slate-100 transition-colors"
+                  >
+                    <svg className={`w-3.5 h-3.5 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}
+                      viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                      <path d="m6 9 6 6 6-6" />
+                    </svg>
+                    <span>{isOpen ? 'Hide details' : 'Show details'}</span>
+                  </button>
+                )}
               </div>
             );
           })}

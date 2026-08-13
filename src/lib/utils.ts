@@ -28,6 +28,15 @@ export function formatNumber(value: number): string {
 
 // Shared filtering logic: does an FMO entry belong to a project?
 // Import FmoEntry and FmoProject inline to avoid circular deps in this pure util.
+export function opsContractActiveInMonth(
+  c: { startDate?: string; endDate?: string },
+  month: string, // "YYYY-MM"
+): boolean {
+  if (c.startDate && month < c.startDate.slice(0, 7)) return false;
+  if (c.endDate   && month > c.endDate.slice(0, 7))   return false;
+  return true;
+}
+
 export function entryBelongsToProject(
   e: { wbsCode: string | null; ticketId: number | null },
   p: { wbsCodes: string[]; ticketIds?: number[]; excludedTicketIds?: number[] },

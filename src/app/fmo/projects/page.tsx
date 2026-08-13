@@ -1,6 +1,6 @@
 import { getFmoProjects } from '@/actions/fmoProjects';
 import { getFmoData } from '@/actions/fmo';
-import { entryBelongsToProject } from '@/lib/utils';
+import { entryBelongsToProject, opsContractActiveInMonth } from '@/lib/utils';
 import ProjectsClient from './ProjectsClient';
 
 export type ProjectFinancials = {
@@ -61,11 +61,12 @@ export default async function FmoProjectsPage() {
       }
     }
 
-    // Fixprice ops revenue = monthly flat fees across months with any project activity
+    // Fixprice ops revenue = monthly flat fees, only within each contract's active date range
     const months = [...new Set(projectEntries.map(e => e.month))];
     const fixOpsRevenue = months.reduce((sum, month) =>
-      sum + fixOpsContracts.reduce((cs, c) =>
-        cs + ((c.monthlyOverrides ?? {})[month] ?? c.defaultMonthlyAmount), 0), 0);
+      sum + fixOpsContracts.reduce((cs, c) => opsContractActiveInMonth(c, month)
+        ? cs + ((c.monthlyOverrides ?? {})[month] ?? c.defaultMonthlyAmount)
+        : cs, 0), 0);
 
     const opsRevenue = fixOpsRevenue + opsHourlyRevenue;
 

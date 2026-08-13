@@ -10,9 +10,10 @@ import {
   ComposedChart, Line, CartesianGrid, ReferenceLine,
 } from 'recharts';
 import { fmtH, fmtEur, type Locale } from '@/lib/i18n';
+import { opsContractActiveInMonth } from '@/lib/utils';
 import type {
   FmoProject, FmoEntry, FmoMember, FmoWbsEntry, FmoTicket,
-  WbsSubCategory, FmoOperationContract,
+  WbsSubCategory, FmoOperationContract, FmoProjectCategory,
   FmoProjectChange, FmoWorkPackage, FmoProjectMilestone,
   FmoChangeStatus, FmoMilestoneStatus, FmoMilestoneType,
   FmoWorkPackageTask, FmoAcceptanceCriterion,
@@ -51,6 +52,8 @@ function OpsContractForm({
   const [name, setName]                   = useState(initialContract?.name ?? '');
   const [type, setType]                   = useState<'fixprice' | 'hourly'>(initialContract?.type ?? 'fixprice');
   const [monthlyAmount, setMonthlyAmount] = useState(String(initialContract?.defaultMonthlyAmount ?? ''));
+  const [startDate, setStartDate]         = useState(initialContract?.startDate ?? '');
+  const [endDate, setEndDate]             = useState(initialContract?.endDate ?? '');
   const [selected, setSelected]           = useState<number[]>(initialContract?.ticketIds ?? []);
   const [query, setQuery]                 = useState('');
   const [saving, setSaving]               = useState(false);
@@ -67,6 +70,8 @@ function OpsContractForm({
       name: name.trim(), type, ticketIds: selected,
       defaultMonthlyAmount: type === 'fixprice' ? (parseFloat(monthlyAmount) || 0) : 0,
       monthlyOverrides: initialContract?.monthlyOverrides ?? {},
+      startDate: type === 'fixprice' && startDate ? startDate : undefined,
+      endDate:   type === 'fixprice' && endDate   ? endDate   : undefined,
     });
     setSaving(false);
     onDone();
@@ -97,10 +102,28 @@ function OpsContractForm({
         </div>
       </div>
       {type === 'fixprice' && (
-        <div>
-          <label className="block text-xs font-medium text-slate-500 mb-1">Monthly Amount (€)</label>
-          <input type="number" min="0" value={monthlyAmount} onChange={e => setMonthlyAmount(e.target.value)}
-            className="w-40 border border-slate-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400" />
+        <div className="space-y-3">
+          <div>
+            <label className="block text-xs font-medium text-slate-500 mb-1">Monthly Amount (€)</label>
+            <input type="number" min="0" value={monthlyAmount} onChange={e => setMonthlyAmount(e.target.value)}
+              className="w-40 border border-slate-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400" />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-slate-500 mb-1">
+                Flat Fee Start <span className="text-slate-400 font-normal">(first month the fee applies)</span>
+              </label>
+              <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)}
+                className="w-full border border-slate-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-500 mb-1">
+                Flat Fee End <span className="text-slate-400 font-normal">(optional — leave blank if ongoing)</span>
+              </label>
+              <input type="date" value={endDate} min={startDate} onChange={e => setEndDate(e.target.value)}
+                className="w-full border border-slate-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400" />
+            </div>
+          </div>
         </div>
       )}
       <div>
@@ -1112,6 +1135,7 @@ export default function ProjectDetailClient({
 
   const [activeTab, setActiveTab]         = useState<Tab>('overview');
   const [projType, setProjType]           = useState(project.projectType ?? 'tm');
+  const [projCategory, setProjCategory]   = useState<FmoProjectCategory>(project.projectCategory ?? 'client');
   const [contractValue, setContractValue] = useState(String(project.contractValue ?? 0));
   const [contractHours, setContractHours] = useState(String(project.contractHours ?? 0));
   const [savingConfig, setSavingConfig]   = useState(false);
@@ -1207,12 +1231,29 @@ export default function ProjectDetailClient({
     const months = [...new Set(dashboardEntries.map(e => e.month))];
     const opsRevenue = months.reduce((s, month) =>
       s + (project.operationContracts ?? []).filter(c => c.type === 'fixprice')
-        .reduce((cs, c) => cs + ((c.monthlyOverrides ?? {})[month] ?? c.defaultMonthlyAmount), 0), 0);
+        .reduce((cs, c) => opsContractActiveInMonth(c, month)
+          ? cs + ((c.monthlyOverrides ?? {})[month] ?? c.defaultMonthlyAmount)
+          : cs, 0), 0);
     revenue += opsRevenue;
     return { cost: Math.round(cost), revenue: Math.round(revenue), pl: Math.round(revenue - cost) };
   }, [memberSummary, dashboardEntries, project.operationContracts]);
 
   const marginAll = totalEconAll.revenue > 0 ? Math.round(totalEconAll.pl / totalEconAll.revenue * 100) : 0;
+
+  // ── Category-derived flags ────────────────────────────────────────────────
+
+  const isClientProject = projCategory === 'client';
+  const showBillingCols = isClientProject && projType === 'tm';
+
+  // Reset active tab when category/type changes make it unavailable
+  useEffect(() => {
+    const validTabs = new Set<Tab>([
+      'overview', 'team', 'tickets', 'trends', 'settings',
+      ...(isClientProject ? ['financials' as Tab] : []),
+      ...(isClientProject && projType === 'fixprice' ? ['milestones' as Tab] : []),
+    ]);
+    if (!validTabs.has(activeTab)) setActiveTab('overview');
+  }, [projCategory, projType, activeTab]);
 
   // ── Chart data (same period filter as KPIs) ───────────────────────────────
 
@@ -1303,7 +1344,9 @@ export default function ProjectDetailClient({
     }
     const fixOpsContracts = (project.operationContracts ?? []).filter(c => c.type === 'fixprice');
     for (const [month, row] of monthTotals)
-      row.opsRevenue = fixOpsContracts.reduce((s, c) => s + ((c.monthlyOverrides ?? {})[month] ?? c.defaultMonthlyAmount), 0);
+      row.opsRevenue = fixOpsContracts.reduce((s, c) => opsContractActiveInMonth(c, month)
+        ? s + ((c.monthlyOverrides ?? {})[month] ?? c.defaultMonthlyAmount)
+        : s, 0);
     const months = [...monthTotals.keys()].sort();
     let cumPl = 0;
     return months.map(month => {
@@ -1331,7 +1374,9 @@ export default function ProjectDetailClient({
       const ctEntries = dashboardEntries.filter(e => e.ticketId !== null && ctSet.has(e.ticketId));
       const hours    = ctEntries.reduce((s, e) => s + e.spentTime, 0);
       const cost     = ctEntries.reduce((s, e) => s + e.spentTime * (nameToMember[e.user]?.costRate ?? 0), 0);
-      const revenue  = months.reduce((s, m) => s + ((c.monthlyOverrides ?? {})[m] ?? c.defaultMonthlyAmount), 0);
+      const revenue  = months.reduce((s, m) => opsContractActiveInMonth(c, m)
+        ? s + ((c.monthlyOverrides ?? {})[m] ?? c.defaultMonthlyAmount)
+        : s, 0);
       const pl       = revenue - cost;
       const margin   = revenue > 0 ? Math.round(pl / revenue * 100) : null;
       const implied  = hours > 0 ? revenue / hours : 0;
@@ -1370,10 +1415,11 @@ export default function ProjectDetailClient({
       monthMap.set(e.month, row);
     }
 
-    // Fixprice ops revenue = monthly flat fees
+    // Fixprice ops revenue = monthly flat fees, only within each contract's active date range
     for (const [month, row] of monthMap) {
-      row.opsRev += fixOpsContracts.reduce((s, c) =>
-        s + ((c.monthlyOverrides ?? {})[month] ?? c.defaultMonthlyAmount), 0);
+      row.opsRev += fixOpsContracts.reduce((s, c) => opsContractActiveInMonth(c, month)
+        ? s + ((c.monthlyOverrides ?? {})[month] ?? c.defaultMonthlyAmount)
+        : s, 0);
     }
 
     const months = [...monthMap.keys()].sort();
@@ -1429,7 +1475,9 @@ export default function ProjectDetailClient({
 
     const months = [...new Set(dashboardEntries.map(e => e.month))];
     opsRev += months.reduce((s, month) =>
-      s + fixOpsContracts.reduce((cs, c) => cs + ((c.monthlyOverrides ?? {})[month] ?? c.defaultMonthlyAmount), 0), 0);
+      s + fixOpsContracts.reduce((cs, c) => opsContractActiveInMonth(c, month)
+        ? cs + ((c.monthlyOverrides ?? {})[month] ?? c.defaultMonthlyAmount)
+        : cs, 0), 0);
 
     const totalCost = devCost + adminCost + opsCost;
     const totalRev  = devRev + opsRev;
@@ -1476,8 +1524,8 @@ export default function ProjectDetailClient({
     { id: 'team',       label: 'Team' },
     { id: 'tickets',    label: 'Tickets' },
     { id: 'trends',     label: 'Trends' },
-    { id: 'financials', label: 'Financials' },
-    { id: 'milestones', label: 'Milestones' },
+    ...(isClientProject ? [{ id: 'financials' as Tab, label: 'Financials' }] : []),
+    ...(isClientProject && projType === 'fixprice' ? [{ id: 'milestones' as Tab, label: 'Milestones' }] : []),
     { id: 'settings',   label: 'Settings' },
   ];
 
@@ -1493,11 +1541,15 @@ export default function ProjectDetailClient({
           <span className="text-slate-300">/</span>
           <h1 className="text-2xl font-bold text-slate-900">{project.name}</h1>
           <span className={`text-xs font-medium px-2 py-0.5 rounded-full border ${
-            (project.projectType ?? 'tm') === 'tm'
-              ? 'bg-blue-50 border-blue-200 text-blue-700'
-              : 'bg-violet-50 border-violet-200 text-violet-700'
+            !isClientProject
+              ? 'bg-slate-100 border-slate-200 text-slate-600'
+              : projType === 'tm'
+                ? 'bg-blue-50 border-blue-200 text-blue-700'
+                : 'bg-violet-50 border-violet-200 text-violet-700'
           }`}>
-            {(project.projectType ?? 'tm') === 'tm' ? 'T&M' : 'Fixed Price'}
+            {!isClientProject
+              ? ({ internal: 'Internal', presales: 'Pre-Sales', training: 'Training', portfolio: 'Portfolio' } as Record<string, string>)[projCategory] ?? projCategory
+              : projType === 'tm' ? 'T&M' : 'Fixed Price'}
           </span>
         </div>
         {project.description && <p className="text-sm text-slate-500">{project.description}</p>}
@@ -1586,40 +1638,187 @@ export default function ProjectDetailClient({
         );
       })()}
 
-      {/* KPI cards — two rows */}
-      <div className="space-y-3">
-        {/* Row 1: hours */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          {[
-            { label: 'Total Hours',  value: fmtH(totalHours, locale) },
-            { label: 'Dev / T&M',    value: fmtH(devHoursAll, locale), sub: totalHours > 0 ? `${Math.round(devHoursAll / totalHours * 100)}%` : undefined },
-            { label: 'Operations',   value: fmtH(opsHoursAll, locale), sub: totalHours > 0 ? `${Math.round(opsHoursAll / totalHours * 100)}%` : undefined },
-            { label: 'Billable %',   value: totalHours > 0 ? `${Math.round(billableHours / totalHours * 100)}%` : '—', sub: `${memberSummary.length} members · ${ticketSummary.length} tickets` },
-          ].map(kpi => (
+      {/* KPI cards — layout depends on category + project type */}
+      {!isClientProject ? (
+        // ── Non-billable: Total Hours | Top Contributor | Total Cost ──────────
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          {(() => {
+            const topMember = memberSummary[0];
+            return [
+              {
+                label: 'Total Hours',
+                value: fmtH(totalHours, locale),
+                sub: `${memberSummary.length} members · ${ticketSummary.length} tickets`,
+                cls: 'text-slate-800',
+              },
+              {
+                label: 'Top Contributor',
+                value: topMember?.member.name ?? '—',
+                sub: topMember ? fmtH(topMember.hours, locale) : undefined,
+                cls: 'text-slate-800',
+              },
+              {
+                label: 'Total Cost',
+                value: hasCostRates && totalEconAll.cost > 0 ? fmtEur(totalEconAll.cost) : '—',
+                sub: !hasCostRates ? 'Set cost rates in member profiles' : undefined,
+                cls: 'text-red-600',
+              },
+            ];
+          })().map(kpi => (
             <div key={kpi.label} className="bg-white rounded-lg border border-slate-200 px-4 py-3">
               <p className="text-xs text-slate-400 mb-1">{kpi.label}</p>
-              <p className="text-xl font-bold text-slate-800">{kpi.value}</p>
+              <p className={`text-xl font-bold truncate ${kpi.cls}`}>{kpi.value}</p>
               {kpi.sub && <p className="text-xs text-slate-400">{kpi.sub}</p>}
             </div>
           ))}
         </div>
-        {/* Row 2: financials (only if any rates configured) */}
-        {(hasRates || hasCostRates) && (
+      ) : projType === 'fixprice' ? (
+        // ── Fixed Price: Contract Value vs Cost Hours ──────────────────────────
+        <div className="space-y-3">
+          {/* Row 1: Hours progress */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            {[
-              { label: 'Total Cost',    value: totalEconAll.cost    > 0 ? fmtEur(totalEconAll.cost)    : '—', cls: 'text-red-600' },
-              { label: 'Total Revenue', value: totalEconAll.revenue > 0 ? fmtEur(totalEconAll.revenue) : '—', cls: 'text-emerald-700' },
-              { label: 'Profit and Loss', value: totalEconAll.revenue > 0 ? fmtEur(totalEconAll.pl) : '—', cls: totalEconAll.pl >= 0 ? 'text-emerald-700' : 'text-red-500' },
-              { label: 'Margin',       value: totalEconAll.revenue > 0 ? `${marginAll}%`               : '—', cls: marginAll >= 0 ? 'text-emerald-700' : 'text-red-500' },
-            ].map(kpi => (
+            {(() => {
+              const approvedChanges    = (project.changes ?? []).filter(c => c.status === 'approved');
+              const changeHours        = approvedChanges.reduce((s, c) => s + c.budgetHours, 0);
+              const baseHours          = project.budgetHours ?? 0;
+              const remaining          = totalBudgetHours > 0 ? totalBudgetHours - totalHours : null;
+              const burnPct            = totalBudgetHours > 0 ? Math.round(totalHours / totalBudgetHours * 100) : null;
+              const overBudget         = remaining !== null && remaining < 0;
+
+              return [
+                {
+                  label: 'Hours Used',
+                  value: fmtH(totalHours, locale),
+                  sub: `${memberSummary.length} members · ${ticketSummary.length} tickets`,
+                  cls: 'text-slate-800',
+                },
+                {
+                  label: 'Budget Hours',
+                  value: totalBudgetHours > 0 ? fmtH(totalBudgetHours, locale) : '—',
+                  sub: approvedChanges.length > 0
+                    ? `${fmtH(baseHours, locale)} base + ${fmtH(changeHours, locale)} changes`
+                    : burnPct !== null ? `${burnPct}% used` : undefined,
+                  cls: 'text-slate-800',
+                },
+                {
+                  label: 'Hours Remaining',
+                  value: remaining !== null ? fmtH(Math.abs(remaining), locale) : '—',
+                  sub: overBudget ? 'over budget' : remaining !== null ? 'left' : undefined,
+                  cls: overBudget ? 'text-red-500' : 'text-slate-800',
+                },
+                {
+                  label: 'Budget Used',
+                  value: burnPct !== null ? `${burnPct}%` : '—',
+                  sub: burnPct !== null ? `${fmtH(totalHours, locale)} of ${fmtH(totalBudgetHours, locale)}` : undefined,
+                  cls: burnPct !== null && burnPct > 100 ? 'text-red-500' : burnPct !== null && burnPct >= 80 ? 'text-amber-600' : 'text-slate-800',
+                },
+              ];
+            })().map(kpi => (
               <div key={kpi.label} className="bg-white rounded-lg border border-slate-200 px-4 py-3">
                 <p className="text-xs text-slate-400 mb-1">{kpi.label}</p>
                 <p className={`text-xl font-bold ${kpi.cls}`}>{kpi.value}</p>
+                {kpi.sub && <p className="text-xs text-slate-400">{kpi.sub}</p>}
               </div>
             ))}
           </div>
-        )}
-      </div>
+          {/* Row 2: Contract value vs actual cost */}
+          {(hasCostRates || totalBudgetEur > 0) && (() => {
+            const baseEur       = project.budgetEur ?? 0;
+            const approvedChg   = (project.changes ?? []).filter(c => c.status === 'approved');
+            const pendingChg    = (project.changes ?? []).filter(c => c.status === 'pending');
+            const changeEur     = approvedChg.reduce((s, c) => s + c.budgetEur, 0);
+            const contractValue = totalBudgetEur; // base + approved
+            const actualCost    = totalEconAll.cost;
+            const netProfit     = contractValue > 0 ? contractValue - actualCost : null;
+            const margin        = contractValue > 0 && netProfit !== null
+              ? Math.round(netProfit / contractValue * 100) : null;
+
+            return (
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+
+                {/* Base contract */}
+                <div className="bg-white rounded-lg border border-slate-200 px-4 py-3">
+                  <p className="text-xs text-slate-400 mb-1">Base Contract</p>
+                  <p className="text-xl font-bold text-emerald-700">{baseEur > 0 ? fmtEur(baseEur) : '—'}</p>
+                </div>
+
+                {/* Change Orders — always visible so the relationship is clear */}
+                <div className={`rounded-lg border px-4 py-3 ${changeEur > 0 ? 'bg-indigo-50 border-indigo-200' : 'bg-white border-slate-200'}`}>
+                  <p className="text-xs text-slate-400 mb-1">Change Orders</p>
+                  <p className={`text-xl font-bold ${changeEur > 0 ? 'text-indigo-700' : 'text-slate-300'}`}>
+                    {changeEur > 0 ? `+${fmtEur(changeEur)}` : '—'}
+                  </p>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    {approvedChg.length > 0 && `${approvedChg.length} approved`}
+                    {approvedChg.length > 0 && pendingChg.length > 0 && ' · '}
+                    {pendingChg.length > 0 && `${pendingChg.length} pending`}
+                    {approvedChg.length === 0 && pendingChg.length === 0 && 'none yet'}
+                  </p>
+                </div>
+
+                {/* Cost so far */}
+                <div className="bg-white rounded-lg border border-slate-200 px-4 py-3">
+                  <p className="text-xs text-slate-400 mb-1">Cost so far</p>
+                  <p className="text-xl font-bold text-red-600">{actualCost > 0 ? fmtEur(actualCost) : '—'}</p>
+                </div>
+
+                {/* Net Profit */}
+                <div className={`rounded-lg border px-4 py-3 ${netProfit === null ? 'bg-white border-slate-200' : netProfit >= 0 ? 'bg-emerald-50/50 border-emerald-200' : 'bg-red-50/50 border-red-200'}`}>
+                  <p className="text-xs text-slate-400 mb-1">Net Profit</p>
+                  <p className={`text-xl font-bold ${netProfit === null ? 'text-slate-300' : netProfit >= 0 ? 'text-emerald-700' : 'text-red-500'}`}>
+                    {netProfit !== null ? `${netProfit >= 0 ? '+' : ''}${fmtEur(netProfit)}` : '—'}
+                  </p>
+                  {contractValue > 0 && (
+                    <p className="text-xs text-slate-400 mt-0.5">of {fmtEur(contractValue)}</p>
+                  )}
+                </div>
+
+                {/* Margin */}
+                <div className={`rounded-lg border px-4 py-3 ${margin === null ? 'bg-white border-slate-200' : margin >= 0 ? 'bg-emerald-50/50 border-emerald-200' : 'bg-red-50/50 border-red-200'}`}>
+                  <p className="text-xs text-slate-400 mb-1">Margin</p>
+                  <p className={`text-xl font-bold ${margin === null ? 'text-slate-300' : margin >= 0 ? 'text-emerald-700' : 'text-red-500'}`}>
+                    {margin !== null ? `${margin}%` : '—'}
+                  </p>
+                </div>
+
+              </div>
+            );
+          })()}
+        </div>
+      ) : (
+        // ── Time & Material: hours + per-member billing ────────────────────────
+        <div className="space-y-3">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {[
+              { label: 'Total Hours',   value: fmtH(totalHours, locale) },
+              { label: 'Development',   value: fmtH(devHoursAll, locale), sub: totalHours > 0 ? `${Math.round(devHoursAll / totalHours * 100)}%` : undefined },
+              { label: 'Operations',    value: fmtH(opsHoursAll, locale), sub: totalHours > 0 ? `${Math.round(opsHoursAll / totalHours * 100)}%` : undefined },
+              { label: 'Billable Share', value: totalHours > 0 ? `${Math.round(billableHours / totalHours * 100)}%` : '—', sub: `${memberSummary.length} members · ${ticketSummary.length} tickets` },
+            ].map(kpi => (
+              <div key={kpi.label} className="bg-white rounded-lg border border-slate-200 px-4 py-3">
+                <p className="text-xs text-slate-400 mb-1">{kpi.label}</p>
+                <p className="text-xl font-bold text-slate-800">{kpi.value}</p>
+                {kpi.sub && <p className="text-xs text-slate-400">{kpi.sub}</p>}
+              </div>
+            ))}
+          </div>
+          {(hasRates || hasCostRates) && (
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              {[
+                { label: 'Total Cost',      value: totalEconAll.cost    > 0 ? fmtEur(totalEconAll.cost)    : '—', cls: 'text-red-600' },
+                { label: 'Total Revenue',   value: totalEconAll.revenue > 0 ? fmtEur(totalEconAll.revenue) : '—', cls: 'text-emerald-700' },
+                { label: 'Profit and Loss', value: totalEconAll.revenue > 0 ? fmtEur(totalEconAll.pl)      : '—', cls: totalEconAll.pl >= 0 ? 'text-emerald-700' : 'text-red-500' },
+                { label: 'Margin',          value: totalEconAll.revenue > 0 ? `${marginAll}%`              : '—', cls: marginAll >= 0 ? 'text-emerald-700' : 'text-red-500' },
+              ].map(kpi => (
+                <div key={kpi.label} className="bg-white rounded-lg border border-slate-200 px-4 py-3">
+                  <p className="text-xs text-slate-400 mb-1">{kpi.label}</p>
+                  <p className={`text-xl font-bold ${kpi.cls}`}>{kpi.value}</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Tabs */}
       <div className="flex gap-1 border-b border-slate-200">
@@ -1636,7 +1835,7 @@ export default function ProjectDetailClient({
       {/* ── OVERVIEW ── */}
       {activeTab === 'overview' && (
         <div className="space-y-4">
-          {(project.operationContracts ?? []).length > 0 && (
+          {isClientProject && (project.operationContracts ?? []).length > 0 && (
             <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
               <div className="px-5 py-3 border-b border-slate-100 bg-slate-50">
                 <p className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Operations Contracts</p>
@@ -1669,11 +1868,12 @@ export default function ProjectDetailClient({
                   <th className="px-4 py-2 text-right">Dev h</th>
                   <th className="px-4 py-2 text-right">Ops h</th>
                   <th className="px-4 py-2 text-right">Total h</th>
-                  {hasRates && <th className="px-4 py-2 text-right">Revenue</th>}
+                  {!isClientProject && hasCostRates && <th className="px-4 py-2 text-right">Cost</th>}
+                  {isClientProject && hasRates && <th className="px-4 py-2 text-right">Revenue</th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
-                {memberSummary.map(({ member, tmHours, opsHours, hours, revenue }) => (
+                {memberSummary.map(({ member, tmHours, opsHours, hours, cost, revenue }) => (
                   <tr key={member.id} className="hover:bg-slate-50">
                     <td className="px-5 py-2">
                       <div className="flex items-center gap-2">
@@ -1684,7 +1884,8 @@ export default function ProjectDetailClient({
                     <td className="px-4 py-2 text-right text-slate-600">{tmHours > 0 ? fmtH(tmHours, locale) : '—'}</td>
                     <td className={`px-4 py-2 text-right ${opsHours > 0 ? 'text-violet-600 font-medium' : 'text-slate-400'}`}>{opsHours > 0 ? fmtH(opsHours, locale) : '—'}</td>
                     <td className="px-4 py-2 text-right font-medium text-slate-800">{fmtH(hours, locale)}</td>
-                    {hasRates && <td className="px-4 py-2 text-right text-slate-700">{revenue > 0 ? fmtEur(revenue) : '—'}</td>}
+                    {!isClientProject && hasCostRates && <td className="px-4 py-2 text-right text-red-600">{cost > 0 ? fmtEur(cost) : '—'}</td>}
+                    {isClientProject && hasRates && <td className="px-4 py-2 text-right text-slate-700">{revenue > 0 ? fmtEur(revenue) : '—'}</td>}
                   </tr>
                 ))}
               </tbody>
@@ -1696,7 +1897,7 @@ export default function ProjectDetailClient({
       {/* ── TEAM ── */}
       {activeTab === 'team' && (
         <div className="space-y-4">
-          {isAdmin && (
+          {isAdmin && showBillingCols && (
             <p className="text-xs text-slate-400">Set per-project billing rates below. Cost rates come from each member's profile.</p>
           )}
           <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
@@ -1704,13 +1905,13 @@ export default function ProjectDetailClient({
               <thead className="bg-slate-50 border-b border-slate-200 text-xs text-slate-500 font-medium">
                 <tr>
                   <th className="px-4 py-3 text-left">Member</th>
-                  <th className="px-4 py-3 text-right">Dev Hours</th>
-                  <th className="px-4 py-3 text-right">Ops Hours</th>
+                  <th className="px-4 py-3 text-right">Development Hours</th>
+                  <th className="px-4 py-3 text-right">Operations Hours</th>
                   <th className="px-4 py-3 text-right">Cost Rate</th>
-                  <th className="px-4 py-3 text-right">Billing Rate</th>
+                  {showBillingCols && <th className="px-4 py-3 text-right">Billing Rate</th>}
                   <th className="px-4 py-3 text-right">Total Cost (€)</th>
-                  <th className="px-4 py-3 text-right">T&M Revenue (€)</th>
-                  <th className="px-4 py-3 text-right">Margin</th>
+                  {showBillingCols && <th className="px-4 py-3 text-right">Time & Material Revenue (€)</th>}
+                  {showBillingCols && <th className="px-4 py-3 text-right">Margin</th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
@@ -1728,29 +1929,33 @@ export default function ProjectDetailClient({
                       <td className="px-4 py-2.5 text-right text-slate-700">{tmHours > 0 ? fmtH(tmHours, locale) : '—'}</td>
                       <td className={`px-4 py-2.5 text-right ${opsHours > 0 ? 'text-violet-600 font-medium' : 'text-slate-400'}`}>{opsHours > 0 ? fmtH(opsHours, locale) : '—'}</td>
                       <td className="px-4 py-2.5 text-right text-slate-500 text-xs">{member.costRate > 0 ? `${member.costRate} €/h` : '—'}</td>
-                      <td className="px-4 py-2.5 text-right">
-                        {isAdmin ? (
-                          <input type="number" min="0" step="0.5"
-                            defaultValue={billingRate || ''}
-                            placeholder="—"
-                            className="w-20 text-right border-0 border-b border-slate-200 bg-transparent text-sm focus:outline-none focus:border-indigo-400"
-                            onBlur={async e => {
-                              const val = parseFloat(e.target.value) || 0;
-                              await setProjectMemberRate(project.id, member.id, val);
-                              router.refresh();
-                            }}
-                          />
-                        ) : (
-                          <span className="text-slate-700 text-sm">{billingRate > 0 ? `${billingRate} €/h` : '—'}</span>
-                        )}
-                      </td>
+                      {showBillingCols && (
+                        <td className="px-4 py-2.5 text-right">
+                          {isAdmin ? (
+                            <input type="number" min="0" step="0.5"
+                              defaultValue={billingRate || ''}
+                              placeholder="—"
+                              className="w-20 text-right border-0 border-b border-slate-200 bg-transparent text-sm focus:outline-none focus:border-indigo-400"
+                              onBlur={async e => {
+                                const val = parseFloat(e.target.value) || 0;
+                                await setProjectMemberRate(project.id, member.id, val);
+                                router.refresh();
+                              }}
+                            />
+                          ) : (
+                            <span className="text-slate-700 text-sm">{billingRate > 0 ? `${billingRate} €/h` : '—'}</span>
+                          )}
+                        </td>
+                      )}
                       <td className="px-4 py-2.5 text-right text-slate-700">{cost > 0 ? fmtEur(cost) : '—'}</td>
-                      <td className="px-4 py-2.5 text-right text-slate-700">{revenue > 0 ? fmtEur(revenue) : '—'}</td>
-                      <td className={`px-4 py-2.5 text-right text-sm font-medium ${
-                        rowMargin !== null ? (rowMargin >= 0 ? 'text-emerald-600' : 'text-red-500') : 'text-slate-400'
-                      }`}>
-                        {rowMargin !== null ? `${rowMargin}%` : '—'}
-                      </td>
+                      {showBillingCols && <td className="px-4 py-2.5 text-right text-slate-700">{revenue > 0 ? fmtEur(revenue) : '—'}</td>}
+                      {showBillingCols && (
+                        <td className={`px-4 py-2.5 text-right text-sm font-medium ${
+                          rowMargin !== null ? (rowMargin >= 0 ? 'text-emerald-600' : 'text-red-500') : 'text-slate-400'
+                        }`}>
+                          {rowMargin !== null ? `${rowMargin}%` : '—'}
+                        </td>
+                      )}
                     </tr>
                   );
                 })}
@@ -1761,21 +1966,41 @@ export default function ProjectDetailClient({
                     <td className="px-4 py-2.5 text-slate-700">Total</td>
                     <td className="px-4 py-2.5 text-right text-slate-800">{fmtH(devHoursAll, locale)}</td>
                     <td className="px-4 py-2.5 text-right text-violet-600">{opsHoursAll > 0 ? fmtH(opsHoursAll, locale) : '—'}</td>
-                    <td colSpan={2} />
+                    <td colSpan={showBillingCols ? 2 : 1} />
                     <td className="px-4 py-2.5 text-right text-slate-800">{totalEconAll.cost > 0 ? fmtEur(totalEconAll.cost) : '—'}</td>
-                    <td className="px-4 py-2.5 text-right text-slate-800">{totalEconAll.revenue > 0 ? fmtEur(totalEconAll.revenue) : '—'}</td>
-                    <td className={`px-4 py-2.5 text-right ${totalEconAll.revenue > 0 ? (marginAll >= 0 ? 'text-emerald-600' : 'text-red-500') : 'text-slate-400'}`}>
-                      {totalEconAll.revenue > 0 ? `${marginAll}%` : '—'}
-                    </td>
+                    {showBillingCols && <td className="px-4 py-2.5 text-right text-slate-800">{totalEconAll.revenue > 0 ? fmtEur(totalEconAll.revenue) : '—'}</td>}
+                    {showBillingCols && (
+                      <td className={`px-4 py-2.5 text-right ${totalEconAll.revenue > 0 ? (marginAll >= 0 ? 'text-emerald-600' : 'text-red-500') : 'text-slate-400'}`}>
+                        {totalEconAll.revenue > 0 ? `${marginAll}%` : '—'}
+                      </td>
+                    )}
                   </tr>
                 </tfoot>
               )}
             </table>
           </div>
-          {!hasRates && (
-            <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-4 py-2">
-              No billing rates set — Revenue and Margin columns will show "—" until you enter a billing rate above.
-            </p>
+          {showBillingCols && devHoursAll > 0 && (!hasCostRates || !hasRates) && (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 space-y-1">
+              {!hasCostRates && !hasRates && (
+                <p className="text-xs text-amber-800 font-medium">
+                  No cost rates or billing rates configured for this project.
+                </p>
+              )}
+              {!hasCostRates && hasRates && (
+                <p className="text-xs text-amber-800 font-medium">
+                  Cost rates are missing — the Cost column shows "—".
+                </p>
+              )}
+              {hasCostRates && !hasRates && (
+                <p className="text-xs text-amber-800 font-medium">
+                  No billing rates set — Revenue and Margin show "—".
+                </p>
+              )}
+              <p className="text-xs text-amber-700">
+                {!hasCostRates && 'Set cost rates in each member\'s profile. '}
+                {!hasRates && 'Set per-project billing rates in the Billing Rate column above.'}
+              </p>
+            </div>
           )}
         </div>
       )}
@@ -2043,13 +2268,106 @@ export default function ProjectDetailClient({
             </div>
           )}
 
-          {/* KPI summary — column order: Revenue · Cost · Net Profit · Margin */}
+          {/* KPI summary — layout depends on project type */}
           {hasCostRates && (() => {
-            const cols   = hasOps ? 'grid-cols-3' : 'grid-cols-2';
-            const devNp  = threeWayTotals.dev.rev  - threeWayTotals.dev.cost;
-            const opsNp  = threeWayTotals.ops.rev  - threeWayTotals.ops.cost;
-            const totNp  = threeWayTotals.total.pl;
-            const allH   = threeWayTotals.dev.hours + threeWayTotals.admin.hours + threeWayTotals.ops.hours;
+            const allH = threeWayTotals.dev.hours + threeWayTotals.admin.hours + threeWayTotals.ops.hours;
+
+            if (projType === 'fixprice') {
+              // Fixed Price: Contract Value is the revenue, no per-hour billing
+              const approvedChanges = (project.changes ?? []).filter(c => c.status === 'approved');
+              const changeEur       = approvedChanges.reduce((s, c) => s + c.budgetEur, 0);
+              const baseEur         = project.budgetEur ?? 0;
+              const contractValue   = totalBudgetEur;
+              const totalCost       = threeWayTotals.total.cost;
+              const netProfit       = contractValue > 0 ? contractValue - totalCost : null;
+              const margin          = contractValue > 0 && netProfit !== null
+                ? Math.round(netProfit / contractValue * 100) : null;
+
+              return (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm border-separate border-spacing-y-1 min-w-[520px]">
+                    <thead>
+                      <tr>
+                        <th className="text-left text-xs font-medium text-slate-400 pb-1 pr-4 w-36" />
+                        <th className="text-right text-xs font-semibold text-indigo-700 pb-1 px-3">Development</th>
+                        {hasOps && <th className="text-right text-xs font-semibold text-violet-700 pb-1 px-3">Operations</th>}
+                        <th className="text-right text-xs font-semibold text-slate-700 pb-1 px-3">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {/* Contract Value (revenue) — spans all columns */}
+                      {contractValue > 0 && (
+                        <tr className="bg-emerald-50/40 rounded-lg">
+                          <td className="text-xs text-slate-500 font-medium py-2.5 pr-4 pl-3 rounded-l-lg">
+                            Contract Value
+                            {approvedChanges.length > 0 && (
+                              <span className="block text-slate-400 font-normal mt-0.5 text-[11px]">
+                                {fmtEur(baseEur)} + {fmtEur(changeEur)} changes
+                              </span>
+                            )}
+                          </td>
+                          <td colSpan={hasOps ? 2 : 1} />
+                          <td className="text-right font-bold text-emerald-700 py-2.5 px-3 rounded-r-lg">
+                            {fmtEur(contractValue)}
+                          </td>
+                        </tr>
+                      )}
+                      {/* Cost breakdown by area */}
+                      <tr className="bg-slate-50 rounded-lg">
+                        <td className="text-xs text-slate-500 font-medium py-2.5 pr-4 pl-3 rounded-l-lg">
+                          Cost
+                          <span className="block text-slate-400 font-normal mt-0.5">
+                            {allH > 0 ? fmtH(allH, locale) : ''}
+                          </span>
+                        </td>
+                        <td className="text-right font-semibold text-indigo-700 py-2.5 px-3">
+                          {threeWayTotals.dev.cost > 0 ? fmtEur(threeWayTotals.dev.cost) : '—'}
+                          {threeWayTotals.dev.hours > 0 && (
+                            <span className="block text-xs text-slate-400 font-normal">{fmtH(threeWayTotals.dev.hours, locale)}</span>
+                          )}
+                        </td>
+                        {hasOps && (
+                          <td className="text-right font-semibold text-violet-700 py-2.5 px-3">
+                            {threeWayTotals.ops.cost > 0 ? fmtEur(threeWayTotals.ops.cost) : '—'}
+                            {threeWayTotals.ops.hours > 0 && (
+                              <span className="block text-xs text-slate-400 font-normal">{fmtH(threeWayTotals.ops.hours, locale)}</span>
+                            )}
+                          </td>
+                        )}
+                        <td className="text-right font-bold text-slate-900 py-2.5 px-3 rounded-r-lg">
+                          {totalCost > 0 ? fmtEur(totalCost) : '—'}
+                        </td>
+                      </tr>
+                      {/* Net Profit — total only (contract value can't be split by area) */}
+                      {netProfit !== null && (
+                        <tr className={`rounded-lg ${netProfit >= 0 ? 'bg-emerald-50/40' : 'bg-red-50/40'}`}>
+                          <td className="text-xs text-slate-500 font-medium py-2.5 pr-4 pl-3 rounded-l-lg">Net Profit</td>
+                          <td colSpan={hasOps ? 2 : 1} />
+                          <td className={`text-right font-bold py-2.5 px-3 rounded-r-lg ${netProfit >= 0 ? 'text-emerald-700' : 'text-red-500'}`}>
+                            {`${netProfit >= 0 ? '+' : ''}${fmtEur(netProfit)}`}
+                          </td>
+                        </tr>
+                      )}
+                      {/* Margin — total only */}
+                      {margin !== null && (
+                        <tr className="bg-slate-50 rounded-lg">
+                          <td className="text-xs text-slate-500 font-medium py-2.5 pr-4 pl-3 rounded-l-lg">Margin</td>
+                          <td colSpan={hasOps ? 2 : 1} />
+                          <td className={`text-right font-bold text-base py-2.5 px-3 rounded-r-lg ${margin >= 0 ? 'text-emerald-700' : 'text-red-500'}`}>
+                            {`${margin}%`}
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              );
+            }
+
+            // Time & Material: per-hour billing, Dev/Ops breakdown
+            const devNp = threeWayTotals.dev.rev  - threeWayTotals.dev.cost;
+            const opsNp = threeWayTotals.ops.rev  - threeWayTotals.ops.cost;
+            const totNp = threeWayTotals.total.pl;
 
             return (
               <div className="overflow-x-auto">
@@ -2063,7 +2381,6 @@ export default function ProjectDetailClient({
                     </tr>
                   </thead>
                   <tbody>
-                    {/* Revenue */}
                     {hasRates && (
                       <tr className="bg-emerald-50/40 rounded-lg">
                         <td className="text-xs text-slate-500 font-medium py-2.5 pr-4 pl-3 rounded-l-lg">Revenue</td>
@@ -2080,8 +2397,6 @@ export default function ProjectDetailClient({
                         </td>
                       </tr>
                     )}
-
-                    {/* Cost */}
                     <tr className="bg-slate-50 rounded-lg">
                       <td className="text-xs text-slate-500 font-medium py-2.5 pr-4 pl-3 rounded-l-lg">
                         Cost
@@ -2107,8 +2422,6 @@ export default function ProjectDetailClient({
                         {threeWayTotals.total.cost > 0 ? fmtEur(threeWayTotals.total.cost) : '—'}
                       </td>
                     </tr>
-
-                    {/* Net Profit */}
                     {hasRates && (
                       <tr className={`rounded-lg ${totNp >= 0 ? 'bg-emerald-50/40' : 'bg-red-50/40'}`}>
                         <td className="text-xs text-slate-500 font-medium py-2.5 pr-4 pl-3 rounded-l-lg">Net Profit</td>
@@ -2122,8 +2435,6 @@ export default function ProjectDetailClient({
                         })}
                       </tr>
                     )}
-
-                    {/* Margin */}
                     {hasRates && (
                       <tr className="bg-slate-50 rounded-lg">
                         <td className="text-xs text-slate-500 font-medium py-2.5 pr-4 pl-3 rounded-l-lg">Margin</td>
@@ -2352,9 +2663,44 @@ export default function ProjectDetailClient({
       {activeTab === 'settings' && (
         <div className="space-y-6 max-w-2xl">
 
-          {/* Project Type */}
+          {/* Project Category */}
           <div className="bg-white rounded-lg border border-slate-200 p-5 space-y-4">
-            <h3 className="text-sm font-semibold text-gray-800">Project Type</h3>
+            <h3 className="text-sm font-semibold text-gray-800">Project Category</h3>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+              {([
+                ['client',    'Client',    'Billable client-facing project'],
+                ['internal',  'Internal',  'Internal or admin work, not billable'],
+                ['presales',  'Pre-Sales', 'Pre-sales activities, not billable'],
+                ['training',  'Training',  'Training and education, not billable'],
+                ['portfolio', 'Portfolio', 'Portfolio work, not billable'],
+              ] as const).map(([cat, label, desc]) => (
+                <button key={cat} type="button" onClick={() => isAdmin && setProjCategory(cat)} disabled={!isAdmin}
+                  className={`text-left px-4 py-3 rounded-lg border text-sm transition-colors ${
+                    projCategory === cat ? 'border-slate-700 bg-slate-50' : 'border-slate-200 hover:border-slate-400'
+                  } disabled:cursor-default`}>
+                  <span className="font-medium block text-slate-800">{label}</span>
+                  <span className="text-xs text-slate-400">{desc}</span>
+                </button>
+              ))}
+            </div>
+            {isAdmin && (
+              <button disabled={savingConfig} onClick={async () => {
+                setSavingConfig(true);
+                await updateProjectConfig(project.id, { projectCategory: projCategory, projectType: projType, contractValue: parseFloat(contractValue) || 0, contractHours: parseFloat(contractHours) || 0 });
+                setSavingConfig(false);
+                router.refresh();
+              }} className="px-4 py-2 bg-slate-800 text-white text-sm rounded hover:bg-slate-700 disabled:opacity-50">
+                {savingConfig ? 'Saving…' : 'Save'}
+              </button>
+            )}
+          </div>
+
+          {/* Billing Model + Operations (client projects only) */}
+          {isClientProject && (<>
+
+          {/* Billing Model */}
+          <div className="bg-white rounded-lg border border-slate-200 p-5 space-y-4">
+            <h3 className="text-sm font-semibold text-gray-800">Billing Model</h3>
             <div className="flex gap-2">
               {([
                 ['tm',       'Time & Material', 'Each hour billed at per-member billing rate'],
@@ -2386,7 +2732,7 @@ export default function ProjectDetailClient({
             {isAdmin && (
               <button disabled={savingConfig} onClick={async () => {
                 setSavingConfig(true);
-                await updateProjectConfig(project.id, { projectType: projType, contractValue: parseFloat(contractValue) || 0, contractHours: parseFloat(contractHours) || 0 });
+                await updateProjectConfig(project.id, { projectCategory: projCategory, projectType: projType, contractValue: parseFloat(contractValue) || 0, contractHours: parseFloat(contractHours) || 0 });
                 setSavingConfig(false);
                 router.refresh();
               }} className="px-4 py-2 bg-slate-800 text-white text-sm rounded hover:bg-slate-700 disabled:opacity-50">
@@ -2433,6 +2779,9 @@ export default function ProjectDetailClient({
                       <p className="text-sm font-medium text-slate-800">{c.name}</p>
                       <p className="text-xs text-slate-500">
                         {c.type === 'fixprice' ? `${fmtEur(c.defaultMonthlyAmount)}/mo flat` : 'Per hour billed'}
+                        {c.type === 'fixprice' && c.startDate && (
+                          <> · from {c.startDate.slice(0, 7)}{c.endDate ? ` – ${c.endDate.slice(0, 7)}` : ' (ongoing)'}</>
+                        )}
                         {' · '}{c.ticketIds.length} ticket{c.ticketIds.length !== 1 ? 's' : ''}
                       </p>
                     </div>
@@ -2594,6 +2943,8 @@ export default function ProjectDetailClient({
               )}
             </div>
           )}
+
+          </>)}
 
           {/* WBS Scope */}
           <div className="bg-white rounded-lg border border-slate-200 p-5 space-y-4">

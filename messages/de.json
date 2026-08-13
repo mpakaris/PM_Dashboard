@@ -223,10 +223,21 @@
     "title": "Projekte",
     "newProject": "+ Neues Projekt",
     "noProjects": "Noch keine Projekte. Erstellen Sie eines, um WBS-Codes zu gruppieren und Ihre Daten zu analysieren.",
+    "searchPlaceholder": "Nach Name, WBS-Code suchen…",
+    "noSearchMatch": "Keine Projekte für \"{query}\" gefunden.",
     "deleteConfirm": "Projekt \"{name}\" löschen?",
     "type": {
       "tm": "Zeit & Material",
       "fixprice": "Festpreis"
+    },
+    "category": {
+      "client": "Auftraggeber",
+      "internal": "Intern",
+      "presales": "Presales",
+      "training": "Training",
+      "portfolio": "Portfolio",
+      "clientTm": "Auftraggeber · Zeit & Material",
+      "clientFix": "Auftraggeber · Festpreis"
     },
     "financialsGrid": {
       "development": "Entwicklung",
