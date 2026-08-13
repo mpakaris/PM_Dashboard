@@ -24,13 +24,15 @@ type PresetKey = 'ytd' | '3m' | '6m' | '12m' | 'all';
 export function ChartTimeFilter({
   value,
   onChange,
+  defaultPreset = 'ytd',
 }: {
   value: TimeRange;
   defaultRange?: TimeRange; // kept for call-site compatibility
   onChange: (r: TimeRange) => void;
+  defaultPreset?: PresetKey;
 }) {
   const t = useTranslations('charts');
-  const [active, setActive] = useState<PresetKey | null>('ytd');
+  const [active, setActive] = useState<PresetKey | null>(defaultPreset);
 
   const PRESETS: { key: PresetKey; label: string; getRange: () => TimeRange }[] = [
     { key: 'ytd', label: t('thisYear'), getRange: currentYearRange },

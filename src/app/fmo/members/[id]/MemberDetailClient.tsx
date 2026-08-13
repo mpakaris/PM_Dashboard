@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, Fragment } from 'react';
 import Link from 'next/link';
 import { useTranslations, useLocale } from 'next-intl';
 import {
@@ -60,10 +60,12 @@ function PieLabel({ cx, cy, midAngle, outerRadius, name, percent }: any) {
 export default function MemberDetailClient({
   member,
   entries,
+  allEntries,
   subCategories,
 }: {
   member: FmoMember;
   entries: FmoEntry[];
+  allEntries: FmoEntry[];
   subCategories: Record<string, WbsSubCategory>;
 }) {
   const t = useTranslations('members');
@@ -73,6 +75,8 @@ export default function MemberDetailClient({
 
   const [activeTab, setActiveTab] = useState<Tab>('tickets');
   const [chartRange, setChartRange] = useState<TimeRange>(() => initChartRange(entries));
+  const [ticketRange, setTicketRange] = useState<TimeRange>({ from: '', to: '' });
+  const [expandedTickets, setExpandedTickets] = useState<Set<number | string>>(new Set());
   const [pieView, setPieView] = useState<'category' | 'ticket'>('category');
   const [type, setType]           = useState(member.type);
   const [company, setCompany]     = useState(member.partnerCompany);
@@ -105,16 +109,39 @@ export default function MemberDetailClient({
     [entries, chartRange],
   );
 
+  const ticketEntries = useMemo(
+    () => ticketRange.from
+      ? entries.filter(e => e.month >= ticketRange.from && e.month <= ticketRange.to)
+      : entries,
+    [entries, ticketRange],
+  );
+
+  const ticketMonthly = useMemo(() => {
+    const map = new Map<number | string, Map<string, number>>();
+    for (const e of ticketEntries) {
+      const key = e.ticketId ?? e.ticketName;
+      if (!map.has(key)) map.set(key, new Map());
+      const m = map.get(key)!;
+      m.set(e.month, (m.get(e.month) ?? 0) + e.spentTime);
+    }
+    return map;
+  }, [ticketEntries]);
+
+  const ticketTotalHours = useMemo(
+    () => ticketEntries.reduce((s, e) => s + e.spentTime, 0),
+    [ticketEntries],
+  );
+
   const ticketSummary = useMemo(() => {
     const map = new Map<number | string, { name: string; wbsCode: string | null; billingClass: string | null; subCategory: string | null; hours: number }>();
-    for (const e of entries) {
+    for (const e of ticketEntries) {
       const key = e.ticketId ?? e.ticketName;
       const ex = map.get(key);
       if (ex) { ex.hours += e.spentTime; }
       else map.set(key, { name: e.ticketName, wbsCode: e.wbsCode, billingClass: e.billingClass, subCategory: e.subCategory, hours: e.spentTime });
     }
     return [...map.entries()].map(([id, v]) => ({ id, ...v })).sort((a, b) => b.hours - a.hours);
-  }, [entries]);
+  }, [ticketEntries]);
 
   // 1. Hours by Category per Month
   const { chartData, categories } = useMemo(() => {
@@ -133,6 +160,9 @@ export default function MemberDetailClient({
       const row: Record<string, any> = { month: month.slice(0, 7) };
       const m = monthMap.get(month)!;
       for (const cat of cats) row[cat] = m.get(cat) ?? 0;
+      const billH = m.get('V') ?? 0;
+      const totalH = [...m.values()].reduce((s, h) => s + h, 0);
+      row['adminPct'] = totalH > 0 ? Math.round(((totalH - billH) / totalH) * 100) : null;
       return row;
     });
     return { chartData: data, categories: cats };
@@ -150,6 +180,51 @@ export default function MemberDetailClient({
       return { month: month.slice(0, 7), hours: h, avg3m: Math.round(avg * 10) / 10 };
     });
   }, [chartEntries]);
+
+  // 2b. Admin % vs team average per month
+  const teamAdminChart = useMemo(() => {
+    // members with >= 1h non-billable across all time
+    const nonBillMap = new Map<string, number>();
+    for (const e of allEntries) {
+      if (e.billingClass !== 'V') nonBillMap.set(e.user, (nonBillMap.get(e.user) ?? 0) + e.spentTime);
+    }
+    const qualified = new Set([...nonBillMap.entries()].filter(([, h]) => h >= 1).map(([u]) => u));
+
+    const ranged = (chartRange.from
+      ? allEntries.filter(e => e.month >= chartRange.from && e.month <= chartRange.to)
+      : allEntries
+    ).filter(e => qualified.has(e.user));
+
+    // build month → member → { bill, total }
+    const monthMap = new Map<string, Map<string, { bill: number; total: number }>>();
+    for (const e of ranged) {
+      if (!monthMap.has(e.month)) monthMap.set(e.month, new Map());
+      const mm = monthMap.get(e.month)!;
+      if (!mm.has(e.user)) mm.set(e.user, { bill: 0, total: 0 });
+      const u = mm.get(e.user)!;
+      u.total += e.spentTime;
+      if (e.billingClass === 'V') u.bill += e.spentTime;
+    }
+
+    const months = [...monthMap.keys()].sort();
+    let overallBill = 0, overallTotal = 0;
+    for (const e of ranged) { overallTotal += e.spentTime; if (e.billingClass === 'V') overallBill += e.spentTime; }
+    const globalAvg = overallTotal > 0 ? Math.round(((overallTotal - overallBill) / overallTotal) * 100) : null;
+
+    const rows = months.map(month => {
+      const mm = monthMap.get(month)!;
+      const pcts: number[] = [];
+      for (const [, { bill, total }] of mm) {
+        if (total > 0) pcts.push(((total - bill) / total) * 100);
+      }
+      const teamAvg = pcts.length > 0 ? Math.round(pcts.reduce((s, p) => s + p, 0) / pcts.length) : null;
+      const me = mm.get(member.name);
+      const memberPct = me && me.total > 0 ? Math.round(((me.total - me.bill) / me.total) * 100) : null;
+      return { month: month.slice(0, 7), teamAvg, memberPct };
+    });
+
+    return { rows, globalAvg, qualifiedCount: qualified.size };
+  }, [allEntries, chartRange, member.name]);
 
   // 3. Hours by Ticket per Month (stacked, top 8)
   const { ticketBarData, top8Keys, ticketHasOthers } = useMemo(() => {
@@ -240,12 +315,6 @@ export default function MemberDetailClient({
     return tUtil('unmapped');
   };
 
-  const dateRange = useMemo(() => {
-    if (!entries.length) return null;
-    const dates = entries.map(e => e.date).sort();
-    return { from: dates[0], to: dates[dates.length - 1] };
-  }, [entries]);
-
   const TABS: { id: Tab; label: string }[] = [
     { id: 'tickets', label: 'Tickets' },
     { id: 'charts',  label: 'Charts' },
@@ -296,7 +365,7 @@ export default function MemberDetailClient({
       {/* ── Tickets Tab ── */}
       {activeTab === 'tickets' && (
         <div className="space-y-3">
-          {dateRange && <p className="text-xs text-slate-400">{dateRange.from} → {dateRange.to}</p>}
+          <ChartTimeFilter value={ticketRange} onChange={setTicketRange} defaultPreset="all" />
           {entries.length === 0 ? (
             <p className="text-slate-400 text-sm">{t('noData')}</p>
           ) : (
@@ -309,40 +378,83 @@ export default function MemberDetailClient({
                     <th className="px-4 py-3 text-left">Category</th>
                     <th className="px-4 py-3 text-right">{t('totalHours')}</th>
                     <th className="px-4 py-3 text-right">%</th>
+                    <th className="px-4 py-3 w-8" />
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-50">
-                  {ticketSummary.map(tk => (
-                    <tr key={String(tk.id)} className="hover:bg-slate-50">
-                      <td className="px-4 py-2.5">
-                        <div className="flex items-center gap-2">
-                          {typeof tk.id === 'number' && (
-                            <Link href={`/fmo/tickets/${tk.id}`} className="font-mono text-xs text-indigo-600 hover:text-indigo-800 shrink-0">
-                              #{tk.id}
-                            </Link>
-                          )}
-                          <span className="text-slate-700 truncate max-w-xs" title={tk.name}>{tk.name}</span>
-                        </div>
-                      </td>
-                      <td className="px-4 py-2.5 font-mono text-xs text-slate-500">{tk.wbsCode ?? '—'}</td>
-                      <td className="px-4 py-2.5">
-                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium"
-                          style={{ background: getColor(tk.subCategory, tk.billingClass) + '22', color: getColor(tk.subCategory, tk.billingClass) }}>
-                          {getLabel(tk.subCategory, tk.billingClass)}
-                        </span>
-                      </td>
-                      <td className="px-4 py-2.5 text-right text-slate-700">{fmtH(tk.hours, locale)}</td>
-                      <td className="px-4 py-2.5 text-right text-slate-400 text-xs">
-                        {totalHours > 0 ? `${Math.round((tk.hours / totalHours) * 100)}%` : '—'}
-                      </td>
-                    </tr>
-                  ))}
+                  {ticketSummary.map(tk => {
+                    const isExpanded = expandedTickets.has(tk.id);
+                    const monthly = ticketMonthly.get(tk.id);
+                    return (
+                      <Fragment key={String(tk.id)}>
+                        <tr
+                          onClick={() => setExpandedTickets(prev => {
+                            const next = new Set(prev);
+                            if (next.has(tk.id)) next.delete(tk.id); else next.add(tk.id);
+                            return next;
+                          })}
+                          className="hover:bg-slate-50 cursor-pointer"
+                        >
+                          <td className="px-4 py-2.5">
+                            <div className="flex items-center gap-2">
+                              {typeof tk.id === 'number' && (
+                                <Link
+                                  href={`/fmo/tickets/${tk.id}`}
+                                  onClick={e => e.stopPropagation()}
+                                  className="font-mono text-xs text-indigo-600 hover:text-indigo-800 shrink-0"
+                                >
+                                  #{tk.id}
+                                </Link>
+                              )}
+                              <span className="text-slate-700 truncate max-w-xs" title={tk.name}>{tk.name}</span>
+                            </div>
+                          </td>
+                          <td className="px-4 py-2.5 font-mono text-xs text-slate-500">{tk.wbsCode ?? '—'}</td>
+                          <td className="px-4 py-2.5">
+                            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium"
+                              style={{ background: getColor(tk.subCategory, tk.billingClass) + '22', color: getColor(tk.subCategory, tk.billingClass) }}>
+                              {getLabel(tk.subCategory, tk.billingClass)}
+                            </span>
+                          </td>
+                          <td className="px-4 py-2.5 text-right text-slate-700">{fmtH(tk.hours, locale)}</td>
+                          <td className="px-4 py-2.5 text-right text-slate-400 text-xs">
+                            {ticketTotalHours > 0 ? `${Math.round((tk.hours / ticketTotalHours) * 100)}%` : '—'}
+                          </td>
+                          <td className="px-4 py-2.5 text-center text-slate-400">
+                            <svg className={`w-3.5 h-3.5 mx-auto transition-transform ${isExpanded ? 'rotate-180' : ''}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}>
+                              <path d="m6 9 6 6 6-6" />
+                            </svg>
+                          </td>
+                        </tr>
+                        {isExpanded && monthly && (() => {
+                          const bars = [...monthly.entries()]
+                            .sort(([a], [b]) => a.localeCompare(b))
+                            .map(([month, hours]) => ({ month: month.slice(0, 7), hours }));
+                          return (
+                            <tr className="bg-indigo-50/30">
+                              <td colSpan={6} className="px-6 py-4">
+                                <ResponsiveContainer width="100%" height={160}>
+                                  <BarChart data={bars} margin={{ top: 4, right: 8, left: 0, bottom: 4 }}>
+                                    <XAxis dataKey="month" tick={{ fontSize: 9 }} interval={0} angle={-35} textAnchor="end" height={36} />
+                                    <YAxis tick={{ fontSize: 9 }} tickFormatter={(v) => `${v}h`} width={32} />
+                                    <Tooltip {...TOOLTIP_STYLE} formatter={(v) => typeof v === 'number' ? fmtH(v, locale) : v} />
+                                    <Bar dataKey="hours" fill="#6366f1" radius={[3, 3, 0, 0]} opacity={0.85} />
+                                  </BarChart>
+                                </ResponsiveContainer>
+                              </td>
+                            </tr>
+                          );
+                        })()}
+                      </Fragment>
+                    );
+                  })}
                 </tbody>
                 <tfoot className="border-t-2 border-slate-200 bg-slate-50">
                   <tr>
                     <td colSpan={3} className="px-4 py-2.5 font-medium text-slate-700">{tCommon('total')}</td>
-                    <td className="px-4 py-2.5 text-right font-bold text-slate-800">{fmtH(totalHours, locale)}</td>
+                    <td className="px-4 py-2.5 text-right font-bold text-slate-800">{fmtH(ticketTotalHours, locale)}</td>
                     <td className="px-4 py-2.5 text-right text-slate-500 text-xs">100%</td>
+                    <td />
                   </tr>
                 </tfoot>
               </table>
@@ -356,23 +468,34 @@ export default function MemberDetailClient({
         <div className="space-y-6">
           <ChartTimeFilter value={chartRange} defaultRange={initChartRange(entries)} onChange={setChartRange} />
 
-          {/* 1. Hours by Category per Month */}
+          {/* 1. Hours by Category per Month + Admin % line */}
           <div className="bg-white rounded-lg border border-slate-200 p-4">
-            <h3 className="text-sm font-semibold text-gray-800 mb-4">{t('chartTitle')}</h3>
-            <ResponsiveContainer width="100%" height={260}>
-              <BarChart data={chartData} margin={{ top: 4, right: 8, left: 0, bottom: 8 }}>
+            <h3 className="text-sm font-semibold text-gray-800 mb-1">{t('chartTitle')}</h3>
+            <p className="text-xs text-gray-400 mb-4">Stacked hours (left) · Admin % of total per month (right, amber)</p>
+            <ResponsiveContainer width="100%" height={280}>
+              <ComposedChart data={chartData} margin={{ top: 4, right: 48, left: 0, bottom: 8 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                 <XAxis dataKey="month" tick={{ fontSize: 10 }} interval={0} angle={-35} textAnchor="end" height={48} />
-                <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `${v}h`} />
-                <Tooltip {...TOOLTIP_STYLE} formatter={(v) => typeof v === 'number' ? fmtH(v, locale) : v} />
+                <YAxis yAxisId="left" tick={{ fontSize: 11 }} tickFormatter={(v) => `${v}h`} />
+                <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10 }} tickFormatter={(v) => `${v}%`} domain={[0, 100]} width={36} />
+                <Tooltip
+                  {...TOOLTIP_STYLE}
+                  formatter={(v, name) =>
+                    name === 'Admin %'
+                      ? [`${v}%`, 'Admin %']
+                      : [typeof v === 'number' ? fmtH(v, locale) : v, name]
+                  }
+                />
                 <Legend wrapperStyle={{ fontSize: '12px' }} />
                 {categories.map(cat => (
-                  <Bar key={cat} dataKey={cat} stackId="a" opacity={0.9}
+                  <Bar key={cat} yAxisId="left" dataKey={cat} stackId="a" opacity={0.9}
                     fill={getColor(cat === 'V' ? null : cat, cat === 'V' ? 'V' : 'I')}
                     name={getLabel(cat === 'V' ? null : cat, cat === 'V' ? 'V' : 'I')}
                   />
                 ))}
-              </BarChart>
+                <Line yAxisId="right" type="monotone" dataKey="adminPct" stroke="#f59e0b" strokeWidth={2.5}
+                  dot={{ r: 3, fill: '#f59e0b' }} name="Admin %" connectNulls />
+              </ComposedChart>
             </ResponsiveContainer>
           </div>
 
@@ -401,6 +524,70 @@ export default function MemberDetailClient({
               </div>
             </div>
           )}
+
+          {/* 2b. Admin % — this member vs team average */}
+          {teamAdminChart.rows.length > 0 && (() => {
+            const { rows, globalAvg, qualifiedCount } = teamAdminChart;
+            const recentRows = rows
+              .filter(r => r.memberPct !== null && r.teamAvg !== null)
+              .slice(-6);
+            const position = recentRows.length > 0 ? (() => {
+              const deltas = recentRows.map(r => r.memberPct! - r.teamAvg!);
+              const avgDelta = deltas.reduce((s, d) => s + d, 0) / deltas.length;
+              const aboveCount = deltas.filter(d => d > 0).length;
+              return {
+                above: avgDelta > 0,
+                avgDelta: Math.round(avgDelta),
+                aboveCount,
+                total: recentRows.length,
+              };
+            })() : null;
+            return (
+              <div className="bg-white rounded-lg border border-slate-200 p-4">
+                <div className="flex items-start justify-between mb-1">
+                  <div>
+                    <h3 className="text-sm font-semibold text-gray-800">Admin % — You vs. Team Average</h3>
+                    <p className="text-xs text-gray-400 mt-0.5">
+                      Team average across {qualifiedCount} members with ≥1h non-billable
+                      {globalAvg !== null && <> · overall avg <span className="font-medium text-amber-600">{globalAvg}%</span></>}
+                    </p>
+                  </div>
+                  {position && (
+                    <div className="text-right shrink-0">
+                      <span className="text-xs font-medium px-2 py-1 rounded-full"
+                        style={{ background: (position.above ? '#ef4444' : '#22c55e') + '18', color: position.above ? '#ef4444' : '#22c55e' }}>
+                        {position.above ? 'trending above' : 'trending below'}
+                      </span>
+                      <p className="text-xs text-slate-400 mt-1">
+                        {position.aboveCount}/{position.total} months · avg {position.avgDelta > 0 ? '+' : ''}{position.avgDelta}%
+                      </p>
+                    </div>
+                  )}
+                </div>
+                <ResponsiveContainer width="100%" height={260}>
+                  <ComposedChart data={rows} margin={{ top: 8, right: 16, left: 0, bottom: 8 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                    <XAxis dataKey="month" tick={{ fontSize: 10 }} interval={0} angle={-35} textAnchor="end" height={48} />
+                    <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `${v}%`} domain={[0, 100]} />
+                    <Tooltip {...TOOLTIP_STYLE} formatter={(v, name) => [`${v}%`, name]} />
+                    <Legend wrapperStyle={{ fontSize: '12px' }} />
+                    <Bar dataKey="memberPct" name={member.name} fill="#6366f1" opacity={0.75} radius={[3, 3, 0, 0]}
+                      label={false} />
+                    <Line type="monotone" dataKey="teamAvg" name="Team avg" stroke="#f59e0b"
+                      strokeWidth={2} strokeDasharray="5 3" dot={{ r: 3, fill: '#f59e0b' }} connectNulls />
+                  </ComposedChart>
+                </ResponsiveContainer>
+                <div className="flex gap-5 mt-2">
+                  <span className="flex items-center gap-1.5 text-xs text-gray-500">
+                    <span className="w-2.5 h-2.5 rounded-sm bg-indigo-400 inline-block opacity-75" /> {member.name}
+                  </span>
+                  <span className="flex items-center gap-1.5 text-xs text-gray-500">
+                    <span className="w-5 border-t-2 border-dashed border-amber-500 inline-block" /> Team avg
+                  </span>
+                </div>
+              </div>
+            );
+          })()}
 
           {/* 3. Hours by Ticket per Month */}
           {ticketBarData.length > 0 && (

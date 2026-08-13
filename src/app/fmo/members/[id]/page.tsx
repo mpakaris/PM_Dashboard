@@ -8,5 +8,5 @@ export default async function MemberDetailPage({ params }: { params: Promise<{ i
   const member = mappings.members[id];
   if (!member) notFound();
   const memberEntries = store.entries.filter((e) => e.user === member.name);
-  return <MemberDetailClient member={member} entries={memberEntries} subCategories={mappings.subCategories ?? {}} />;
+  return <MemberDetailClient member={member} entries={memberEntries} allEntries={store.entries} subCategories={mappings.subCategories ?? {}} />;
 }
