@@ -1,10 +1,13 @@
 'use client';
 
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { Profile } from '@/lib/types';
 import { useRole } from '@/components/RoleProvider';
 import Modal from '@/components/Modal';
 import { createProfile, updateProfile, deleteProfile } from '@/actions/profiles';
+import { useToast } from '@/components/ToastProvider';
+import { useConfirm } from '@/components/ConfirmDialogProvider';
 
 interface Props {
   profiles: Profile[];
@@ -51,6 +54,9 @@ function ProfileForm({
 
 export default function ProfilesClient({ profiles }: Props) {
   const isAdmin = useRole() === 'admin';
+  const router  = useRouter();
+  const confirm = useConfirm();
+  const toast   = useToast();
   const [showCreate, setShowCreate] = useState(false);
   const [editProfile, setEditProfile] = useState<Profile | null>(null);
 
@@ -103,15 +109,18 @@ export default function ProfilesClient({ profiles }: Props) {
                         >
                           Edit
                         </button>
-                        <form action={async () => { await deleteProfile(profile.id); }}>
-                          <button
-                            type="submit"
-                            className="text-xs text-red-500 hover:text-red-700 font-medium"
-                            onClick={(e) => { if (!confirm('Delete this profile?')) e.preventDefault(); }}
-                          >
-                            Delete
-                          </button>
-                        </form>
+                        <button
+                          type="button"
+                          className="text-xs text-red-500 hover:text-red-700 font-medium"
+                          onClick={async () => {
+                            if (!await confirm('Delete this profile?', { destructive: true, confirmLabel: 'Delete' })) return;
+                            await deleteProfile(profile.id);
+                            router.refresh();
+                            toast.success('Profile deleted');
+                          }}
+                        >
+                          Delete
+                        </button>
                       </div>
                     </td>
                   )}

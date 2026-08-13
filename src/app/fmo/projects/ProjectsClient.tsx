@@ -6,6 +6,8 @@ import { useTranslations } from 'next-intl';
 import { useRole } from '@/components/RoleProvider';
 import { FmoProject, FmoWbsEntry, FmoTicket } from '@/lib/types';
 import { createFmoProject, updateFmoProject, deleteFmoProject } from '@/actions/fmoProjects';
+import { useToast } from '@/components/ToastProvider';
+import { useConfirm } from '@/components/ConfirmDialogProvider';
 import { fmtEur } from '@/lib/i18n';
 import type { ProjectFinancials } from './page';
 
@@ -455,6 +457,8 @@ export default function ProjectsClient({
   const tCommon = useTranslations('common');
   const router  = useRouter();
   const isAdmin = useRole() === 'admin';
+  const confirm = useConfirm();
+  const toast   = useToast();
   const [showForm, setShowForm]             = useState(false);
   const [editingProject, setEditingProject] = useState<FmoProject | null>(null);
   const [query, setQuery]                   = useState('');
@@ -471,9 +475,10 @@ export default function ProjectsClient({
   }, [projects, query]);
 
   async function handleDelete(id: string, name: string) {
-    if (!confirm(t('deleteConfirm', { name }))) return;
+    if (!await confirm(t('deleteConfirm', { name }), { destructive: true, confirmLabel: 'Delete' })) return;
     await deleteFmoProject(id);
     router.refresh();
+    toast.success(`"${name}" deleted`);
   }
 
   return (

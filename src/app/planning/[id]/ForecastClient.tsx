@@ -9,6 +9,8 @@ import {
 } from '@/lib/types';
 import { getMonthsBetween, formatMonth } from '@/lib/utils';
 import Modal from '@/components/Modal';
+import { useToast } from '@/components/ToastProvider';
+import { useConfirm } from '@/components/ConfirmDialogProvider';
 import ForecastCharts from './ForecastCharts';
 import ProjectOperationsSection from './ProjectOperationsSection';
 import {
@@ -1389,6 +1391,8 @@ function GhostMembersPanel({
   onRefresh: () => void;
 }) {
   const isAdmin = useRole() === 'admin';
+  const confirm = useConfirm();
+  const toast   = useToast();
   const [showAdd, setShowAdd] = useState(false);
   const [editing, setEditing] = useState<GhostMember | null>(null);
   const getRoleName = (roleId: string) => roles.find((r) => r.id === roleId)?.name ?? '—';
@@ -1423,9 +1427,10 @@ function GhostMembersPanel({
                 <div className="flex gap-1.5 ml-1">
                   <button onClick={() => setEditing(g)} className="text-violet-500 hover:text-violet-700">Edit</button>
                   <button onClick={async () => {
-                    if (!confirm(`Remove ghost member "${g.name}"?`)) return;
+                    if (!await confirm(`Remove ghost member "${g.name}"?`, { destructive: true, confirmLabel: 'Remove' })) return;
                     await deleteGhostMember(forecastId, g.id);
                     onRefresh();
+                    toast.success(`"${g.name}" removed`);
                   }} className="text-red-400 hover:text-red-600">✕</button>
                 </div>
               )}
@@ -1462,8 +1467,10 @@ function GhostMembersPanel({
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 export default function ForecastClient({ forecast, teamMembers, roles, profiles }: Props) {
-  const router = useRouter();
+  const router  = useRouter();
   const isAdmin = useRole() === 'admin';
+  const confirm = useConfirm();
+  const toast   = useToast();
   const [tab, setTab]           = useState<'plan' | 'charts'>('plan');
   const [planView, setPlanView] = useState<'project' | 'member'>('project');
   const [renaming, setRenaming] = useState(false);
@@ -1481,7 +1488,7 @@ export default function ForecastClient({ forecast, teamMembers, roles, profiles 
   }
 
   async function handleDeleteForecast() {
-    if (!confirm(`Delete forecast "${forecast.name}"? This cannot be undone.`)) return;
+    if (!await confirm(`Delete "${forecast.name}"?`, { body: 'This cannot be undone.', destructive: true, confirmLabel: 'Delete' })) return;
     await deleteForecast(forecast.id);
     router.push('/planning');
   }
@@ -1589,9 +1596,10 @@ export default function ForecastClient({ forecast, teamMembers, roles, profiles 
                     forecastId={forecast.id}
                     onEdit={() => setEditingProject(p)}
                     onDelete={async () => {
-                      if (!confirm(`Delete project "${p.name}"?`)) return;
+                      if (!await confirm(`Delete project "${p.name}"?`, { destructive: true, confirmLabel: 'Delete' })) return;
                       await deleteForecastProject(forecast.id, p.id);
                       refresh();
+                      toast.success(`"${p.name}" deleted`);
                     }}
                     onRefresh={refresh}
                   />

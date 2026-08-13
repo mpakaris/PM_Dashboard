@@ -11,6 +11,8 @@ import {
 } from 'recharts';
 import { fmtH, fmtEur, type Locale } from '@/lib/i18n';
 import { opsContractActiveInMonth } from '@/lib/utils';
+import { useToast } from '@/components/ToastProvider';
+import { useConfirm } from '@/components/ConfirmDialogProvider';
 import type {
   FmoProject, FmoEntry, FmoMember, FmoWbsEntry, FmoTicket,
   WbsSubCategory, FmoOperationContract, FmoProjectCategory,
@@ -338,7 +340,9 @@ function WorkPackageCard({
   entries: FmoEntry[];
   allTickets: FmoTicket[];
 }) {
-  const router = useRouter();
+  const router  = useRouter();
+  const confirm = useConfirm();
+  const toast   = useToast();
   const [showNote, setShowNote]             = useState(false);
   const [noteText, setNoteText]             = useState('');
   const [noteCompletion, setNoteCompletion] = useState(0);
@@ -463,9 +467,10 @@ function WorkPackageCard({
               Edit
             </button>
             <button onClick={async () => {
-              if (!confirm(`Delete "${wp.name}"?`)) return;
+              if (!await confirm(`Delete "${wp.name}"?`, { destructive: true, confirmLabel: 'Delete' })) return;
               await removeWorkPackage(projectId, wp.id);
               router.refresh();
+              toast.success(`"${wp.name}" deleted`);
             }} className="text-gray-300 hover:text-red-400 shrink-0">×</button>
           </>
         )}
@@ -642,7 +647,9 @@ function MilestonesTab({
   showMilestoneForm: boolean;
   setShowMilestoneForm: (v: boolean) => void;
 }) {
-  const router = useRouter();
+  const router  = useRouter();
+  const confirm = useConfirm();
+  const toast   = useToast();
   const [selectedId, setSelectedId]   = useState<string | null>(null);
   const [editingNotes, setEditingNotes] = useState('');
   const [savingNotes, setSavingNotes]   = useState(false);
@@ -951,10 +958,11 @@ function MilestonesTab({
               {isAdmin && (
                 <div className="border-t border-slate-100 pt-4">
                   <button onClick={async () => {
-                    if (!confirm(`Delete milestone "${selectedMs.name}"?`)) return;
+                    if (!await confirm(`Delete milestone "${selectedMs.name}"?`, { destructive: true, confirmLabel: 'Delete' })) return;
                     await removeMilestone(project.id, selectedMs.id);
                     setSelectedId(null);
                     router.refresh();
+                    toast.success(`Milestone deleted`);
                   }} className="text-xs text-red-400 hover:text-red-600 transition-colors">
                     Delete this milestone
                   </button>
@@ -1132,6 +1140,8 @@ export default function ProjectDetailClient({
   const router  = useRouter();
   const isAdmin = useRole() === 'admin';
   const locale  = useLocale() as Locale;
+  const confirm = useConfirm();
+  const toast   = useToast();
 
   const [activeTab, setActiveTab]         = useState<Tab>('overview');
   const [projType, setProjType]           = useState(project.projectType ?? 'tm');
@@ -2795,9 +2805,10 @@ export default function ProjectDetailClient({
                           Edit
                         </button>
                         <button onClick={async () => {
-                          if (!confirm(`Remove "${c.name}"?`)) return;
+                          if (!await confirm(`Remove "${c.name}"?`, { destructive: true, confirmLabel: 'Remove' })) return;
                           await removeProjectOperationContract(project.id, c.id);
                           router.refresh();
+                          toast.success(`"${c.name}" removed`);
                         }} className="text-gray-300 hover:text-red-400 shrink-0">×</button>
                       </>
                     )}
@@ -2929,7 +2940,7 @@ export default function ProjectDetailClient({
                         </td>
                         {isAdmin && (
                           <td className="px-4 py-2 text-center">
-                            <button onClick={async () => { if (!confirm(`Delete "${c.name}"?`)) return; await removeProjectChange(project.id, c.id); router.refresh(); }}
+                            <button onClick={async () => { if (!await confirm(`Delete "${c.name}"?`, { destructive: true, confirmLabel: 'Delete' })) return; await removeProjectChange(project.id, c.id); router.refresh(); toast.success(`"${c.name}" deleted`); }}
                               className="text-gray-300 hover:text-red-400">×</button>
                           </td>
                         )}

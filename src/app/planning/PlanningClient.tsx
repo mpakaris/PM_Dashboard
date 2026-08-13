@@ -4,6 +4,8 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Forecast } from '@/lib/types';
 import { createForecast, deleteForecast } from '@/actions/forecasts';
+import { useToast } from '@/components/ToastProvider';
+import { useConfirm } from '@/components/ConfirmDialogProvider';
 import { useRole } from '@/components/RoleProvider';
 
 interface Props {
@@ -11,8 +13,10 @@ interface Props {
 }
 
 export default function PlanningClient({ forecasts }: Props) {
-  const router = useRouter();
+  const router  = useRouter();
   const isAdmin = useRole() === 'admin';
+  const confirm = useConfirm();
+  const toast   = useToast();
   const [showCreate, setShowCreate] = useState(false);
   const [newName, setNewName] = useState('');
   const [creating, setCreating] = useState(false);
@@ -61,9 +65,10 @@ export default function PlanningClient({ forecasts }: Props) {
               forecast={f}
               isAdmin={isAdmin}
               onDelete={async () => {
-                if (!confirm(`Delete "${f.name}"? This cannot be undone.`)) return;
+                if (!await confirm(`Delete "${f.name}"?`, { body: 'This cannot be undone.', destructive: true, confirmLabel: 'Delete' })) return;
                 await deleteForecast(f.id);
                 router.refresh();
+                toast.success(`"${f.name}" deleted`);
               }}
             />
           ))}

@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react';
 import { useTranslations } from 'next-intl';
 import type { FmoWbsEntry, FmoTicket, FmoEntry, WbsSubCategory } from '@/lib/types';
+import { useToast } from '@/components/ToastProvider';
+import { useConfirm } from '@/components/ConfirmDialogProvider';
 import WbsTree from './WbsTree';
 import {
   addFmoWbs,
@@ -60,6 +62,8 @@ function WbsRow({
 }) {
   const t = useTranslations('common');
   const tWbs = useTranslations('wbs');
+  const confirm = useConfirm();
+  const toast   = useToast();
   const [editing, setEditing]   = useState(false);
   const [label, setLabel]       = useState(entry.label);
   const [saving, setSaving]     = useState(false);
@@ -74,8 +78,9 @@ function WbsRow({
   }
 
   async function remove() {
-    if (!confirm(`Delete WBS ${entry.code}?`)) return;
+    if (!await confirm(`Delete WBS ${entry.code}?`, { destructive: true, confirmLabel: 'Delete' })) return;
     await deleteFmoWbs(entry.code);
+    toast.success(`WBS ${entry.code} deleted`);
   }
 
   async function changeOverride(override: string) {
@@ -214,6 +219,7 @@ function SubCategoryPanel({
 }) {
   const t = useTranslations('common');
   const tWbs = useTranslations('wbs');
+  const toast = useToast();
   const [open, setOpen]       = useState(false);
   const [newSlug, setNewSlug] = useState('');
   const [newLabel, setNewLabel] = useState('');
@@ -239,7 +245,8 @@ function SubCategoryPanel({
 
   async function removeSub(slug: string) {
     const r = await deleteFmoSubCategory(slug);
-    if (!r.ok) alert(r.error);
+    if (!r.ok) toast.error(r.error ?? 'Failed to delete sub-category');
+    else toast.success('Sub-category deleted');
   }
 
   return (

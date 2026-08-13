@@ -1,0 +1,121 @@
+﻿Project,Task,Date,User,Activity,Comment,Spent time,WBS-Override,Task ID (Tasks)
+Identity & Access Management,#38683 - UNIQA PAM Deployment - Migration CZ,24/04/2026,Patrick Sigart,Work,"",3.00,V.05920030.64.81.01,38683
+Identity & Access Management,#38683 - UNIQA PAM Deployment - Migration CZ,23/04/2026,Patrick Sigart,Work,"",3.00,V.05920030.64.81.01,38683
+Identity & Access Management,#38683 - UNIQA PAM Deployment - Migration CZ,23/04/2026,Oliver Koller,Work,Documentation,1.00,V.05920030.64.81.01,38683
+Identity & Access Management,#38683 - UNIQA PAM Deployment - Migration CZ,23/04/2026,Oliver Koller,Work,Documentation,1.00,V.05920030.64.81.01,38683
+Identity & Access Management,#38683 - UNIQA PAM Deployment - Migration CZ,21/04/2026,Patrick Sigart,Work,"",2.00,V.05920030.64.81.01,38683
+Identity & Access Management,#38683 - UNIQA PAM Deployment - Migration CZ,21/04/2026,Oliver Koller,Work,Documentation,1.00,V.05920030.64.81.01,38683
+Identity & Access Management,#38683 - UNIQA PAM Deployment - Migration CZ,21/04/2026,Oliver Koller,Work,Documentation,1.00,V.05920030.64.81.01,38683
+Identity & Access Management,#38683 - UNIQA PAM Deployment - Migration CZ,20/04/2026,Patrick Sigart,Work,"",4.00,V.05920030.64.81.01,38683
+Identity & Access Management,#38161 - UNIQA PAM Deployment,20/04/2026,Patrick Sigart,Operations,"",1.00,V.05920030.64.81.01,38161
+Identity & Access Management,#38683 - UNIQA PAM Deployment - Migration CZ,16/04/2026,Lukas Grunwald,Operations,CZ Doku,1.00,V.05920030.64.81.01,38683
+Identity & Access Management,#38161 - UNIQA PAM Deployment,07/04/2026,Lukas Grunwald,Work,Setting up password rotation for windows accounts,1.50,V.05920030.64.81.01,38161
+Identity & Access Management,#38161 - UNIQA PAM Deployment,26/03/2026,Lukas Grunwald,Work,DTCSA-Uniqa/Delinea - CSM Check In Call,0.50,V.05920030.64.81.01,38161
+Identity & Access Management,#38161 - UNIQA PAM Deployment,16/03/2026,Lukas Grunwald,Work,Configuring Discovery & PW Rotation Delinea,2.50,V.05920030.64.81.01,38161
+Identity & Access Management,#38161 - UNIQA PAM Deployment,11/03/2026,Lukas Grunwald,Work,Configuring Discovery and Password Rotation Delinea,2.50,V.05920030.64.81.01,38161
+Identity & Access Management,#38161 - UNIQA PAM Deployment,06/03/2026,Lukas Grunwald,Work,MFA,2.00,V.05920030.64.81.01,38161
+Identity & Access Management,#38161 - UNIQA PAM Deployment,26/02/2026,Lukas Grunwald,Work,CSM and Azure AVD,1.50,V.05920030.64.81.01,38161
+Identity & Access Management,#38161 - UNIQA PAM Deployment,26/02/2026,Patrick Sigart,Operations,Azure AVD subscription - issue with RDP connection,1.00,V.05920030.64.81.01,38161
+Identity & Access Management,#38161 - UNIQA PAM Deployment,26/01/2026,Lukas Grunwald,Work,Erorr Handeling Connection,0.50,V.05920030.64.81.01,38161
+Identity & Access Management,#38161 - UNIQA PAM Deployment,23/01/2026,Lukas Grunwald,Work,Delinea PAM Troubleshooting,1.50,V.05920030.64.81.01,38161
+Identity & Access Management,#38161 - UNIQA PAM Deployment,22/01/2026,Lukas Grunwald,Work,Delinea PAM troubleshooting session + CSM,1.50,V.05920030.64.81.01,38161
+Identity & Access Management,#38161 - UNIQA PAM Deployment,16/01/2026,Patrick Sigart,Work,azure discovery,3.00,V.05920030.64.81.01,38161
+Identity & Access Management,#38161 - UNIQA PAM Deployment,16/01/2026,Lukas Grunwald,Work,Configuring Azure discovery,2.50,V.05920030.64.81.01,38161
+Identity & Access Management,#38161 - UNIQA PAM Deployment,15/01/2026,Lukas Grunwald,Work,Troubleshooting WinSCP connection Delinea,0.50,V.05920030.64.81.01,38161
+Identity & Access Management,#38161 - UNIQA PAM Deployment,14/01/2026,Patrick Sigart,Work,troubleshooting,2.00,V.05920030.64.81.01,38161
+Identity & Access Management,#38161 - UNIQA PAM Deployment,14/01/2026,Lukas Grunwald,Work,Troubleshooting SSH file upload + Delinea PAM configuration+ WinSCP,2.25,V.05920030.64.81.01,38161
+Identity & Access Management,#38161 - UNIQA PAM Deployment,13/01/2026,Patrick Sigart,Work,PAM config,1.00,V.05920030.64.81.01,38161
+Identity & Access Management,#38161 - UNIQA PAM Deployment,13/01/2026,Lukas Grunwald,Work,Delinea PAM configuration + Troubleshooting Delinea PAM,1.25,V.05920030.64.81.01,38161
+Identity & Access Management,#38161 - UNIQA PAM Deployment,12/01/2026,Patrick Sigart,Work,Uniqa Config,1.00,V.05920030.64.81.01,38161
+Identity & Access Management,#38161 - UNIQA PAM Deployment,12/01/2026,Lukas Grunwald,Work,Delinea PAM configuration + Troubleshooting Delinea PAM,2.50,V.05920030.64.81.01,38161
+Identity & Access Management,#38161 - UNIQA PAM Deployment,09/01/2026,Lukas Grunwald,Work,PAM Configuration for Cloud kick-off,0.50,V.05920030.64.81.01,38161
+Identity & Access Management,#38161 - UNIQA PAM Deployment,10/12/2025,Lukas Grunwald,Operations,PAM Coordination Call,0.50,V.05920030.64.81.01,38161
+Identity & Access Management,#38683 - UNIQA PAM Deployment - Migration CZ,04/12/2025,Lukas Grunwald,Work,UNIQA CZ - Documentation Draft Meeting,0.50,V.05920030.64.81.01,38683
+Identity & Access Management,#38161 - UNIQA PAM Deployment,04/12/2025,Patrick Sigart,Work,uniqa,1.00,V.05920030.64.81.01,38161
+Identity & Access Management,#38683 - UNIQA PAM Deployment - Migration CZ,04/12/2025,Patrick Sigart,Work,deep dive cz,1.00,V.05920030.64.81.01,38683
+Identity & Access Management,#38161 - UNIQA PAM Deployment,03/12/2025,Patrick Sigart,Work,uniqa call,1.00,V.05920030.64.81.01,38161
+Identity & Access Management,#38161 - UNIQA PAM Deployment,03/12/2025,Lukas Grunwald,Operations,PAM Coordination Call,0.25,V.05920030.64.81.01,38161
+Identity & Access Management,#38683 - UNIQA PAM Deployment - Migration CZ,03/12/2025,Lukas Grunwald,Work,Proofreading user manual,0.50,V.05920030.64.81.01,38683
+Identity & Access Management,#38683 - UNIQA PAM Deployment - Migration CZ,03/12/2025,Patrick Sigart,Work,doku cz,4.00,V.05920030.64.81.01,38683
+Identity & Access Management,#38161 - UNIQA PAM Deployment,02/12/2025,Lukas Grunwald,Operations,Resiliant Secrets (onPrem),2.50,V.05920030.64.81.01,38161
+Identity & Access Management,#38683 - UNIQA PAM Deployment - Migration CZ,02/12/2025,Patrick Sigart,Work,doku cz,4.00,V.05920030.64.81.01,38683
+Identity & Access Management,#38161 - UNIQA PAM Deployment,02/12/2025,Patrick Sigart,Work,JF,0.50,V.05920030.64.81.01,38161
+Identity & Access Management,#38683 - UNIQA PAM Deployment - Migration CZ,01/12/2025,Patrick Sigart,Work,doku cz,4.00,V.05920030.64.81.01,38683
+Identity & Access Management,#38683 - UNIQA PAM Deployment - Migration CZ,28/11/2025,Patrick Sigart,Work,cz,4.00,V.05920030.64.81.01,38683
+Identity & Access Management,#38683 - UNIQA PAM Deployment - Migration CZ,27/11/2025,Patrick Sigart,Work,cz,4.00,V.05920030.64.81.01,38683
+Identity & Access Management,#38161 - UNIQA PAM Deployment,26/11/2025,Patrick Sigart,Work,UNIQA cooridnation call,0.50,V.05920030.64.81.01,38161
+Identity & Access Management,#38683 - UNIQA PAM Deployment - Migration CZ,26/11/2025,Lukas Grunwald,Work,Uniqa Doku - allignment,0.25,V.05920030.64.81.01,38683
+Identity & Access Management,#38683 - UNIQA PAM Deployment - Migration CZ,26/11/2025,Patrick Sigart,Work,cz,4.00,V.05920030.64.81.01,38683
+Identity & Access Management,#38161 - UNIQA PAM Deployment,25/11/2025,Patrick Sigart,Work,Internes PAM Jour Fixe,0.50,V.05920030.64.81.01,38161
+Identity & Access Management,#38683 - UNIQA PAM Deployment - Migration CZ,25/11/2025,Patrick Sigart,Work,cz,4.00,V.05920030.64.81.01,38683
+Identity & Access Management,#38161 - UNIQA PAM Deployment,24/11/2025,Lukas Grunwald,Operations,Resiliant Secrets staging,0.25,V.05920030.64.81.01,38161
+Identity & Access Management,#38683 - UNIQA PAM Deployment - Migration CZ,20/11/2025,Patrick Sigart,Work,Doku and WS,5.00,V.05920030.64.81.01,38683
+Identity & Access Management,#38161 - UNIQA PAM Deployment,19/11/2025,Thomas Koch,Work,PAM Coordination Call,0.50,V.05920030.64.81.01,38161
+Identity & Access Management,#38161 - UNIQA PAM Deployment,19/11/2025,Lukas Grunwald,Work,"UGSC PRA, Docu planing, PAM Coordination Call",3.00,V.05920030.64.81.01,38161
+Identity & Access Management,#38683 - UNIQA PAM Deployment - Migration CZ,19/11/2025,Patrick Sigart,Work,meetings,2.00,V.05920030.64.81.01,38683
+Identity & Access Management,#38683 - UNIQA PAM Deployment - Migration CZ,18/11/2025,Patrick Sigart,Work,WS and jf,3.00,V.05920030.64.81.01,38683
+Identity & Access Management,#38683 - UNIQA PAM Deployment - Migration CZ,17/11/2025,Patrick Sigart,Work,"",2.00,V.05920030.64.81.01,38683
+Identity & Access Management,#38161 - UNIQA PAM Deployment,14/11/2025,Lukas Grunwald,Work,PrivMan for UGSC,0.25,V.05920030.64.81.01,38161
+Identity & Access Management,#38683 - UNIQA PAM Deployment - Migration CZ,14/11/2025,Patrick Sigart,Work,Doku,3.00,V.05920030.64.81.01,38683
+Identity & Access Management,#38161 - UNIQA PAM Deployment,13/11/2025,Lukas Grunwald,Work,CZ Manual,0.50,V.05920030.64.81.01,38161
+Identity & Access Management,#38683 - UNIQA PAM Deployment - Migration CZ,13/11/2025,Patrick Sigart,Work,Doku and working session,4.00,V.05920030.64.81.01,38683
+Identity & Access Management,#38161 - UNIQA PAM Deployment,12/11/2025,Thomas Koch,Work,PAM Coordination Call,0.50,V.05920030.64.81.01,38161
+Identity & Access Management,#38161 - UNIQA PAM Deployment,12/11/2025,Lukas Grunwald,Work,PAM Coordination Call,1.00,V.05920030.64.81.01,38161
+Identity & Access Management,#38161 - UNIQA PAM Deployment,12/11/2025,Patrick Sigart,Operations,Coordination Call + Vorbereitung,1.00,V.05920030.64.81.01,38161
+Identity & Access Management,#38683 - UNIQA PAM Deployment - Migration CZ,12/11/2025,Patrick Sigart,Work,meetings,1.00,V.05920030.64.81.01,38683
+Identity & Access Management,#38161 - UNIQA PAM Deployment,11/11/2025,Lukas Grunwald,Work,JF,0.50,V.05920030.64.81.01,38161
+Identity & Access Management,#38683 - UNIQA PAM Deployment - Migration CZ,11/11/2025,Patrick Sigart,Work,working session and jf,4.00,V.05920030.64.81.01,38683
+Identity & Access Management,#38161 - UNIQA PAM Deployment,05/11/2025,Thomas Koch,Work,"estimation for UNIQA-SEE, coordination call",0.50,V.05920030.64.81.01,38161
+Identity & Access Management,#38161 - UNIQA PAM Deployment,05/11/2025,Lukas Grunwald,Work,PAM Coordination Call,1.00,V.05920030.64.81.01,38161
+Identity & Access Management,#38161 - UNIQA PAM Deployment,05/11/2025,Patrick Sigart,Work,Coordination Call + Vorbereitung,1.00,V.05920030.64.81.01,38161
+Identity & Access Management,#38161 - UNIQA PAM Deployment,04/11/2025,Lukas Grunwald,Work,Uniqa Poland SLA design,1.75,V.05920030.64.81.01,38161
+Identity & Access Management,#38683 - UNIQA PAM Deployment - Migration CZ,04/11/2025,Patrick Sigart,Work,"",2.50,V.05920030.64.81.01,38683
+Identity & Access Management,#38161 - UNIQA PAM Deployment,04/11/2025,Patrick Sigart,Work,Uniqa workins session,0.50,V.05920030.64.81.01,38161
+Identity & Access Management,#38683 - UNIQA PAM Deployment - Migration CZ,03/11/2025,Patrick Sigart,Work,"",2.50,V.05920030.64.81.01,38683
+Identity & Access Management,#38161 - UNIQA PAM Deployment,31/10/2025,Thomas Koch,Work,internal meeting / planning Migration SEE,0.50,V.05920030.64.81.01,38161
+Identity & Access Management,#38161 - UNIQA PAM Deployment,31/10/2025,Lukas Grunwald,Work,UGSC + SEE,2.25,V.05920030.64.81.01,38161
+Identity & Access Management,#38161 - UNIQA PAM Deployment,31/10/2025,Patrick Sigart,Work,"",0.50,V.05920030.64.81.01,38161
+Identity & Access Management,#38161 - UNIQA PAM Deployment,28/10/2025,Thomas Koch,Work,"preparation for ""[SEE] Group PAM - Planning Call"" & Planning Call, internal JF",2.00,V.05920030.64.81.01,38161
+Identity & Access Management,#38161 - UNIQA PAM Deployment,28/10/2025,Lukas Grunwald,Work,SEE + UGCS + JF,3.00,V.05920030.64.81.01,38161
+Identity & Access Management,#38161 - UNIQA PAM Deployment,28/10/2025,Patrick Sigart,Work,"",0.50,V.05920030.64.81.01,38161
+Identity & Access Management,#38161 - UNIQA PAM Deployment,27/10/2025,Thomas Koch,Work,"coordination call Koch- Maksuti, preparation for coordination call with SEE",1.00,V.05920030.64.81.01,38161
+Identity & Access Management,#38161 - UNIQA PAM Deployment,27/10/2025,Lukas Grunwald,Work,UGSC + Troubleshooting + Planing,2.25,V.05920030.64.81.01,38161
+Identity & Access Management,#38161 - UNIQA PAM Deployment,24/10/2025,Lukas Grunwald,Work,Azure Onboarding,2.00,V.05920030.64.81.01,38161
+Identity & Access Management,#38161 - UNIQA PAM Deployment,23/10/2025,Lukas Grunwald,Work,UGSC Migration + CSM,4.25,V.05920030.64.81.01,38161
+Identity & Access Management,#38161 - UNIQA PAM Deployment,22/10/2025,Lukas Grunwald,Work,JF,1.00,V.05920030.64.81.01,38161
+Identity & Access Management,#38161 - UNIQA PAM Deployment,21/10/2025,Lukas Grunwald,Work,Projekt JF + Uniqa UA,1.00,V.05920030.64.81.01,38161
+Identity & Access Management,#38161 - UNIQA PAM Deployment,17/10/2025,Lukas Grunwald,Work,Test Tanent Config,0.25,V.05920030.64.81.01,38161
+Identity & Access Management,#38161 - UNIQA PAM Deployment,15/10/2025,Thomas Koch,Work,PAM Coordination Call . coordination,1.00,V.05920030.64.81.01,38161
+Identity & Access Management,#38161 - UNIQA PAM Deployment,10/10/2025,Thomas Koch,Work,PAM - cloud onboarding alignment,0.50,V.05920030.64.81.01,38161
+Identity & Access Management,#38161 - UNIQA PAM Deployment,10/10/2025,Lukas Grunwald,Work,cloud onboarding alignment,0.50,V.05920030.64.81.01,38161
+Identity & Access Management,#38161 - UNIQA PAM Deployment,09/10/2025,Thomas Koch,Work,coordination & PO's,1.00,V.05920030.64.81.01,38161
+Identity & Access Management,#38161 - UNIQA PAM Deployment,08/10/2025,Thomas Koch,Work,PAM Coordination Call,1.00,V.05920030.64.81.01,38161
+Identity & Access Management,#38161 - UNIQA PAM Deployment,08/10/2025,Lukas Grunwald,Work,JF Uniqa- Telekom,1.00,V.05920030.64.81.01,38161
+Identity & Access Management,#38161 - UNIQA PAM Deployment,29/09/2025,Thomas Koch,Work,"internal coordination meeting, status Xcelerate package & BU onboarding",0.50,V.05920030.64.81.01,38161
+Identity & Access Management,#38161 - UNIQA PAM Deployment,29/09/2025,Lukas Grunwald,Work,Projekt JF and BU planing,2.00,V.05920030.64.81.01,38161
+Identity & Access Management,#38161 - UNIQA PAM Deployment,25/09/2025,Lukas Grunwald,Operations,CSM,0.50,V.05920030.64.81.01,38161
+Identity & Access Management,#38161 - UNIQA PAM Deployment,24/09/2025,Lukas Grunwald,Operations,Xcalerate Session,1.25,V.05920030.64.81.01,38161
+Identity & Access Management,#38161 - UNIQA PAM Deployment,23/09/2025,Lukas Grunwald,Operations,Meeting: Uniqa CZ Migration,1.00,V.05920030.64.81.01,38161
+Identity & Access Management,#38161 - UNIQA PAM Deployment,19/09/2025,Lukas Grunwald,Operations,Planing and Roadmaping with PO,0.50,V.05920030.64.81.01,38161
+Identity & Access Management,#38161 - UNIQA PAM Deployment,19/09/2025,Thomas Koch,Work,"internal meeting, coordination",0.50,V.05920030.64.81.01,38161
+Identity & Access Management,#38161 - UNIQA PAM Deployment,15/09/2025,Thomas Koch,Work,UNIQA-CZ / Delinea / DTCSA - CYBR Migration Plan Finalization coordination call,1.00,V.05920030.64.81.01,38161
+Identity & Access Management,#38161 - UNIQA PAM Deployment,12/09/2025,Thomas Koch,Work,"Update roadmap, coordination",0.50,V.05920030.64.81.01,38161
+Identity & Access Management,#38161 - UNIQA PAM Deployment,11/09/2025,Thomas Koch,Work,coordination meeting next steps /migration plan,0.75,V.05920030.64.81.01,38161
+Identity & Access Management,#38161 - UNIQA PAM Deployment,05/09/2025,Lukas Grunwald,Work,Xcelerate Working 3,0.50,V.05920030.64.81.01,38161
+Identity & Access Management,#38161 - UNIQA PAM Deployment,01/09/2025,Lukas Grunwald,Work,Xcelerate Working 1,0.50,V.05920030.64.81.01,38161
+Identity & Access Management,#38161 - UNIQA PAM Deployment,28/08/2025,Thomas Koch,Work,"DTCSA-Uniqa/Delinea - CSM Check In Call, UNIQA CZ - Delinea PS Alignment / Scoping Call",1.50,V.05920030.64.81.01,38161
+Identity & Access Management,#38161 - UNIQA PAM Deployment,28/08/2025,Lukas Grunwald,Work,"Meetings: CSM, Customer Service Bus, Uniqa CZ",2.00,V.05920030.64.81.01,38161
+Identity & Access Management,#38161 - UNIQA PAM Deployment,20/08/2025,Thomas Koch,Work,"coordination call ""UNIQA cloud concept and Delinea PAM""",0.75,V.05920030.64.81.01,38161
+Identity & Access Management,#38161 - UNIQA PAM Deployment,20/08/2025,Lukas Grunwald,Work,UNIQA cloud concept and Delinea PAM,1.00,V.05920030.64.81.01,38161
+Identity & Access Management,#38161 - UNIQA PAM Deployment,18/08/2025,Lukas Grunwald,Work,"Uniqa PAM cloud concept, Replaning Xcallerate",1.25,V.05920030.64.81.01,38161
+Identity & Access Management,#38161 - UNIQA PAM Deployment,14/08/2025,Lukas Grunwald,Work,Test Tannent Start,0.50,V.05920030.64.81.01,38161
+Identity & Access Management,#38161 - UNIQA PAM Deployment,12/08/2025,Thomas Koch,Work,"draft timeline, ""Delinea PAM Rollout - Preparation for BU Migration""-meeting, coordination",2.50,V.05920030.64.81.01,38161
+Identity & Access Management,#38161 - UNIQA PAM Deployment,12/08/2025,Lukas Grunwald,Work,"Preparation for BU Migration, BU Planing",1.50,V.05920030.64.81.01,38161
+Identity & Access Management,#38161 - UNIQA PAM Deployment,11/08/2025,Thomas Koch,Work,coordination call Uniqa-DTCSA-Delinea & preparation,2.00,V.05920030.64.81.01,38161
+Identity & Access Management,#38161 - UNIQA PAM Deployment,11/08/2025,Lukas Grunwald,Work,Coordination meeting,1.00,V.05920030.64.81.01,38161
+Identity & Access Management,#38161 - UNIQA PAM Deployment,08/08/2025,Lukas Grunwald,Work,Uniqa Roadmaping,0.50,V.05920030.64.81.01,38161
+Identity & Access Management,#38161 - UNIQA PAM Deployment,07/08/2025,Thomas Koch,Work,"Coordination, Alignment-meeting",0.50,V.05920030.64.81.01,38161
+Identity & Access Management,#38161 - UNIQA PAM Deployment,06/08/2025,Thomas Koch,Work,"Coordination, internal meeting",0.50,V.05920030.64.81.01,38161
+Identity & Access Management,#38161 - UNIQA PAM Deployment,06/08/2025,Lukas Grunwald,Work,Short Internal Organisation,0.50,V.05920030.64.81.01,38161
+Identity & Access Management,#38161 - UNIQA PAM Deployment,05/08/2025,Thomas Koch,Work,"Project-Setup, Coordination",1.00,V.05920030.64.81.01,38161
+Identity & Access Management,#38161 - UNIQA PAM Deployment,04/08/2025,Thomas Koch,Work,Project - Setup,1.00,V.05920030.64.81.01,38161

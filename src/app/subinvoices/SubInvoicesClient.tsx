@@ -8,6 +8,8 @@ import {
   ElsapMirror, AppData, InvoicingStore,
 } from '@/lib/types';
 import { createSubReference, deleteSubInvoice, renameSubReference } from '@/actions/subcontractors';
+import { useToast } from '@/components/ToastProvider';
+import { useConfirm } from '@/components/ConfirmDialogProvider';
 
 interface Props {
   subStore: SubContractorStore;
@@ -26,8 +28,10 @@ function fmtDate(iso: string) { return new Date(iso).toLocaleDateString('de-DE',
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 export default function SubInvoicesClient({ subStore, mirror, appData, invoicingStore }: Props) {
-  const router = useRouter();
+  const router  = useRouter();
   const isAdmin = useRole() === 'admin';
+  const confirm = useConfirm();
+  const toast   = useToast();
   const [, startT] = useTransition();
   const [activeTab, setActiveTab] = useState<'match' | 'references'>('match');
   const [selectedSubId, setSelectedSubId] = useState(subStore.subContractors[0]?.id ?? '');
@@ -148,6 +152,8 @@ function MonthCard({ month, rows, sub, invoices, invoicingStore, expanded, onTog
   invoices: SubInvoice[]; invoicingStore: InvoicingStore;
   expanded: boolean; onToggle: () => void; onRefresh: () => void;
 }) {
+  const confirm = useConfirm();
+  const toast   = useToast();
   const persons = useMemo(() => buildPersonData(rows), [rows]);
 
   const referencedKeys = useMemo(() => {
@@ -381,6 +387,8 @@ function ReferencePanel({ month, sub, persons, checked, invoicingStore, invoices
   invoices: SubInvoice[]; onRefresh: () => void;
 }) {
   const isAdmin = useRole() === 'admin';
+  const confirm = useConfirm();
+  const toast   = useToast();
   const set1Rates = invoicingStore.defaultRates;
   const [saving, setSaving] = useState(false);
   const [invoiceNumber, setInvoiceNumber] = useState('');
@@ -483,8 +491,9 @@ function ReferencePanel({ month, sub, persons, checked, invoicingStore, invoices
               )}
               {isAdmin && (
                 <button onClick={async () => {
-                  if (!confirm(`Delete ${inv.label}?`)) return;
+                  if (!await confirm(`Delete ${inv.label}?`, { destructive: true, confirmLabel: 'Delete' })) return;
                   await deleteSubInvoice(inv.id); onRefresh();
+                  toast.success(`${inv.label} deleted`);
                 }} className="ml-auto text-xs text-red-400 hover:text-red-600 border border-red-200 hover:border-red-400 rounded px-2 py-0.5 transition-colors">
                   Delete
                 </button>

@@ -7,6 +7,8 @@ import { TeamMember, Role, Profile, Assignment, Project } from '@/lib/types';
 import Modal from '@/components/Modal';
 import Badge from '@/components/Badge';
 import { createTeamMember, updateTeamMember, deleteTeamMember } from '@/actions/teamMembers';
+import { useToast } from '@/components/ToastProvider';
+import { useConfirm } from '@/components/ConfirmDialogProvider';
 import { updatePlannedHours } from '@/actions/assignments';
 import { getMonthsBetween, formatMonth } from '@/lib/utils';
 
@@ -367,8 +369,10 @@ function MemberAssignments({
 // ─── Main ──────────────────────────────────────────────────────────────────────
 
 export default function TeamClient({ members, roles, profiles, assignments, projects }: Props) {
-  const router = useRouter();
+  const router  = useRouter();
   const isAdmin = useRole() === 'admin';
+  const confirm = useConfirm();
+  const toast   = useToast();
   const [showCreate, setShowCreate] = useState(false);
   const [editMember, setEditMember] = useState<TeamMember | null>(null);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
@@ -491,21 +495,18 @@ export default function TeamClient({ members, roles, profiles, assignments, proj
                           >
                             Edit
                           </button>
-                          <form
-                            action={async () => {
+                          <button
+                            type="button"
+                            className="text-xs text-red-500 hover:text-red-700 font-medium"
+                            onClick={async () => {
+                              if (!await confirm('Delete this team member?', { destructive: true, confirmLabel: 'Delete' })) return;
                               await deleteTeamMember(member.id);
+                              router.refresh();
+                              toast.success(`${member.name} deleted`);
                             }}
                           >
-                            <button
-                              type="submit"
-                              className="text-xs text-red-500 hover:text-red-700 font-medium"
-                              onClick={(e) => {
-                                if (!confirm('Delete this team member?')) e.preventDefault();
-                              }}
-                            >
-                              Delete
-                            </button>
-                          </form>
+                            Delete
+                          </button>
                         </div>
                       </td>
                       )}

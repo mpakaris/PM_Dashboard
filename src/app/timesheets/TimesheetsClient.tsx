@@ -12,6 +12,8 @@ import {
   updateTicketRate,
   updateMemberCostRate,
 } from '@/actions/timesheets';
+import { useToast } from '@/components/ToastProvider';
+import { useConfirm } from '@/components/ConfirmDialogProvider';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -314,6 +316,8 @@ function MemberCard({ user, entries, baseline, costRate, onDeletePerson, onBasel
   onCostRateChange: (rate: number) => void;
 }) {
   const isAdmin = useRole() === 'admin';
+  const confirm = useConfirm();
+  const toast   = useToast();
   const [isOpen, setIsOpen] = useState(false);
   const [costInput, setCostInput] = useState(costRate ? String(costRate) : '');
   useEffect(() => { setCostInput(costRate ? String(costRate) : ''); }, [costRate]);
@@ -368,8 +372,10 @@ function MemberCard({ user, entries, baseline, costRate, onDeletePerson, onBasel
         )}
         {isAdmin && <button
           type="button"
-          onClick={() => {
-            if (confirm(`Delete all timesheet data for ${user}?`)) onDeletePerson();
+          onClick={async () => {
+            if (!await confirm(`Delete all data for ${user}?`, { body: 'All their timesheet entries will be permanently removed.', destructive: true, confirmLabel: 'Delete' })) return;
+            onDeletePerson();
+            toast.success(`${user}'s data deleted`);
           }}
           className="px-4 py-3.5 text-xs text-red-400 hover:text-red-600 hover:bg-red-50 transition-colors border-l border-gray-100"
           title="Delete this person's timesheets"
@@ -1100,8 +1106,10 @@ function EconomicsView({ entries, billingRates, costRates }: {
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function TimesheetsClient({ store }: { store: TimesheetStore }) {
-  const router = useRouter();
+  const router  = useRouter();
   const isAdmin = useRole() === 'admin';
+  const confirm = useConfirm();
+  const toast   = useToast();
   const [isPending, startTransition] = useTransition();
   const [uploading, setUploading] = useState(false);
   const [uploadMsg, setUploadMsg] = useState<string | null>(null);
@@ -1129,10 +1137,11 @@ export default function TimesheetsClient({ store }: { store: TimesheetStore }) {
   }
 
   async function handleClear() {
-    if (!confirm('Delete all timesheet data?')) return;
+    if (!await confirm('Delete all timesheet data?', { body: 'All entries for all members will be permanently removed.', destructive: true, confirmLabel: 'Delete all' })) return;
     await clearTimesheets();
     setUploadMsg(null);
     startTransition(() => router.refresh());
+    toast.success('All timesheet data cleared');
   }
 
   async function handleDeletePerson(user: string) {

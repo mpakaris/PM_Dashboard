@@ -5,14 +5,18 @@ import { useRouter } from 'next/navigation';
 import { useRole } from '@/components/RoleProvider';
 import { ProjektAnalysisProject } from '@/lib/types';
 import { uploadProjektAnalysisCSV, deleteProjektAnalysisProject } from '@/actions/projektAnalysis';
+import { useToast } from '@/components/ToastProvider';
+import { useConfirm } from '@/components/ConfirmDialogProvider';
 
 interface Props {
   projects: ProjektAnalysisProject[];
 }
 
 export default function ProjektAnalysisClient({ projects }: Props) {
-  const router = useRouter();
+  const router  = useRouter();
   const isAdmin = useRole() === 'admin';
+  const confirm = useConfirm();
+  const toast   = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState('');
@@ -80,9 +84,10 @@ export default function ProjektAnalysisClient({ projects }: Props) {
               key={p.id}
               project={p}
               onDelete={isAdmin ? async () => {
-                if (!confirm(`Delete "${p.name}"? This cannot be undone.`)) return;
+                if (!await confirm(`Delete "${p.name}"?`, { body: 'This cannot be undone.', destructive: true, confirmLabel: 'Delete' })) return;
                 await deleteProjektAnalysisProject(p.id);
                 router.refresh();
+                toast.success(`"${p.name}" deleted`);
               } : undefined}
             />
           ))}

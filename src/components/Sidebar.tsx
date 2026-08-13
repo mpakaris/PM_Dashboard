@@ -5,6 +5,8 @@ import { logout } from "@/actions/auth";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, useEffect } from "react";
+import { useToast } from "@/components/ToastProvider";
+import { useConfirm } from "@/components/ConfirmDialogProvider";
 import { useTranslations } from "next-intl";
 import type { Role } from "@/lib/auth";
 import { LOCALE_KEY, DEFAULT_LOCALE, LOCALES, type Locale } from "@/lib/i18n";
@@ -183,77 +185,80 @@ function LocaleToggle() {
 }
 
 function DevToolsPanel() {
+  const confirm = useConfirm();
+  const toast   = useToast();
   const [devState, setDevState] = useState<"idle" | "busy" | "done" | "error">("idle");
   const [prodState, setProdState] = useState<"idle" | "busy" | "done" | "error">("idle");
   const [flushState, setFlushState] = useState<"idle" | "busy" | "done" | "error">("idle");
   const [errMsg, setErrMsg] = useState("");
 
   async function handleFlushDev() {
-    if (!confirm("Flush ENTIRE DEV database?\n\nAll data (FMO, WBS, tickets, members, project analysis…) will be permanently deleted. PROD is not affected.")) return;
+    if (!await confirm("Flush ENTIRE DEV database?", { body: "All data (FMO, WBS, tickets, members, project analysis…) will be permanently deleted. PROD is not affected.", destructive: true, confirmLabel: "Flush DEV" })) return;
     setFlushState("busy");
     try {
       const r = await flushDevDb();
       if (r.ok) {
         setFlushState("done");
+        toast.success("DEV database flushed");
         setTimeout(() => setFlushState("idle"), 3000);
       } else {
         setErrMsg(r.error ?? "Unknown error");
         setFlushState("error");
+        toast.error(r.error ?? "Flush failed");
         setTimeout(() => setFlushState("idle"), 5000);
       }
     } catch (e) {
       setErrMsg(String(e));
       setFlushState("error");
+      toast.error(String(e));
       setTimeout(() => setFlushState("idle"), 5000);
     }
   }
 
   async function handlePushToProd() {
-    if (
-      !confirm(
-        "Push DEV → PROD?\n\nThis overwrites production with your local dev data. Cannot be undone.",
-      )
-    )
+    if (!await confirm("Push DEV → PROD?", { body: "This overwrites production with your local dev data. Cannot be undone.", destructive: true, confirmLabel: "Push to PROD" }))
       return;
     setDevState("busy");
     try {
       const r = await pushDevToProd();
       if (r.ok) {
         setDevState("done");
+        toast.success("DEV pushed to PROD");
         setTimeout(() => setDevState("idle"), 3000);
       } else {
         setErrMsg(r.error ?? "Unknown error");
         setDevState("error");
+        toast.error(r.error ?? "Push failed");
         setTimeout(() => setDevState("idle"), 5000);
       }
     } catch (e) {
       setErrMsg(String(e));
       setDevState("error");
+      toast.error(String(e));
       setTimeout(() => setDevState("idle"), 5000);
     }
   }
 
   async function handlePullFromProd() {
-    if (
-      !confirm(
-        "Pull PROD → DEV?\n\nThis flushes the local dev database and replaces it with production data.",
-      )
-    )
+    if (!await confirm("Pull PROD → DEV?", { body: "This flushes the local dev database and replaces it with production data.", destructive: true, confirmLabel: "Pull from PROD" }))
       return;
     setProdState("busy");
     try {
       const r = await pushProdToDev();
       if (r.ok) {
         setProdState("done");
+        toast.success("PROD pulled to DEV");
         setTimeout(() => setProdState("idle"), 3000);
       } else {
         setErrMsg(r.error ?? "Unknown error");
         setProdState("error");
+        toast.error(r.error ?? "Pull failed");
         setTimeout(() => setProdState("idle"), 5000);
       }
     } catch (e) {
       setErrMsg(String(e));
       setProdState("error");
+      toast.error(String(e));
       setTimeout(() => setProdState("idle"), 5000);
     }
   }

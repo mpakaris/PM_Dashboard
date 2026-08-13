@@ -1,11 +1,14 @@
 'use client';
 
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { Role } from '@/lib/types';
 import { useRole } from '@/components/RoleProvider';
 import Modal from '@/components/Modal';
 import Badge from '@/components/Badge';
 import { createRole, updateRole, deleteRole } from '@/actions/roles';
+import { useToast } from '@/components/ToastProvider';
+import { useConfirm } from '@/components/ConfirmDialogProvider';
 
 interface Props {
   roles: Role[];
@@ -73,6 +76,9 @@ function RoleForm({
 
 export default function RolesClient({ roles }: Props) {
   const isAdmin = useRole() === 'admin';
+  const router  = useRouter();
+  const confirm = useConfirm();
+  const toast   = useToast();
   const [showCreate, setShowCreate] = useState(false);
   const [editRole, setEditRole] = useState<Role | null>(null);
 
@@ -134,15 +140,18 @@ export default function RolesClient({ roles }: Props) {
                         >
                           Edit
                         </button>
-                        <form action={async () => { await deleteRole(role.id); }}>
-                          <button
-                            type="submit"
-                            className="text-xs text-red-500 hover:text-red-700 font-medium"
-                            onClick={(e) => { if (!confirm('Delete this role?')) e.preventDefault(); }}
-                          >
-                            Delete
-                          </button>
-                        </form>
+                        <button
+                          type="button"
+                          className="text-xs text-red-500 hover:text-red-700 font-medium"
+                          onClick={async () => {
+                            if (!await confirm('Delete this role?', { destructive: true, confirmLabel: 'Delete' })) return;
+                            await deleteRole(role.id);
+                            router.refresh();
+                            toast.success('Role deleted');
+                          }}
+                        >
+                          Delete
+                        </button>
                       </div>
                     </td>
                   )}

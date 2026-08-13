@@ -6,6 +6,8 @@ import { useRole } from '@/components/RoleProvider';
 import { Assignment, Project, TeamMember, Role } from '@/lib/types';
 import Modal from '@/components/Modal';
 import { createBulkAssignments, updateAssignment, deleteAssignment } from '@/actions/assignments';
+import { useToast } from '@/components/ToastProvider';
+import { useConfirm } from '@/components/ConfirmDialogProvider';
 import { getMonthsBetween, formatMonth } from '@/lib/utils';
 
 interface Props {
@@ -373,8 +375,10 @@ function EditAssignmentForm({
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function AssignmentsClient({ assignments, projects, members, roles }: Props) {
-  const router = useRouter();
+  const router  = useRouter();
   const isAdmin = useRole() === 'admin';
+  const confirm = useConfirm();
+  const toast   = useToast();
   const [showCreate, setShowCreate] = useState(false);
   const [editAssignment, setEditAssignment] = useState<Assignment | null>(null);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
@@ -488,11 +492,14 @@ export default function AssignmentsClient({ assignments, projects, members, role
                                       <td className="px-4 py-2.5">
                                         <div className="flex items-center gap-2 justify-end">
                                           <button onClick={() => setEditAssignment(a)} className="text-xs text-slate-600 hover:text-slate-800 font-medium">Edit</button>
-                                          <form action={async () => { await deleteAssignment(a.id); router.refresh(); }}>
-                                            <button type="submit" className="text-xs text-red-500 hover:text-red-700 font-medium" onClick={(e) => { if (!confirm('Delete this assignment?')) e.preventDefault(); }}>
-                                              Delete
-                                            </button>
-                                          </form>
+                                          <button type="button" className="text-xs text-red-500 hover:text-red-700 font-medium" onClick={async () => {
+                                            if (!await confirm('Delete this assignment?', { destructive: true, confirmLabel: 'Delete' })) return;
+                                            await deleteAssignment(a.id);
+                                            router.refresh();
+                                            toast.success('Assignment deleted');
+                                          }}>
+                                            Delete
+                                          </button>
                                         </div>
                                       </td>
                                     )}

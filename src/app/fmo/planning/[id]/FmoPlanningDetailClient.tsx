@@ -8,6 +8,8 @@ import { useLocale } from 'next-intl';
 import { fmtH, type Locale } from '@/lib/i18n';
 import { getMonthsBetween } from '@/lib/utils';
 import type { FmoForecast, FmoProject, FmoMember, FmoWbsEntry, FmoEntry } from '@/lib/types';
+import { useToast } from '@/components/ToastProvider';
+import { useConfirm } from '@/components/ConfirmDialogProvider';
 import {
   renameFmoForecast,
   upsertFmoForecastProject, removeFmoForecastProject,
@@ -85,6 +87,8 @@ export default function FmoPlanningDetailClient({
   const router  = useRouter();
   const isAdmin = useRole() === 'admin';
   const locale  = useLocale() as Locale;
+  const confirm = useConfirm();
+  const toast   = useToast();
 
   const months = getMonthsBetween(forecast.startMonth, forecast.endMonth);
 
@@ -227,9 +231,10 @@ export default function FmoPlanningDetailClient({
                   </div>
                   {isAdmin && (
                     <button onClick={async () => {
-                      if (!confirm(`Remove project "${proj?.name}" from this plan?`)) return;
+                      if (!await confirm(`Remove "${proj?.name}" from this plan?`, { destructive: true, confirmLabel: 'Remove' })) return;
                       await removeFmoForecastProject(forecast.id, fp.projectId);
                       router.refresh();
+                      toast.success(`"${proj?.name}" removed from plan`);
                     }} className="text-xs text-gray-300 hover:text-red-400 shrink-0">×</button>
                   )}
                 </div>

@@ -4,6 +4,8 @@ import { useState, useMemo, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { SubContractorStore, SubContractor, SubMember, ElsapMirror, InvoicingStore } from '@/lib/types';
 import { upsertSubContractor, deleteSubContractor } from '@/actions/subcontractors';
+import { useToast } from '@/components/ToastProvider';
+import { useConfirm } from '@/components/ConfirmDialogProvider';
 import { useRole } from '@/components/RoleProvider';
 
 interface Props {
@@ -17,8 +19,10 @@ function fmtEur(n: number) {
 }
 
 export default function SubsClient({ subStore, mirror, invoicingStore }: Props) {
-  const router = useRouter();
+  const router  = useRouter();
   const isAdmin = useRole() === 'admin';
+  const confirm = useConfirm();
+  const toast   = useToast();
   const [, startT] = useTransition();
   const [editingId, setEditingId] = useState<string | null>(null);
 
@@ -76,9 +80,10 @@ export default function SubsClient({ subStore, mirror, invoicingStore }: Props) 
               invoiceCount={subStore.invoices.filter(i => i.subContractorId === sub.id).length}
               onEdit={isAdmin ? () => setEditingId(sub.id) : undefined}
               onDelete={isAdmin ? async () => {
-                if (!confirm(`Delete ${sub.name}? All their invoices will also be removed.`)) return;
+                if (!await confirm(`Delete ${sub.name}?`, { body: 'All their invoices will also be removed.', destructive: true, confirmLabel: 'Delete' })) return;
                 await deleteSubContractor(sub.id);
                 refresh();
+                toast.success(`${sub.name} deleted`);
               } : undefined}
             />
           )

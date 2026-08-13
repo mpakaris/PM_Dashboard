@@ -6,6 +6,8 @@ import { useTranslations, useLocale } from 'next-intl';
 import { fmtH, type Locale } from '@/lib/i18n';
 import type { FmoTicket, FmoWbsEntry, FmoEntry } from '@/lib/types';
 import { assignTicketWbs, reclassifyAllEntries } from '@/actions/fmo';
+import { useToast } from '@/components/ToastProvider';
+import { useConfirm } from '@/components/ConfirmDialogProvider';
 import TicketsTree from './TicketsTree';
 
 const LS_KEY = 'fmo-tickets-view';
@@ -88,6 +90,8 @@ export default function TicketsClient({
   const t = useTranslations('tickets');
   const tCommon = useTranslations('common');
   const tWbs = useTranslations('wbs');
+  const confirm = useConfirm();
+  const toast   = useToast();
   const [search, setSearch]   = useState('');
   const [filter, setFilter]   = useState<Filter>('all');
   const [reclassifying, setReclassifying] = useState(false);
@@ -126,11 +130,16 @@ export default function TicketsClient({
   const unassignedCount = tickets.filter((tk) => !tk.wbsCode).length;
 
   async function reclass() {
-    if (!confirm(tWbs('reclassifyConfirm', { count: entries.length }))) return;
+    if (!await confirm(tWbs('reclassifyConfirm', { count: entries.length }), { confirmLabel: 'Reclassify' })) return;
     setReclassifying(true);
     const r = await reclassifyAllEntries();
     setReclassifying(false);
-    if (r.ok) setReclassResult(tWbs('reclassifyDone', { reclassified: r.reclassified, unmapped: r.unmapped }));
+    if (r.ok) {
+      setReclassResult(tWbs('reclassifyDone', { reclassified: r.reclassified, unmapped: r.unmapped }));
+      toast.success(`Reclassified ${r.reclassified} entries`);
+    } else {
+      toast.error('Reclassification failed');
+    }
   }
 
   return (

@@ -6,6 +6,8 @@ import { useRouter } from 'next/navigation';
 import { useRole } from '@/components/RoleProvider';
 import { FmoForecast, FmoProject } from '@/lib/types';
 import { createFmoForecast, deleteFmoForecast } from '@/actions/fmoPlanning';
+import { useToast } from '@/components/ToastProvider';
+import { useConfirm } from '@/components/ConfirmDialogProvider';
 import { getMonthsBetween } from '@/lib/utils';
 
 function NewForecastForm({ onClose }: { onClose: () => void }) {
@@ -75,12 +77,15 @@ export default function PlanningListClient({
 }) {
   const router   = useRouter();
   const isAdmin  = useRole() === 'admin';
+  const confirm  = useConfirm();
+  const toast    = useToast();
   const [showForm, setShowForm] = useState(false);
 
   async function handleDelete(id: string, name: string) {
-    if (!confirm(`Delete scenario "${name}"?`)) return;
+    if (!await confirm(`Delete scenario "${name}"?`, { destructive: true, confirmLabel: 'Delete' })) return;
     await deleteFmoForecast(id);
     router.refresh();
+    toast.success('Scenario deleted');
   }
 
   return (

@@ -6,6 +6,8 @@ import { useRole } from '@/components/RoleProvider';
 import { Project, TeamMember, Role, Assignment } from '@/lib/types';
 import Modal from '@/components/Modal';
 import { createProject, updateProject, deleteProject } from '@/actions/projects';
+import { useToast } from '@/components/ToastProvider';
+import { useConfirm } from '@/components/ConfirmDialogProvider';
 import { getMonthsBetween, formatMonth, formatNumber } from '@/lib/utils';
 
 const FTE_HOURS = 1680;
@@ -276,8 +278,10 @@ function ProjectForm({
 }
 
 export default function ProjectsClient({ projects, members, roles, assignments }: Props) {
-  const router = useRouter();
+  const router  = useRouter();
   const isAdmin = useRole() === 'admin';
+  const confirm = useConfirm();
+  const toast   = useToast();
   const [showCreate, setShowCreate] = useState(false);
   const [editProject, setEditProject] = useState<Project | null>(null);
 
@@ -366,18 +370,18 @@ export default function ProjectsClient({ projects, members, roles, assignments }
                           >
                             Edit
                           </button>
-                          <form action={async () => { await deleteProject(project.id); }}>
-                            <button
-                              type="submit"
-                              className="text-xs text-red-500 hover:text-red-700 font-medium"
-                              onClick={(e) => {
-                                if (!confirm('Delete this project? All assignments will also be deleted.'))
-                                  e.preventDefault();
-                              }}
-                            >
-                              Delete
-                            </button>
-                          </form>
+                          <button
+                            type="button"
+                            className="text-xs text-red-500 hover:text-red-700 font-medium"
+                            onClick={async () => {
+                              if (!await confirm(`Delete "${project.name}"?`, { body: 'All assignments will also be deleted.', destructive: true, confirmLabel: 'Delete' })) return;
+                              await deleteProject(project.id);
+                              router.refresh();
+                              toast.success(`"${project.name}" deleted`);
+                            }}
+                          >
+                            Delete
+                          </button>
                         </div>
                       </td>
                     )}
