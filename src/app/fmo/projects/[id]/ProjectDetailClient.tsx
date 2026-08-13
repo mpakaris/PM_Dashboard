@@ -939,9 +939,14 @@ function MilestonesTab({
   const releasedPay   = sorted.filter(m => m.status === 'reached').reduce((s, m) => s + m.paymentAmount, 0);
   const upcomingPay   = sorted.filter(m => m.status === 'upcoming').reduce((s, m) => s + m.paymentAmount, 0);
   const delayedPay    = sorted.filter(m => m.status === 'delayed').reduce((s, m) => s + m.paymentAmount, 0);
-  const pctReleased   = totalPayments > 0 ? Math.round(releasedPay / totalPayments * 100) : 0;
   const hasPayments   = totalPayments > 0;
   const fmt           = (n: number) => n.toLocaleString('de-DE') + ' €';
+
+  // Progress bar denominator = full project value (contract + approved changes); fall back to milestone sum
+  const projectValue    = totalBudgetEur > 0 ? totalBudgetEur : totalPayments;
+  const pctReleased     = projectValue > 0 ? Math.round(releasedPay  / projectValue * 100) : 0;
+  const pctUpcoming     = projectValue > 0 ? Math.round(upcomingPay  / projectValue * 100) : 0;
+  const pctDelayed      = projectValue > 0 ? Math.round(delayedPay   / projectValue * 100) : 0;
 
   function relDate(d: string) {
     const diff = Math.round((new Date(d + 'T00:00:00').getTime() - new Date(today + 'T00:00:00').getTime()) / 86400000);
@@ -983,33 +988,33 @@ function MilestonesTab({
       {hasPayments && (
         <div className="grid grid-cols-4 gap-4">
           <div className="bg-white rounded-lg border border-slate-200 p-4">
-            <p className="text-xs text-slate-400 mb-1">Total Contract</p>
-            <p className="text-lg font-bold text-slate-800">{fmt(totalBudgetEur || totalPayments)}</p>
+            <p className="text-xs text-slate-400 mb-1">Project Value</p>
+            <p className="text-lg font-bold text-slate-800">{fmt(projectValue)}</p>
             {totalBudgetEur > 0 && totalPayments !== totalBudgetEur && (
               <p className="text-xs text-slate-400 mt-0.5">{fmt(totalPayments)} via milestones</p>
             )}
           </div>
           <div className="bg-white rounded-lg border border-emerald-200 p-4">
-            <p className="text-xs text-slate-400 mb-1">Released</p>
+            <p className="text-xs text-slate-400 mb-1">Paid</p>
             <p className="text-lg font-bold text-emerald-600">{fmt(releasedPay)}</p>
-            <p className="text-xs text-slate-400 mt-0.5">{pctReleased}% of total</p>
+            <p className="text-xs text-slate-400 mt-0.5">{pctReleased}% of project value</p>
           </div>
-          <div className="bg-white rounded-lg border border-slate-200 p-4">
-            <p className="text-xs text-slate-400 mb-1">Upcoming</p>
-            <p className="text-lg font-bold text-slate-700">{fmt(upcomingPay)}</p>
-            <p className="text-xs text-slate-400 mt-0.5">{sorted.filter(m => m.status === 'upcoming').length} milestones</p>
+          <div className="bg-white rounded-lg border border-amber-200 p-4">
+            <p className="text-xs text-slate-400 mb-1">Planned</p>
+            <p className="text-lg font-bold text-amber-600">{fmt(upcomingPay)}</p>
+            <p className="text-xs text-slate-400 mt-0.5">{pctUpcoming}% of project value</p>
           </div>
           {delayedPay > 0 ? (
             <div className="bg-white rounded-lg border border-red-200 p-4">
               <p className="text-xs text-slate-400 mb-1">Delayed</p>
               <p className="text-lg font-bold text-red-500">{fmt(delayedPay)}</p>
-              <p className="text-xs text-slate-400 mt-0.5">{sorted.filter(m => m.status === 'delayed').length} milestones</p>
+              <p className="text-xs text-slate-400 mt-0.5">{pctDelayed}% of project value</p>
             </div>
           ) : (
             <div className="bg-white rounded-lg border border-slate-200 p-4">
-              <p className="text-xs text-slate-400 mb-1">Remaining</p>
-              <p className="text-lg font-bold text-slate-700">{fmt(totalPayments - releasedPay)}</p>
-              <p className="text-xs text-slate-400 mt-0.5">{100 - pctReleased}% pending</p>
+              <p className="text-xs text-slate-400 mb-1">Unplanned</p>
+              <p className="text-lg font-bold text-slate-400">{fmt(Math.max(0, projectValue - totalPayments))}</p>
+              <p className="text-xs text-slate-400 mt-0.5">{Math.max(0, 100 - pctReleased - pctUpcoming)}% not yet scheduled</p>
             </div>
           )}
         </div>
@@ -1020,16 +1025,18 @@ function MilestonesTab({
         <div className="bg-white rounded-lg border border-slate-200 p-4">
           <div className="flex items-center justify-between mb-2">
             <p className="text-xs font-medium text-slate-600">Payment Progress</p>
-            <p className="text-xs text-slate-400">{fmt(releasedPay)} / {fmt(totalPayments)}</p>
+            <p className="text-xs text-slate-400">{fmt(releasedPay)} paid · {fmt(projectValue)} total project value</p>
           </div>
           <div className="h-3 bg-slate-100 rounded-full overflow-hidden flex">
             <div className="h-full bg-emerald-500 transition-all" style={{ width: `${pctReleased}%` }} />
-            {delayedPay > 0 && <div className="h-full bg-red-400 transition-all" style={{ width: `${Math.round(delayedPay / totalPayments * 100)}%` }} />}
+            <div className="h-full bg-amber-400 transition-all" style={{ width: `${pctUpcoming}%` }} />
+            {delayedPay > 0 && <div className="h-full bg-red-400 transition-all" style={{ width: `${pctDelayed}%` }} />}
           </div>
           <div className="flex gap-4 mt-2">
-            <span className="flex items-center gap-1 text-xs text-slate-500"><span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" /> Released</span>
+            <span className="flex items-center gap-1 text-xs text-slate-500"><span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" /> Paid</span>
+            <span className="flex items-center gap-1 text-xs text-slate-500"><span className="w-2 h-2 rounded-full bg-amber-400 inline-block" /> Planned</span>
             {delayedPay > 0 && <span className="flex items-center gap-1 text-xs text-slate-500"><span className="w-2 h-2 rounded-full bg-red-400 inline-block" /> Delayed</span>}
-            <span className="flex items-center gap-1 text-xs text-slate-500"><span className="w-2 h-2 rounded-full bg-slate-200 inline-block" /> Upcoming</span>
+            <span className="flex items-center gap-1 text-xs text-slate-500"><span className="w-2 h-2 rounded-full bg-slate-200 inline-block" /> Unscheduled</span>
           </div>
         </div>
       )}
