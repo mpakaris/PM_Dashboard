@@ -718,18 +718,27 @@ function ProjectGantt({ project }: { project: FmoProject }) {
         <div style={{ minWidth: 560 }} className="px-5 pb-5 pt-4">
 
           {/* ── Month header ─────────────────────────────────────────── */}
+          {(() => {
+            // Show at most ~10 labels; pick the smallest clean interval that achieves that
+            const n = months.length;
+            const step = n <= 6 ? 1 : n <= 12 ? 2 : n <= 24 ? 3 : n <= 48 ? 6 : 12;
+            return (
           <div className="flex" style={{ height: HEADER_H }}>
             <div style={{ width: LABEL_W, minWidth: LABEL_W }} className="shrink-0" />
             <div className="flex-1 relative">
-              {months.map(m => (
+              {months.map((m, i) => (
                 <div key={m.label} style={{ left: `${m.p}%` }}
                   className="absolute top-0 flex flex-col items-start select-none pointer-events-none">
-                  <span className="text-[10px] text-slate-400 whitespace-nowrap pr-1">{m.label}</span>
-                  <div className="w-px h-2 bg-slate-200 mt-0.5" />
+                  {i % step === 0 && (
+                    <span className="text-[10px] text-slate-400 whitespace-nowrap pr-1">{m.label}</span>
+                  )}
+                  <div className={`w-px bg-slate-200 mt-0.5 ${i % step === 0 ? 'h-2' : 'h-1'}`} />
                 </div>
               ))}
             </div>
           </div>
+            );
+          })()}
 
           {/* ── Chart body: labels + bars ────────────────────────────── */}
           <div className="flex">
