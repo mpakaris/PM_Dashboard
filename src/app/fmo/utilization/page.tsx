@@ -7,7 +7,6 @@ export default async function UtilizationPage() {
     <UtilizationClient
       entries={store.entries}
       members={mappings.members}
-      subCategories={mappings.subCategories}
     />
   );
 }

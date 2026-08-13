@@ -2,357 +2,265 @@
 
 import { useState, useMemo } from 'react';
 import Link from 'next/link';
-import { useTranslations, useLocale } from 'next-intl';
+import { useLocale } from 'next-intl';
 import { fmtH, type Locale } from '@/lib/i18n';
-import type { FmoEntry, FmoMember, WbsSubCategory } from '@/lib/types';
+import type { FmoEntry, FmoMember } from '@/lib/types';
+import { ChartTimeFilter, initChartRange, type TimeRange } from '@/components/ChartTimeFilter';
 
-type Tab = 'hours' | 'percent' | 'unmapped';
+type SortKey = 'name' | 'capUtil' | 'billUtil';
 
-// ─── Aggregation ──────────────────────────────────────────────────────────────
-
-function buildPivot(
-  entries: FmoEntry[],
-  members: Record<string, FmoMember>,
-  months: string[]
-) {
-  // { memberName → { month → { catKey → hours } } }
-  const pivot = new Map<string, Map<string, Map<string, number>>>();
-
-  for (const e of entries) {
-    const catKey = e.billingClass === 'V' ? 'V' : (e.subCategory ?? 'unmapped');
-    if (!pivot.has(e.user)) pivot.set(e.user, new Map());
-    const byMonth = pivot.get(e.user)!;
-    if (!byMonth.has(e.month)) byMonth.set(e.month, new Map());
-    const byCat = byMonth.get(e.month)!;
-    byCat.set(catKey, (byCat.get(catKey) ?? 0) + e.spentTime);
-  }
-
-  return pivot;
+function UtilBadge({ pct }: { pct: number }) {
+  const cls =
+    pct >= 100 ? 'bg-green-50 text-green-700' :
+    pct >= 80  ? 'bg-slate-100 text-slate-700' :
+                 'bg-red-50 text-red-600';
+  return (
+    <span className={`inline-block text-xs font-semibold px-2 py-0.5 rounded tabular-nums ${cls}`}>
+      {pct}%
+    </span>
+  );
 }
 
-// ─── Label / colour helpers ───────────────────────────────────────────────────
-
-const CAT_ORDER = ['V', 'admin', 'presales', 'opm', 'portfolio', 'training', 'absence', 'unmapped'];
-
-function catLabel(key: string, subCategories: Record<string, WbsSubCategory>, billableLabel: string) {
-  if (key === 'V') return billableLabel;
-  return subCategories[key]?.label ?? key;
+function VsDelta({ delta, months }: { delta: number; months: number }) {
+  if (months === 0) return <span className="text-xs text-slate-400">—</span>;
+  const above = delta > 0;
+  const cls = above ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-700';
+  return (
+    <div className="text-right">
+      <span className={`text-xs font-medium px-2 py-0.5 rounded tabular-nums ${cls}`}>
+        {above ? '↑' : '↓'} {delta > 0 ? '+' : ''}{delta}%
+      </span>
+      <p className="text-[10px] text-slate-400 mt-0.5">{months}m avg</p>
+    </div>
+  );
 }
 
-function sortCats(cats: string[]) {
-  return [...cats].sort((a, b) => {
-    const ia = CAT_ORDER.indexOf(a);
-    const ib = CAT_ORDER.indexOf(b);
-    if (ia === -1 && ib === -1) return a.localeCompare(b);
-    if (ia === -1) return 1;
-    if (ib === -1) return -1;
-    return ia - ib;
-  });
+function SortIcon({ active, dir }: { active: boolean; dir: 'asc' | 'desc' }) {
+  return (
+    <span className={`ml-1 text-[10px] ${active ? 'text-slate-700' : 'text-slate-300'}`}>
+      {active ? (dir === 'desc' ? '↓' : '↑') : '↕'}
+    </span>
+  );
 }
-
-// ─── Table cell ───────────────────────────────────────────────────────────────
-
-function Cell({ value, mode }: { value: number; mode: Tab }) {
-  const locale = useLocale() as Locale;
-  function fmt(v: number) {
-    return v.toLocaleString(locale === 'de' ? 'de-DE' : 'en-GB', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
-  }
-  if (mode === 'percent') {
-    if (value === 0) return <td className="px-3 py-1.5 text-right text-slate-400 text-xs">—</td>;
-    return <td className="px-3 py-1.5 text-right text-xs text-slate-700">{fmt(value * 100)} %</td>;
-  }
-  if (value === 0) return <td className="px-3 py-1.5 text-right text-slate-400 text-xs">—</td>;
-  return <td className="px-3 py-1.5 text-right text-xs text-slate-700">{fmt(value)}</td>;
-}
-
-// ─── Main component ───────────────────────────────────────────────────────────
 
 export default function UtilizationClient({
   entries,
   members,
-  subCategories,
 }: {
   entries: FmoEntry[];
   members: Record<string, FmoMember>;
-  subCategories: Record<string, WbsSubCategory>;
 }) {
-  const t = useTranslations('utilization');
-  const tMembers = useTranslations('members');
-  const tCommon = useTranslations('common');
-  const tTickets = useTranslations('tickets');
-  const tWbs = useTranslations('wbs');
-  const tImport = useTranslations('import');
-  const [tab, setTab]         = useState<Tab>('hours');
-  const [expanded, setExpanded] = useState<Set<string>>(new Set([tMembers('extern'), tMembers('intern')]));
-  const [collapsedMembers, setCollapsedMembers] = useState<Set<string>>(new Set());
+  const locale = useLocale() as Locale;
+  const [range, setRange]     = useState<TimeRange>(() => initChartRange(entries));
+  const [sort, setSort]       = useState<SortKey>('billUtil');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
 
-  // Derive all months from data
-  const allMonths = useMemo(() => {
-    const set = new Set<string>();
-    for (const e of entries) set.add(e.month);
-    return [...set].sort();
-  }, [entries]);
-
-  const unmappedEntries = useMemo(
-    () => entries.filter((e) => !e.wbsCode),
-    [entries]
+  const rangedEntries = useMemo(
+    () => range.from
+      ? entries.filter(e => e.month >= range.from && e.month <= range.to)
+      : entries,
+    [entries, range],
   );
 
-  const pivot = useMemo(() => buildPivot(entries, members, allMonths), [entries, members, allMonths]);
-
-  // Group members by type
-  const groups = useMemo(() => {
-    const extern: string[] = [];
-    const intern: string[] = [];
-    for (const [name] of pivot) {
-      const memberId = Object.values(members).find((m) => m.name === name)?.id;
-      const type     = memberId ? members[memberId]?.type : 'extern';
-      if (type === 'intern') intern.push(name);
-      else extern.push(name);
+  // Per-member aggregation
+  const memberStats = useMemo(() => {
+    const byMember = new Map<string, Map<string, { total: number; billable: number; vacation: number }>>();
+    for (const e of rangedEntries) {
+      if (!byMember.has(e.user)) byMember.set(e.user, new Map());
+      const byMonth = byMember.get(e.user)!;
+      if (!byMonth.has(e.month)) byMonth.set(e.month, { total: 0, billable: 0, vacation: 0 });
+      const m = byMonth.get(e.month)!;
+      m.total    += e.spentTime;
+      if (e.billingClass === 'V')      m.billable += e.spentTime;
+      if (e.subCategory === 'absence') m.vacation += e.spentTime;
     }
-    extern.sort((a, b) => a.localeCompare(b));
-    intern.sort((a, b) => a.localeCompare(b));
-    return [
-      { label: tMembers('extern'), members: extern },
-      { label: tMembers('intern'), members: intern },
-    ];
-  }, [pivot, members]);
 
-  // All categories seen in data
-  const allCats = useMemo(() => {
-    const set = new Set<string>();
-    for (const byMonth of pivot.values()) for (const byCat of byMonth.values()) for (const k of byCat.keys()) set.add(k);
-    return sortCats([...set]);
-  }, [pivot]);
+    const result: Array<{
+      member: FmoMember;
+      avgCapUtil: number;
+      avgBillUtil: number;
+      avgBookedH: number;
+      avgBillableH: number;
+      monthCount: number;
+    }> = [];
 
-  function toggle(key: string) {
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
-  }
+    for (const member of Object.values(members)) {
+      const byMonth = byMember.get(member.name);
+      if (!byMonth || byMonth.size === 0) continue;
 
-  function toggleMember(name: string) {
-    setCollapsedMembers((prev) => {
-      const next = new Set(prev);
-      if (next.has(name)) next.delete(name);
-      else next.add(name);
-      return next;
-    });
-  }
+      const cap        = member.monthlyCapacity       ?? 160;
+      const billTarget = member.monthlyBillableTarget ?? 120;
+      const isIntern   = member.type === 'intern';
 
-  // Grand total per month
-  const grandTotals = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const byMonth of pivot.values()) {
-      for (const [month, byCat] of byMonth) {
-        for (const h of byCat.values()) map.set(month, (map.get(month) ?? 0) + h);
+      const monthly  = [...byMonth.values()];
+      let sumCap = 0, sumBill = 0, sumBooked = 0, sumBillable = 0;
+
+      for (const { total, billable, vacation } of monthly) {
+        const trueBillable   = isIntern ? Math.max(0, billable - vacation) : billable;
+        const effectiveBillT = isIntern ? Math.max(0, billTarget - vacation) : billTarget;
+        sumCap     += cap > 0            ? (total        / cap)            * 100 : 0;
+        sumBill    += effectiveBillT > 0 ? (trueBillable / effectiveBillT) * 100 : 0;
+        sumBooked   += total;
+        sumBillable += trueBillable;
       }
+
+      const n = monthly.length;
+      result.push({
+        member,
+        avgCapUtil:   Math.round(sumCap  / n),
+        avgBillUtil:  Math.round(sumBill / n),
+        avgBookedH:   Math.round(sumBooked   / n * 10) / 10,
+        avgBillableH: Math.round(sumBillable / n * 10) / 10,
+        monthCount: n,
+      });
     }
-    return map;
-  }, [pivot]);
 
-  const locale = useLocale() as Locale;
-  const billableLabel = t('billable');
+    return result;
+  }, [rangedEntries, members]);
 
-  const tabs: Array<{ id: Tab; label: string }> = [
-    { id: 'hours',    label: t('hours') },
-    { id: 'percent',  label: t('percent') },
-    { id: 'unmapped', label: `${t('unmapped')} (${unmappedEntries.length})` },
-  ];
+  const teamAvgCapUtil  = useMemo(() => {
+    if (!memberStats.length) return 0;
+    return Math.round(memberStats.reduce((s, r) => s + r.avgCapUtil, 0)  / memberStats.length);
+  }, [memberStats]);
+
+  const teamAvgBillUtil = useMemo(() => {
+    if (!memberStats.length) return 0;
+    return Math.round(memberStats.reduce((s, r) => s + r.avgBillUtil, 0) / memberStats.length);
+  }, [memberStats]);
+
+  const rows = useMemo(() => {
+    return [...memberStats].sort((a, b) => {
+      let cmp = 0;
+      if (sort === 'name')     cmp = a.member.name.localeCompare(b.member.name);
+      if (sort === 'capUtil')  cmp = a.avgCapUtil  - b.avgCapUtil;
+      if (sort === 'billUtil') cmp = a.avgBillUtil - b.avgBillUtil;
+      return sortDir === 'desc' ? -cmp : cmp;
+    });
+  }, [memberStats, sort, sortDir]);
+
+  function toggleSort(col: SortKey) {
+    if (sort === col) setSortDir(d => d === 'desc' ? 'asc' : 'desc');
+    else { setSort(col); setSortDir('desc'); }
+  }
+
+  const atCap  = rows.filter(r => r.avgCapUtil  >= 100).length;
+  const atBill = rows.filter(r => r.avgBillUtil >= 100).length;
 
   if (entries.length === 0) {
     return (
       <div className="p-6">
-        <h1 className="text-2xl font-bold text-slate-900 mb-4">{t('title')}</h1>
-        <p className="text-slate-400">{tImport('never')}</p>
+        <h1 className="text-2xl font-bold text-slate-900 mb-4">Team Utilization</h1>
+        <p className="text-slate-400">No data imported yet.</p>
       </div>
     );
   }
 
   return (
-    <div className="p-6 space-y-4">
-      <h1 className="text-2xl font-bold text-slate-900">{t('title')}</h1>
+    <div className="p-6 space-y-5">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">Team Utilization</h1>
+          <p className="text-xs text-slate-400 mt-0.5">
+            {rows.filter(r => r.member.type === 'intern').length} intern ·{' '}
+            {rows.filter(r => r.member.type === 'extern').length} extern
+          </p>
+        </div>
+      </div>
 
-      {/* Tabs */}
-      <div className="flex border-b border-slate-200">
-        {tabs.map((tab_) => (
-          <button
-            key={tab_.id}
-            onClick={() => setTab(tab_.id)}
-            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-              tab === tab_.id
-                ? 'border-slate-800 text-slate-900'
-                : `border-transparent text-slate-500 hover:text-slate-700 ${tab_.id === 'unmapped' && unmappedEntries.length > 0 ? 'text-rose-500 hover:text-rose-700' : ''}`
-            }`}
-          >
-            {tab_.label}
-          </button>
+      <ChartTimeFilter value={range} onChange={setRange} />
+
+      {/* KPI strip */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {[
+          { label: 'Team Avg Capacity Util.',  value: `${teamAvgCapUtil}%` },
+          { label: 'Team Avg Billable Util.',   value: `${teamAvgBillUtil}%` },
+          { label: 'Members ≥ Capacity',        value: `${atCap} / ${rows.length}` },
+          { label: 'Members ≥ Billable Target', value: `${atBill} / ${rows.length}` },
+        ].map(k => (
+          <div key={k.label} className="bg-white rounded-lg border border-slate-200 px-4 py-3">
+            <p className="text-xs text-slate-400 mb-1">{k.label}</p>
+            <p className="text-xl font-bold text-slate-800">{k.value}</p>
+          </div>
         ))}
       </div>
 
-      {/* Unmapped tab */}
-      {tab === 'unmapped' && (
-        <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
-          {unmappedEntries.length === 0 ? (
-            <p className="px-4 py-8 text-center text-green-700">{t('allClassified')}</p>
-          ) : (
-            <table className="w-full text-xs">
-              <thead className="bg-slate-50 border-b border-slate-200">
-                <tr>
-                  <th className="px-4 py-2 text-left font-semibold text-slate-600">{tCommon('source')}</th>
-                  <th className="px-4 py-2 text-left font-semibold text-slate-600">{tMembers('name')}</th>
-                  <th className="px-4 py-2 text-left font-semibold text-slate-600">{tTickets('id')}</th>
-                  <th className="px-4 py-2 text-left font-semibold text-slate-600">{tTickets('name')}</th>
-                  <th className="px-4 py-2 text-right font-semibold text-slate-600">{t('hours')}</th>
-                  <th className="px-4 py-2 text-left font-semibold text-slate-600">{tWbs('actions')}</th>
+      {/* Leaderboard */}
+      <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
+        <table className="w-full text-sm">
+          <thead className="bg-slate-50 border-b border-slate-200 text-xs text-slate-500 font-medium">
+            <tr>
+              <th className="px-4 py-3 text-left cursor-pointer select-none" onClick={() => toggleSort('name')}>
+                Member <SortIcon active={sort === 'name'} dir={sortDir} />
+              </th>
+              <th className="px-4 py-3 text-left">Type</th>
+              <th className="px-4 py-3 text-right">Capacity</th>
+              <th className="px-4 py-3 text-right">Avg Booked</th>
+              <th className="px-4 py-3 text-right cursor-pointer select-none" onClick={() => toggleSort('capUtil')}>
+                Cap Util <SortIcon active={sort === 'capUtil'} dir={sortDir} />
+              </th>
+              <th className="px-4 py-3 text-right">Bill. Target</th>
+              <th className="px-4 py-3 text-right">Avg Billable</th>
+              <th className="px-4 py-3 text-right cursor-pointer select-none" onClick={() => toggleSort('billUtil')}>
+                Bill Util <SortIcon active={sort === 'billUtil'} dir={sortDir} />
+              </th>
+              <th className="px-4 py-3 text-right">vs Team Avg</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {rows.map(({ member, avgCapUtil, avgBillUtil, avgBookedH, avgBillableH, monthCount }) => {
+              const delta      = avgBillUtil - teamAvgBillUtil;
+              const cap        = member.monthlyCapacity       ?? 160;
+              const billTarget = member.monthlyBillableTarget ?? 120;
+              return (
+                <tr key={member.id} className="hover:bg-slate-50">
+                  <td className="px-4 py-3 font-medium text-slate-800">
+                    <Link href={`/fmo/members/${member.id}`} className="hover:text-indigo-600 hover:underline">
+                      {member.name}
+                    </Link>
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className={`text-xs px-2 py-0.5 rounded font-medium ${
+                      member.type === 'intern'
+                        ? 'bg-blue-100 text-blue-800'
+                        : 'bg-orange-100 text-orange-800'
+                    }`}>
+                      {member.type}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-right text-slate-400 text-xs tabular-nums">{cap}h</td>
+                  <td className="px-4 py-3 text-right text-slate-700 tabular-nums">{fmtH(avgBookedH, locale)}</td>
+                  <td className="px-4 py-3 text-right"><UtilBadge pct={avgCapUtil} /></td>
+                  <td className="px-4 py-3 text-right text-slate-400 text-xs tabular-nums">{billTarget}h</td>
+                  <td className="px-4 py-3 text-right text-slate-700 tabular-nums">{fmtH(avgBillableH, locale)}</td>
+                  <td className="px-4 py-3 text-right"><UtilBadge pct={avgBillUtil} /></td>
+                  <td className="px-4 py-3 text-right">
+                    <VsDelta delta={Math.round(delta)} months={monthCount} />
+                  </td>
                 </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {unmappedEntries.map((e) => (
-                  <tr key={e.id} className="hover:bg-slate-50">
-                    <td className="px-4 py-2 text-slate-600">{e.date}</td>
-                    <td className="px-4 py-2 text-slate-700">{e.user}</td>
-                    <td className="px-4 py-2 font-mono text-slate-600">{e.ticketId ?? '—'}</td>
-                    <td className="px-4 py-2 text-slate-700 max-w-xs truncate">{e.ticketName}</td>
-                    <td className="px-4 py-2 text-right text-slate-700">{fmtH(e.spentTime, locale)}</td>
-                    <td className="px-4 py-2">
-                      <Link href="/fmo/tickets" className="text-blue-600 hover:underline text-xs">{tTickets('assignWbs')}</Link>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
-      )}
-
-      {/* Hours / Percent pivot table */}
-      {(tab === 'hours' || tab === 'percent') && (
-        <div className="bg-white rounded-lg border border-slate-200 overflow-x-auto">
-          <table className="text-xs w-full">
-            <thead className="bg-slate-50 border-b border-slate-200 sticky top-0">
+              );
+            })}
+            {rows.length === 0 && (
               <tr>
-                <th className="px-4 py-2 text-left font-semibold text-slate-600 w-48">{tMembers('name')} / {t('unmapped')}</th>
-                {allMonths.map((m) => (
-                  <th key={m} className="px-3 py-2 text-right font-semibold text-slate-600 whitespace-nowrap">
-                    {m.slice(0, 7)}
-                  </th>
-                ))}
-                <th className="px-3 py-2 text-right font-semibold text-slate-600">Total</th>
-              </tr>
-            </thead>
-            <tbody>
-              {groups.map((group) => {
-                if (group.members.length === 0) return null;
-
-                const groupTotals = new Map<string, number>();
-                for (const name of group.members) {
-                  const byMonth = pivot.get(name);
-                  if (!byMonth) continue;
-                  for (const [month, byCat] of byMonth) {
-                    for (const h of byCat.values()) groupTotals.set(month, (groupTotals.get(month) ?? 0) + h);
-                  }
-                }
-
-                return (
-                  <>
-                    {/* Group header */}
-                    <tr key={group.label} className="bg-slate-100 cursor-pointer" onClick={() => toggle(group.label)}>
-                      <td className="px-4 py-2 font-bold text-slate-700">
-                        {expanded.has(group.label) ? '▼' : '▶'} {group.label}
-                      </td>
-                      {allMonths.map((m) => {
-                        const total = groupTotals.get(m) ?? 0;
-                        return tab === 'hours'
-                          ? <td key={m} className="px-3 py-2 text-right font-semibold text-slate-700">{total > 0 ? total.toFixed(1) : '—'}</td>
-                          : <td key={m} className="px-3 py-2 text-right font-semibold text-slate-700">{total > 0 ? '100 %' : '—'}</td>;
-                      })}
-                      <td className="px-3 py-2 text-right font-semibold text-slate-700">
-                        {[...groupTotals.values()].reduce((s, v) => s + v, 0).toFixed(1)}
-                      </td>
-                    </tr>
-
-                    {expanded.has(group.label) && group.members.map((name) => {
-                      const byMonth = pivot.get(name);
-                      if (!byMonth) return null;
-
-                      const memberMonthTotals = new Map<string, number>();
-                      for (const [month, byCat] of byMonth) {
-                        for (const h of byCat.values()) memberMonthTotals.set(month, (memberMonthTotals.get(month) ?? 0) + h);
-                      }
-                      const memberTotal = [...memberMonthTotals.values()].reduce((s, v) => s + v, 0);
-
-                      const catsForMember = sortCats([...new Set([...byMonth.values()].flatMap((m) => [...m.keys()]))]);
-                      const isCollapsed   = collapsedMembers.has(name);
-
-                      return (
-                        <>
-                          {/* Member row */}
-                          <tr
-                            key={name}
-                            className="bg-slate-50 cursor-pointer hover:bg-slate-100"
-                            onClick={() => toggleMember(name)}
-                          >
-                            <td className="px-6 py-1.5 font-semibold text-slate-700">
-                              {isCollapsed ? '▶' : '▼'} {name}
-                            </td>
-                            {allMonths.map((m) => {
-                              const total = memberMonthTotals.get(m) ?? 0;
-                              return tab === 'hours'
-                                ? <td key={m} className="px-3 py-1.5 text-right font-semibold text-slate-700">{total > 0 ? total.toFixed(1) : '—'}</td>
-                                : <td key={m} className="px-3 py-1.5 text-right font-semibold text-slate-700">{total > 0 ? '100 %' : '—'}</td>;
-                            })}
-                            <td className="px-3 py-1.5 text-right font-semibold text-slate-700">{memberTotal.toFixed(1)}</td>
-                          </tr>
-
-                          {/* Category rows */}
-                          {!isCollapsed && catsForMember.map((cat) => {
-                            const catTotal = allMonths.reduce((s, m) => s + (byMonth.get(m)?.get(cat) ?? 0), 0);
-                            return (
-                              <tr key={`${name}-${cat}`} className="hover:bg-slate-50">
-                                <td className="px-10 py-1 text-slate-600 italic">
-                                  {catLabel(cat, subCategories, billableLabel)}
-                                </td>
-                                {allMonths.map((m) => {
-                                  const h     = byMonth.get(m)?.get(cat) ?? 0;
-                                  const total = memberMonthTotals.get(m) ?? 0;
-                                  const v     = tab === 'percent' ? (total > 0 ? h / total : 0) : h;
-                                  return <Cell key={m} value={v} mode={tab} />;
-                                })}
-                                {tab === 'hours'
-                                  ? <td className="px-3 py-1 text-right font-medium text-slate-700">{catTotal.toFixed(1)}</td>
-                                  : <td className="px-3 py-1 text-right text-slate-400">—</td>
-                                }
-                              </tr>
-                            );
-                          })}
-                        </>
-                      );
-                    })}
-                  </>
-                );
-              })}
-
-              {/* Grand total */}
-              <tr className="border-t-2 border-slate-300 bg-slate-100">
-                <td className="px-4 py-2 font-bold text-slate-800">{t('grandTotal')}</td>
-                {allMonths.map((m) => {
-                  const total = grandTotals.get(m) ?? 0;
-                  return tab === 'hours'
-                    ? <td key={m} className="px-3 py-2 text-right font-bold text-slate-800">{total > 0 ? total.toFixed(1) : '—'}</td>
-                    : <td key={m} className="px-3 py-2 text-right font-bold text-slate-800">{total > 0 ? '100 %' : '—'}</td>;
-                })}
-                <td className="px-3 py-2 text-right font-bold text-slate-800">
-                  {[...grandTotals.values()].reduce((s, v) => s + v, 0).toFixed(1)}
+                <td colSpan={9} className="px-4 py-8 text-center text-slate-400">
+                  No data for this period.
                 </td>
               </tr>
-            </tbody>
-          </table>
-        </div>
-      )}
+            )}
+          </tbody>
+          {rows.length > 0 && (
+            <tfoot className="border-t-2 border-slate-200 bg-slate-50 text-xs font-semibold">
+              <tr>
+                <td className="px-4 py-2.5 text-slate-700">Team Average</td>
+                <td colSpan={3} />
+                <td className="px-4 py-2.5 text-right"><UtilBadge pct={teamAvgCapUtil} /></td>
+                <td colSpan={2} />
+                <td className="px-4 py-2.5 text-right"><UtilBadge pct={teamAvgBillUtil} /></td>
+                <td />
+              </tr>
+            </tfoot>
+          )}
+        </table>
+      </div>
     </div>
   );
 }
