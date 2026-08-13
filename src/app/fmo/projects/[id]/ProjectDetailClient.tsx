@@ -1,26 +1,32 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useRole } from '@/components/RoleProvider';
 import { useLocale } from 'next-intl';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer,
-  ComposedChart, Line, CartesianGrid,
+  ComposedChart, Line, CartesianGrid, ReferenceLine,
 } from 'recharts';
 import { fmtH, fmtEur, type Locale } from '@/lib/i18n';
 import type {
   FmoProject, FmoEntry, FmoMember, FmoWbsEntry, FmoTicket,
   WbsSubCategory, FmoOperationContract,
+  FmoProjectChange, FmoWorkPackage, FmoProjectMilestone,
+  FmoChangeStatus, FmoMilestoneStatus, FmoMilestoneType,
+  FmoWorkPackageTask, FmoAcceptanceCriterion,
 } from '@/lib/types';
 import {
   updateFmoProject, updateProjectConfig, setProjectMemberRate,
   upsertProjectOperationContract, removeProjectOperationContract,
+  updateProjectFrame, upsertProjectChange, removeProjectChange,
+  upsertWorkPackage, removeWorkPackage, addWorkPackageNote,
+  toggleWorkPackageCriterion,
+  upsertMilestone, removeMilestone,
 } from '@/actions/fmoProjects';
-import { ChartTimeFilter, initChartRange, type TimeRange } from '@/components/ChartTimeFilter';
 
-type Tab = 'overview' | 'team' | 'tickets' | 'trends' | 'settings';
+type Tab = 'overview' | 'team' | 'tickets' | 'trends' | 'financials' | 'milestones' | 'settings';
 
 const COLORS = [
   '#4338ca', '#0f766e', '#c2410c', '#1d4ed8',
@@ -125,6 +131,968 @@ function OpsContractForm({
   );
 }
 
+// ─── Work Package Form (Add + Edit) ───────────────────────────────────────────
+
+function WorkPackageForm({
+  projectId, initial, allTickets, onDone, onCancel,
+}: {
+  projectId: string;
+  initial?: FmoWorkPackage;
+  allTickets: FmoTicket[];
+  onDone: () => void;
+  onCancel: () => void;
+}) {
+  const isEdit = !!initial;
+  const [name, setName]               = useState(initial?.name ?? '');
+  const [startDate, setStartDate]     = useState(initial?.startDate ?? '');
+  const [endDate, setEndDate]         = useState(initial?.endDate ?? '');
+  const [budgetHours, setBudgetHours] = useState(String(initial?.budgetHours || ''));
+  const [description, setDescription] = useState(initial?.description ?? '');
+  const [tasks, setTasks]             = useState<Array<{ id: string; text: string }>>(
+    (initial?.tasks ?? []).length > 0 ? initial!.tasks! : [{ id: crypto.randomUUID(), text: '' }]
+  );
+  const [criteria, setCriteria]       = useState<Array<{ id: string; text: string; checked: boolean }>>(
+    (initial?.acceptanceCriteria ?? []).length > 0
+      ? initial!.acceptanceCriteria!
+      : [{ id: crypto.randomUUID(), text: '', checked: false }]
+  );
+  const [selectedTickets, setSelectedTickets] = useState<number[]>(initial?.ticketIds ?? []);
+  const [ticketQuery, setTicketQuery]         = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const filteredTickets = allTickets
+    .filter(t => !ticketQuery || String(t.id).includes(ticketQuery) || t.name.toLowerCase().includes(ticketQuery.toLowerCase()))
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  function addTask() { setTasks(p => [...p, { id: crypto.randomUUID(), text: '' }]); }
+  function removeTask(id: string) { setTasks(p => p.filter(t => t.id !== id)); }
+  function updateTask(id: string, text: string) { setTasks(p => p.map(t => t.id === id ? { ...t, text } : t)); }
+
+  function addCriterion() { setCriteria(p => [...p, { id: crypto.randomUUID(), text: '', checked: false }]); }
+  function removeCriterion(id: string) { setCriteria(p => p.filter(c => c.id !== id)); }
+  function updateCriterion(id: string, text: string) { setCriteria(p => p.map(c => c.id === id ? { ...c, text } : c)); }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!name.trim()) return;
+    setSaving(true);
+    await upsertWorkPackage(projectId, {
+      ...(isEdit ? { id: initial!.id } : {}),
+      name: name.trim(),
+      budgetHours: parseFloat(budgetHours) || 0,
+      startDate: startDate || undefined,
+      endDate: endDate || undefined,
+      description: description.trim() || undefined,
+      tasks: tasks.filter(t => t.text.trim()) as FmoWorkPackageTask[],
+      acceptanceCriteria: criteria.filter(c => c.text.trim()) as FmoAcceptanceCriterion[],
+      ticketIds: selectedTickets,
+    });
+    setSaving(false);
+    onDone();
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="border border-slate-200 rounded-lg p-4 bg-indigo-50/30 space-y-3">
+      <div className="grid grid-cols-3 gap-3">
+        <div className="col-span-3">
+          <label className="block text-xs font-medium text-slate-500 mb-1">Name</label>
+          <input autoFocus value={name} onChange={e => setName(e.target.value)} required
+            placeholder="e.g. LDAP Integration"
+            className="w-full border border-slate-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400" />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-slate-500 mb-1">Planned Start</label>
+          <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)}
+            className="w-full border border-slate-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400" />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-slate-500 mb-1">Planned End</label>
+          <input type="date" value={endDate} min={startDate} onChange={e => setEndDate(e.target.value)}
+            className="w-full border border-slate-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400" />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-slate-500 mb-1">Budget Hours <span className="text-slate-300 font-normal">(opt.)</span></label>
+          <input type="number" min="0" value={budgetHours} onChange={e => setBudgetHours(e.target.value)}
+            placeholder="0"
+            className="w-full border border-slate-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400" />
+        </div>
+      </div>
+
+      {/* Linked Tickets */}
+      {allTickets.length > 0 && (
+        <div>
+          <label className="block text-xs font-medium text-slate-500 mb-1">
+            Linked Tickets <span className="text-slate-300 font-normal">({selectedTickets.length} selected — used for planned vs booked tracking)</span>
+          </label>
+          <input value={ticketQuery} onChange={e => setTicketQuery(e.target.value)}
+            placeholder="Search tickets…"
+            className="w-full border border-slate-200 rounded px-3 py-1.5 text-xs focus:outline-none focus:border-slate-400 mb-1" />
+          <div className="border border-slate-200 rounded max-h-36 overflow-y-auto divide-y divide-slate-50 bg-white">
+            {filteredTickets.map(t => (
+              <label key={t.id} className="flex items-center gap-2 px-3 py-1.5 hover:bg-slate-50 cursor-pointer">
+                <input type="checkbox" checked={selectedTickets.includes(t.id)}
+                  onChange={() => setSelectedTickets(prev =>
+                    prev.includes(t.id) ? prev.filter(id => id !== t.id) : [...prev, t.id]
+                  )} />
+                <span className="font-mono text-xs text-slate-400">#{t.id}</span>
+                <span className="text-xs text-slate-700 truncate">{t.name}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div>
+        <label className="block text-xs font-medium text-slate-500 mb-1">Description <span className="text-slate-300 font-normal">(optional)</span></label>
+        <textarea value={description} onChange={e => setDescription(e.target.value)} rows={2}
+          placeholder="What this work package covers…"
+          className="w-full border border-slate-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400 resize-none" />
+      </div>
+
+      <div>
+        <div className="flex items-center justify-between mb-1.5">
+          <label className="text-xs font-medium text-slate-500">Tasks</label>
+          <button type="button" onClick={addTask} className="text-xs text-indigo-500 hover:text-indigo-700">+ Task</button>
+        </div>
+        <div className="space-y-1.5">
+          {tasks.map((t, i) => (
+            <div key={t.id} className="flex items-center gap-2">
+              <span className="text-slate-300 text-xs shrink-0">•</span>
+              <input value={t.text} onChange={e => updateTask(t.id, e.target.value)}
+                placeholder={`Task ${i + 1}…`}
+                className="flex-1 border border-slate-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-slate-400" />
+              {tasks.length > 1 && (
+                <button type="button" onClick={() => removeTask(t.id)} className="text-slate-300 hover:text-red-400 shrink-0">×</button>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div>
+        <div className="flex items-center justify-between mb-1.5">
+          <label className="text-xs font-medium text-slate-500">Acceptance Criteria</label>
+          <button type="button" onClick={addCriterion} className="text-xs text-indigo-500 hover:text-indigo-700">+ Criterion</button>
+        </div>
+        <div className="space-y-1.5">
+          {criteria.map((c, i) => (
+            <div key={c.id} className="flex items-center gap-2">
+              <span className="w-4 h-4 rounded border border-slate-300 bg-white shrink-0" />
+              <input value={c.text} onChange={e => updateCriterion(c.id, e.target.value)}
+                placeholder={`Criterion ${i + 1}…`}
+                className="flex-1 border border-slate-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-slate-400" />
+              {criteria.length > 1 && (
+                <button type="button" onClick={() => removeCriterion(c.id)} className="text-slate-300 hover:text-red-400 shrink-0">×</button>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="flex gap-2 justify-end">
+        <button type="button" onClick={onCancel} className="text-sm text-slate-500 px-3 py-1.5">Cancel</button>
+        <button type="submit" disabled={saving || !name.trim()}
+          className="bg-slate-800 text-white text-sm px-4 py-1.5 rounded hover:bg-slate-700 disabled:opacity-50">
+          {saving ? 'Saving…' : isEdit ? 'Save Changes' : 'Add Work Package'}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+// ─── Work Package Card ────────────────────────────────────────────────────────
+
+function WorkPackageCard({
+  projectId, wp, totalBudgetHours, totalBudgetEur, isAdmin, onDone,
+  entries, allTickets,
+}: {
+  projectId: string;
+  wp: FmoWorkPackage;
+  totalBudgetHours: number;
+  totalBudgetEur: number;
+  isAdmin: boolean;
+  onDone: () => void;
+  entries: FmoEntry[];
+  allTickets: FmoTicket[];
+}) {
+  const router = useRouter();
+  const [showNote, setShowNote]             = useState(false);
+  const [noteText, setNoteText]             = useState('');
+  const [noteCompletion, setNoteCompletion] = useState(0);
+  const [editing, setEditing]               = useState(false);
+  const [saving, setSaving]                 = useState(false);
+
+  const latest        = wp.notes.length > 0 ? wp.notes[wp.notes.length - 1] : null;
+  const pct           = latest?.completion ?? 0;
+  const wpEur         = totalBudgetHours > 0 && wp.budgetHours > 0 ? Math.round(wp.budgetHours / totalBudgetHours * totalBudgetEur) : 0;
+  const wpPctOfTotal  = totalBudgetHours > 0 && wp.budgetHours > 0 ? Math.round(wp.budgetHours / totalBudgetHours * 100) : 0;
+  const checkedCount  = (wp.acceptanceCriteria ?? []).filter(c => c.checked).length;
+  const totalCriteria = (wp.acceptanceCriteria ?? []).length;
+  const allDone       = totalCriteria > 0 && checkedCount === totalCriteria;
+
+  // ── Booked hours from linked tickets ────────────────────────────────────────
+  const linkedSet  = useMemo(() => new Set(wp.ticketIds ?? []), [wp.ticketIds]);
+  const hasLinks   = linkedSet.size > 0;
+
+  const wpEntries  = useMemo(() =>
+    hasLinks ? entries.filter(e => e.ticketId !== null && linkedSet.has(e.ticketId)) : [],
+    [entries, linkedSet, hasLinks]
+  );
+  const bookedHours = useMemo(() => wpEntries.reduce((s, e) => s + e.spentTime, 0), [wpEntries]);
+  const budget      = wp.budgetHours;
+  const overBudget  = budget > 0 && bookedHours > budget;
+  const burnPct     = budget > 0 ? Math.min(100, Math.round(bookedHours / budget * 100)) : null;
+
+  // ── Mini burndown data (monthly incremental + cumulative) ───────────────────
+  const burndownData = useMemo(() => {
+    if (!hasLinks || wpEntries.length === 0) return [];
+    const monthMap = new Map<string, number>();
+    for (const e of wpEntries) monthMap.set(e.month, (monthMap.get(e.month) ?? 0) + e.spentTime);
+    const months = [...monthMap.keys()].sort();
+    let cum = 0;
+    return months.map(m => {
+      cum += monthMap.get(m)!;
+      return {
+        month: m.slice(5),
+        monthly: Math.round(monthMap.get(m)! * 10) / 10,
+        cumulative: Math.round(cum * 10) / 10,
+      };
+    });
+  }, [wpEntries, hasLinks]);
+
+  const linkedTicketNames = useMemo(() =>
+    allTickets.filter(t => linkedSet.has(t.id)),
+    [allTickets, linkedSet]
+  );
+
+  if (editing && isAdmin) {
+    return (
+      <WorkPackageForm
+        projectId={projectId}
+        initial={wp}
+        allTickets={allTickets}
+        onDone={() => { setEditing(false); onDone(); router.refresh(); }}
+        onCancel={() => setEditing(false)}
+      />
+    );
+  }
+
+  async function saveNote() {
+    if (!noteText.trim()) return;
+    setSaving(true);
+    await addWorkPackageNote(projectId, wp.id, { statusText: noteText.trim(), completion: noteCompletion });
+    setSaving(false);
+    setShowNote(false);
+    setNoteText('');
+    setNoteCompletion(pct);
+    onDone();
+    router.refresh();
+  }
+
+  return (
+    <div className="border border-slate-200 rounded-lg overflow-hidden">
+
+      {/* Header */}
+      <div className="flex items-start gap-3 px-4 py-3 bg-slate-50">
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold text-slate-800">{wp.name}</p>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-0.5">
+            {(wp.startDate || wp.endDate) && (
+              <p className="text-xs text-slate-400">
+                {wp.startDate ? new Date(wp.startDate + 'T00:00:00').toLocaleDateString('de-DE', { day: '2-digit', month: 'short', year: 'numeric' }) : '?'}
+                {' → '}
+                {wp.endDate ? new Date(wp.endDate + 'T00:00:00').toLocaleDateString('de-DE', { day: '2-digit', month: 'short', year: 'numeric' }) : '?'}
+              </p>
+            )}
+            {wp.budgetHours > 0 && !hasLinks && (
+              <p className="text-xs text-slate-400">
+                {wp.budgetHours}h planned{wpPctOfTotal > 0 && ` · ${wpPctOfTotal}% of total`}{wpEur > 0 && ` · ${wpEur.toLocaleString('de-DE')} €`}
+              </p>
+            )}
+            {totalCriteria > 0 && (
+              <p className={`text-xs font-medium ${allDone ? 'text-emerald-600' : 'text-slate-400'}`}>
+                {checkedCount}/{totalCriteria} criteria {allDone ? '✓' : ''}
+              </p>
+            )}
+          </div>
+        </div>
+
+        {/* Booked vs planned KPI (when linked) */}
+        {hasLinks && budget > 0 && (
+          <div className="shrink-0 text-right">
+            <p className={`text-lg font-bold leading-tight ${overBudget ? 'text-red-500' : burnPct !== null && burnPct >= 80 ? 'text-amber-600' : 'text-slate-700'}`}>
+              {Math.round(bookedHours * 10) / 10}h
+            </p>
+            <p className="text-xs text-slate-400">of {budget}h</p>
+          </div>
+        )}
+        {!hasLinks && pct > 0 && (
+          <div className="shrink-0 text-right">
+            <p className={`text-lg font-bold ${pct >= 100 ? 'text-emerald-600' : pct >= 70 ? 'text-amber-600' : 'text-slate-700'}`}>{pct}%</p>
+            <p className="text-xs text-slate-400">done</p>
+          </div>
+        )}
+
+        {isAdmin && (
+          <>
+            <button onClick={() => setEditing(true)}
+              className="text-xs text-slate-400 hover:text-slate-700 border border-slate-200 rounded px-2 py-1 shrink-0">
+              Edit
+            </button>
+            <button onClick={async () => {
+              if (!confirm(`Delete "${wp.name}"?`)) return;
+              await removeWorkPackage(projectId, wp.id);
+              router.refresh();
+            }} className="text-gray-300 hover:text-red-400 shrink-0">×</button>
+          </>
+        )}
+      </div>
+
+      {/* Budget burn bar */}
+      {hasLinks && budget > 0 && (
+        <div className="h-1.5 bg-slate-100">
+          <div className={`h-full transition-all ${overBudget ? 'bg-red-400' : burnPct !== null && burnPct >= 80 ? 'bg-amber-400' : 'bg-indigo-500'}`}
+            style={{ width: `${Math.min(100, burnPct ?? 0)}%` }} />
+        </div>
+      )}
+
+      {/* Note-based progress bar (no ticket links) */}
+      {!hasLinks && pct > 0 && (
+        <div className="h-1.5 bg-slate-100">
+          <div className={`h-full transition-all ${pct >= 100 ? 'bg-emerald-500' : pct >= 70 ? 'bg-amber-400' : 'bg-indigo-500'}`}
+            style={{ width: `${Math.min(100, pct)}%` }} />
+        </div>
+      )}
+
+      {/* Linked tickets row */}
+      {hasLinks && (
+        <div className="px-4 py-2.5 border-t border-slate-50 flex flex-wrap gap-1.5 items-center">
+          <span className="text-xs text-slate-400 shrink-0">Tickets:</span>
+          {linkedTicketNames.map(t => (
+            <span key={t.id} className="text-xs font-mono bg-indigo-50 border border-indigo-100 text-indigo-600 rounded px-1.5 py-0.5">
+              #{t.id} <span className="font-sans font-normal text-slate-500 truncate max-w-[120px] inline-block align-bottom">{t.name}</span>
+            </span>
+          ))}
+          {hasLinks && budget === 0 && bookedHours > 0 && (
+            <span className="text-xs text-slate-400 ml-1">{Math.round(bookedHours * 10) / 10}h booked</span>
+          )}
+        </div>
+      )}
+
+      {/* Mini burndown chart */}
+      {hasLinks && burndownData.length > 0 && (
+        <div className="px-4 pt-2 pb-3 border-t border-slate-50">
+          <div className="flex items-center justify-between mb-1">
+            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide">Burndown</p>
+            {budget > 0 && (
+              <p className={`text-xs font-medium ${overBudget ? 'text-red-500' : 'text-slate-400'}`}>
+                {overBudget ? `+${Math.round((bookedHours - budget) * 10) / 10}h over` : `${Math.round((budget - bookedHours) * 10) / 10}h remaining`}
+              </p>
+            )}
+          </div>
+          <ResponsiveContainer width="100%" height={100}>
+            <ComposedChart data={burndownData} margin={{ top: 4, right: 4, left: -28, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+              <XAxis dataKey="month" tick={{ fontSize: 9 }} interval={0} />
+              <YAxis tick={{ fontSize: 9 }} tickFormatter={v => `${v}h`} />
+              <Tooltip
+                contentStyle={{ fontSize: 11, borderRadius: 4, border: '1px solid #e2e8f0' }}
+                formatter={(v, name) => [`${v}h`, name === 'monthly' ? 'Monthly' : 'Cumulative']} />
+              {budget > 0 && (
+                <ReferenceLine y={budget} stroke="#b91c1c" strokeDasharray="4 2"
+                  label={{ value: `${budget}h`, position: 'right', fontSize: 9, fill: '#b91c1c' }} />
+              )}
+              <Bar dataKey="monthly" fill="#c7d2fe" name="monthly" radius={[2, 2, 0, 0]} />
+              <Line type="monotone" dataKey="cumulative" stroke="#4338ca" strokeWidth={1.5} dot={{ r: 2 }} name="cumulative" />
+            </ComposedChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+
+      {/* Description */}
+      {wp.description && (
+        <div className="px-4 py-3 border-t border-slate-50">
+          <p className="text-xs text-slate-500 whitespace-pre-wrap">{wp.description}</p>
+        </div>
+      )}
+
+      {/* Tasks */}
+      {(wp.tasks ?? []).length > 0 && (
+        <div className="px-4 py-3 border-t border-slate-50">
+          <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">Tasks</p>
+          <ul className="space-y-1">
+            {(wp.tasks ?? []).map(t => (
+              <li key={t.id} className="flex items-start gap-2 text-xs text-slate-700">
+                <span className="text-slate-300 mt-0.5 shrink-0">•</span>
+                <span>{t.text}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* Acceptance Criteria */}
+      {totalCriteria > 0 && (
+        <div className="px-4 py-3 border-t border-slate-50">
+          <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">Acceptance Criteria</p>
+          <ul className="space-y-1.5">
+            {(wp.acceptanceCriteria ?? []).map(c => (
+              <li key={c.id} className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={isAdmin ? async () => { await toggleWorkPackageCriterion(projectId, wp.id, c.id); router.refresh(); } : undefined}
+                  disabled={!isAdmin}
+                  className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-colors ${
+                    c.checked
+                      ? 'bg-emerald-500 border-emerald-500 text-white'
+                      : 'border-slate-300 bg-white'
+                  } ${isAdmin ? 'cursor-pointer hover:border-slate-500' : 'cursor-default'}`}>
+                  {c.checked && (
+                    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                    </svg>
+                  )}
+                </button>
+                <span className={`text-xs ${c.checked ? 'text-slate-400 line-through' : 'text-slate-700'}`}>{c.text}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* Status Notes */}
+      {wp.notes.length > 0 && (
+        <div className="border-t border-slate-50 divide-y divide-slate-50 max-h-48 overflow-y-auto">
+          {[...wp.notes].reverse().map(note => (
+            <div key={note.id} className="flex items-start gap-3 px-4 py-2.5">
+              <div className="shrink-0">
+                <p className={`text-sm font-bold ${note.completion >= 100 ? 'text-emerald-600' : 'text-slate-600'}`}>{note.completion}%</p>
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs text-slate-700">{note.statusText}</p>
+                <p className="text-xs text-slate-400">{new Date(note.timestamp).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Add note */}
+      {isAdmin && (
+        <div className="border-t border-slate-100 px-4 py-2.5 bg-slate-50/50">
+          {!showNote ? (
+            <button onClick={() => setShowNote(true)} className="text-xs text-indigo-500 hover:text-indigo-700">+ Add Status Note</button>
+          ) : (
+            <div className="space-y-2 py-1">
+              <textarea value={noteText} onChange={e => setNoteText(e.target.value)} rows={2}
+                placeholder="Status update…"
+                className="w-full border border-slate-300 rounded px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-slate-400 resize-none" />
+              <div className="flex items-center gap-3">
+                <label className="text-xs text-slate-500 shrink-0">Completion</label>
+                <input type="range" min="0" max="100" step="5" value={noteCompletion}
+                  onChange={e => setNoteCompletion(Number(e.target.value))} className="flex-1" />
+                <span className="text-sm font-bold text-slate-700 w-10 text-right">{noteCompletion}%</span>
+              </div>
+              <div className="flex gap-2 justify-end">
+                <button type="button" onClick={() => setShowNote(false)} className="text-xs text-slate-500 px-3 py-1">Cancel</button>
+                <button type="button" onClick={saveNote} disabled={saving || !noteText.trim()}
+                  className="bg-slate-800 text-white text-xs px-3 py-1 rounded hover:bg-slate-700 disabled:opacity-50">
+                  {saving ? 'Saving…' : 'Save Note'}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Milestones Tab ───────────────────────────────────────────────────────────
+
+function MilestonesTab({
+  project, isAdmin, totalBudgetEur, showMilestoneForm, setShowMilestoneForm,
+}: {
+  project: FmoProject;
+  isAdmin: boolean;
+  totalBudgetEur: number;
+  showMilestoneForm: boolean;
+  setShowMilestoneForm: (v: boolean) => void;
+}) {
+  const router = useRouter();
+  const [selectedId, setSelectedId]   = useState<string | null>(null);
+  const [editingNotes, setEditingNotes] = useState('');
+  const [savingNotes, setSavingNotes]   = useState(false);
+
+  const today  = new Date().toISOString().slice(0, 10);
+  const sorted = [...(project.milestones ?? [])].sort((a, b) => a.date.localeCompare(b.date));
+
+  // Auto-select next upcoming milestone; fall back to first
+  const effectiveId = selectedId
+    ?? sorted.find(m => m.status === 'upcoming' && m.date >= today)?.id
+    ?? sorted[0]?.id
+    ?? null;
+  const selectedMs = sorted.find(m => m.id === effectiveId) ?? null;
+
+  useEffect(() => { setEditingNotes(selectedMs?.notes ?? ''); }, [selectedMs?.id]);
+
+  const totalPayments = sorted.reduce((s, m) => s + m.paymentAmount, 0);
+  const releasedPay   = sorted.filter(m => m.status === 'reached').reduce((s, m) => s + m.paymentAmount, 0);
+  const upcomingPay   = sorted.filter(m => m.status === 'upcoming').reduce((s, m) => s + m.paymentAmount, 0);
+  const delayedPay    = sorted.filter(m => m.status === 'delayed').reduce((s, m) => s + m.paymentAmount, 0);
+  const pctReleased   = totalPayments > 0 ? Math.round(releasedPay / totalPayments * 100) : 0;
+  const hasPayments   = totalPayments > 0;
+  const fmt           = (n: number) => n.toLocaleString('de-DE') + ' €';
+
+  function relDate(d: string) {
+    const diff = Math.round((new Date(d + 'T00:00:00').getTime() - new Date(today + 'T00:00:00').getTime()) / 86400000);
+    if (diff === 0)  return 'Today';
+    if (diff === 1)  return 'Tomorrow';
+    if (diff === -1) return 'Yesterday';
+    if (diff > 0)    return diff < 365 ? `in ${diff} days` : `in ${Math.round(diff / 30)} months`;
+    return (-diff) < 365 ? `${-diff} days ago` : `${Math.round(-diff / 30)} months ago`;
+  }
+
+  // Build chronological timeline items with a "Today" marker inserted
+  type TLItem = { type: 'milestone'; ms: FmoProjectMilestone } | { type: 'today' };
+  const timelineItems: TLItem[] = [];
+  let todayPlaced = false;
+  for (const ms of sorted) {
+    if (!todayPlaced && ms.date > today) { timelineItems.push({ type: 'today' }); todayPlaced = true; }
+    timelineItems.push({ type: 'milestone', ms });
+  }
+  if (!todayPlaced) timelineItems.push({ type: 'today' });
+
+  const isPaymentMs = (ms: FmoProjectMilestone) => (ms.milestoneType ?? 'milestone') === 'payment';
+
+  const statusLabel = (ms: FmoProjectMilestone) => {
+    if (isPaymentMs(ms)) {
+      return ms.status === 'reached' ? 'Paid ✓' : ms.status === 'delayed' ? 'Overdue ⚠' : 'Pending';
+    }
+    return ms.status === 'reached' ? 'Reached ✓' : ms.status === 'delayed' ? 'Delayed ⚠' : 'Upcoming';
+  };
+
+  const dotCls = (ms: FmoProjectMilestone, active: boolean) =>
+    ms.status === 'reached' ? 'bg-emerald-500 border-emerald-500' :
+    ms.status === 'delayed'  ? 'bg-red-400 border-red-400' :
+    active ? 'bg-indigo-400 border-indigo-400' : 'bg-white border-slate-300';
+
+  return (
+    <div className="space-y-6">
+
+      {/* ── Summary cards ── */}
+      {hasPayments && (
+        <div className="grid grid-cols-4 gap-4">
+          <div className="bg-white rounded-lg border border-slate-200 p-4">
+            <p className="text-xs text-slate-400 mb-1">Total Contract</p>
+            <p className="text-lg font-bold text-slate-800">{fmt(totalBudgetEur || totalPayments)}</p>
+            {totalBudgetEur > 0 && totalPayments !== totalBudgetEur && (
+              <p className="text-xs text-slate-400 mt-0.5">{fmt(totalPayments)} via milestones</p>
+            )}
+          </div>
+          <div className="bg-white rounded-lg border border-emerald-200 p-4">
+            <p className="text-xs text-slate-400 mb-1">Released</p>
+            <p className="text-lg font-bold text-emerald-600">{fmt(releasedPay)}</p>
+            <p className="text-xs text-slate-400 mt-0.5">{pctReleased}% of total</p>
+          </div>
+          <div className="bg-white rounded-lg border border-slate-200 p-4">
+            <p className="text-xs text-slate-400 mb-1">Upcoming</p>
+            <p className="text-lg font-bold text-slate-700">{fmt(upcomingPay)}</p>
+            <p className="text-xs text-slate-400 mt-0.5">{sorted.filter(m => m.status === 'upcoming').length} milestones</p>
+          </div>
+          {delayedPay > 0 ? (
+            <div className="bg-white rounded-lg border border-red-200 p-4">
+              <p className="text-xs text-slate-400 mb-1">Delayed</p>
+              <p className="text-lg font-bold text-red-500">{fmt(delayedPay)}</p>
+              <p className="text-xs text-slate-400 mt-0.5">{sorted.filter(m => m.status === 'delayed').length} milestones</p>
+            </div>
+          ) : (
+            <div className="bg-white rounded-lg border border-slate-200 p-4">
+              <p className="text-xs text-slate-400 mb-1">Remaining</p>
+              <p className="text-lg font-bold text-slate-700">{fmt(totalPayments - releasedPay)}</p>
+              <p className="text-xs text-slate-400 mt-0.5">{100 - pctReleased}% pending</p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Payment progress ── */}
+      {hasPayments && (
+        <div className="bg-white rounded-lg border border-slate-200 p-4">
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-xs font-medium text-slate-600">Payment Progress</p>
+            <p className="text-xs text-slate-400">{fmt(releasedPay)} / {fmt(totalPayments)}</p>
+          </div>
+          <div className="h-3 bg-slate-100 rounded-full overflow-hidden flex">
+            <div className="h-full bg-emerald-500 transition-all" style={{ width: `${pctReleased}%` }} />
+            {delayedPay > 0 && <div className="h-full bg-red-400 transition-all" style={{ width: `${Math.round(delayedPay / totalPayments * 100)}%` }} />}
+          </div>
+          <div className="flex gap-4 mt-2">
+            <span className="flex items-center gap-1 text-xs text-slate-500"><span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" /> Released</span>
+            {delayedPay > 0 && <span className="flex items-center gap-1 text-xs text-slate-500"><span className="w-2 h-2 rounded-full bg-red-400 inline-block" /> Delayed</span>}
+            <span className="flex items-center gap-1 text-xs text-slate-500"><span className="w-2 h-2 rounded-full bg-slate-200 inline-block" /> Upcoming</span>
+          </div>
+        </div>
+      )}
+
+      {/* ── Add form ── */}
+      {showMilestoneForm && isAdmin && (
+        <MilestoneForm projectId={project.id}
+          onDone={() => { setShowMilestoneForm(false); router.refresh(); }}
+          onCancel={() => setShowMilestoneForm(false)} />
+      )}
+
+      {/* ── Empty state ── */}
+      {sorted.length === 0 && !showMilestoneForm && (
+        <div className="bg-white rounded-lg border border-slate-200 px-6 py-12 text-center">
+          <p className="text-sm text-slate-400">No milestones yet.</p>
+          {isAdmin && (
+            <button onClick={() => setShowMilestoneForm(true)}
+              className="mt-3 text-xs text-indigo-600 hover:text-indigo-800 border border-indigo-200 rounded px-3 py-1.5">
+              + Add First Milestone
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* ── Timeline + Detail panel ── */}
+      {sorted.length > 0 && (
+        <div className="flex gap-4 items-start">
+
+          {/* Timeline list */}
+          <div className="w-64 shrink-0 bg-white rounded-lg border border-slate-200 overflow-hidden">
+            <div className="flex items-center justify-between px-4 py-2.5 border-b border-slate-100 bg-slate-50">
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Timeline</p>
+              {isAdmin && !showMilestoneForm && (
+                <button onClick={() => setShowMilestoneForm(true)} className="text-xs text-indigo-500 hover:text-indigo-700">+ Add</button>
+              )}
+            </div>
+            <div className="relative py-2">
+              {/* Vertical guide line — centered under the dot column (w-7 → center = 14px, outer px-2 = 8px → 22px = ~1.375rem) */}
+              <div className="absolute top-0 bottom-0 left-[1.375rem] w-px bg-slate-200" />
+              {timelineItems.map((item, idx) => {
+                if (item.type === 'today') return (
+                  <div key="today" className="flex items-center gap-3.5 px-2 py-1.5">
+                    <div className="w-7 flex justify-center shrink-0">
+                      <div className="w-2.5 h-2.5 rounded-full border-2 border-dashed border-blue-400 bg-blue-50 relative z-10" />
+                    </div>
+                    <span className="text-xs font-bold text-blue-500">Today</span>
+                  </div>
+                );
+                const ms = item.ms;
+                const isActive  = ms.id === effectiveId;
+                const isPay     = isPaymentMs(ms);
+                const nodeColor = ms.status === 'reached' ? 'text-emerald-600' : ms.status === 'delayed' ? 'text-red-500' : isActive ? 'text-indigo-500' : 'text-slate-400';
+                return (
+                  <button key={ms.id} onClick={() => setSelectedId(ms.id)}
+                    className={`w-full flex items-center gap-3.5 px-2 py-2.5 text-left transition-colors ${
+                      isActive ? 'bg-indigo-50' : 'hover:bg-slate-50'
+                    }`}>
+                    <div className="w-7 flex justify-center shrink-0">
+                      {isPay ? (
+                        // Payment: circle with € sign
+                        <div className={`w-5 h-5 rounded-full border-2 relative z-10 flex items-center justify-center text-[9px] font-bold
+                          ${ms.status === 'reached' ? 'bg-emerald-500 border-emerald-500 text-white' :
+                            ms.status === 'delayed'  ? 'bg-red-400 border-red-400 text-white' :
+                            isActive ? 'bg-indigo-400 border-indigo-400 text-white' : 'bg-white border-slate-300 text-slate-400'}`}>
+                          €
+                        </div>
+                      ) : (
+                        // Milestone: rotated square (diamond)
+                        <div className={`w-3 h-3 rotate-45 border-2 relative z-10 ${dotCls(ms, isActive)}`} />
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className={`text-xs font-semibold truncate leading-tight ${isActive ? 'text-indigo-700' : 'text-slate-800'}`}>{ms.name}</p>
+                      <p className="text-xs text-slate-400">
+                        {new Date(ms.date + 'T00:00:00').toLocaleDateString('de-DE', { day: '2-digit', month: 'short', year: 'numeric' })}
+                      </p>
+                    </div>
+                    {isPay && ms.paymentAmount > 0 && (
+                      <span className={`text-xs font-bold shrink-0 pr-1 ${ms.status === 'reached' ? 'text-emerald-600' : 'text-slate-300'}`}>
+                        {ms.paymentAmount >= 1000 ? `${Math.round(ms.paymentAmount / 1000)}k` : ms.paymentAmount}€
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Detail panel */}
+          {selectedMs && (
+            <div className="flex-1 min-w-0 bg-white rounded-lg border border-slate-200 p-6 space-y-6">
+
+              {/* Header */}
+              <div>
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className={`text-xs px-2 py-0.5 rounded font-semibold ${
+                        isPaymentMs(selectedMs) ? 'bg-violet-50 text-violet-700' : 'bg-indigo-50 text-indigo-700'
+                      }`}>
+                        {isPaymentMs(selectedMs) ? '€ Payment' : '◆ Milestone'}
+                      </span>
+                    </div>
+                    <h2 className="text-xl font-bold text-slate-800 leading-tight">{selectedMs.name}</h2>
+                  </div>
+                  <span className={`text-xs px-2.5 py-1 rounded-full shrink-0 font-semibold mt-0.5 ${
+                    selectedMs.status === 'reached' ? 'bg-emerald-100 text-emerald-700' :
+                    selectedMs.status === 'delayed'  ? 'bg-red-100 text-red-600' :
+                    'bg-slate-100 text-slate-500'
+                  }`}>
+                    {statusLabel(selectedMs)}
+                  </span>
+                </div>
+                <p className="text-sm text-slate-500 mt-1.5">
+                  {new Date(selectedMs.date + 'T00:00:00').toLocaleDateString('de-DE', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' })}
+                  <span className="text-slate-300 mx-2">·</span>
+                  <span className="text-slate-400">{relDate(selectedMs.date)}</span>
+                </p>
+              </div>
+
+              {/* Payment block */}
+              {selectedMs.paymentAmount > 0 && (
+                <div className={`rounded-lg p-4 border ${
+                  selectedMs.status === 'reached' ? 'bg-emerald-50 border-emerald-200' :
+                  selectedMs.status === 'delayed'  ? 'bg-red-50 border-red-200' :
+                  'bg-slate-50 border-slate-200'
+                }`}>
+                  <p className="text-xs text-slate-400 mb-1">Payment Release</p>
+                  <p className={`text-3xl font-bold ${
+                    selectedMs.status === 'reached' ? 'text-emerald-600' :
+                    selectedMs.status === 'delayed'  ? 'text-red-500' : 'text-slate-800'
+                  }`}>{fmt(selectedMs.paymentAmount)}</p>
+                  <p className="text-xs text-slate-500 mt-1.5">
+                    {selectedMs.status === 'reached' && 'Payment released.'}
+                    {selectedMs.status === 'delayed'  && 'Payment blocked — milestone delayed.'}
+                    {selectedMs.status === 'upcoming' && (selectedMs.date <= today ? 'Due — not yet released.' : `Due ${relDate(selectedMs.date)}.`)}
+                  </p>
+                </div>
+              )}
+
+              {/* Status buttons (admin) */}
+              {isAdmin && (
+                <div>
+                  <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">Status</p>
+                  <div className="flex gap-2">
+                    {(['upcoming', 'reached', 'delayed'] as const).map(s => (
+                      <button key={s} onClick={async () => { await upsertMilestone(project.id, { ...selectedMs, status: s }); router.refresh(); }}
+                        className={`text-xs px-3 py-1.5 rounded border transition-colors ${
+                          selectedMs.status === s
+                            ? s === 'reached' ? 'bg-emerald-600 text-white border-emerald-600'
+                            : s === 'delayed'  ? 'bg-red-500 text-white border-red-500'
+                            : 'bg-slate-800 text-white border-slate-800'
+                            : 'text-slate-500 border-slate-200 hover:border-slate-400 hover:text-slate-700'
+                        }`}>
+                        {isPaymentMs(selectedMs)
+                      ? (s === 'reached' ? 'Paid ✓' : s === 'delayed' ? 'Overdue ⚠' : 'Pending')
+                      : (s === 'reached' ? 'Reached ✓' : s === 'delayed' ? 'Delayed ⚠' : 'Upcoming')}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Notes */}
+              <div>
+                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">Notes</p>
+                {isAdmin ? (
+                  <div className="space-y-2">
+                    <textarea value={editingNotes} onChange={e => setEditingNotes(e.target.value)} rows={4}
+                      placeholder="Invoice number, acceptance criteria, delivery items…"
+                      className="w-full border border-slate-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400 resize-none" />
+                    {editingNotes !== (selectedMs.notes ?? '') && (
+                      <div className="flex gap-2 justify-end">
+                        <button type="button" onClick={() => setEditingNotes(selectedMs.notes ?? '')}
+                          className="text-xs text-slate-400 hover:text-slate-600 px-3 py-1">Discard</button>
+                        <button type="button" disabled={savingNotes} onClick={async () => {
+                          setSavingNotes(true);
+                          await upsertMilestone(project.id, { ...selectedMs, notes: editingNotes || undefined });
+                          setSavingNotes(false);
+                          router.refresh();
+                        }} className="bg-slate-800 text-white text-xs px-3 py-1.5 rounded hover:bg-slate-700 disabled:opacity-50">
+                          {savingNotes ? 'Saving…' : 'Save Notes'}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  selectedMs.notes
+                    ? <p className="text-sm text-slate-600 whitespace-pre-wrap">{selectedMs.notes}</p>
+                    : <p className="text-sm text-slate-400">No notes.</p>
+                )}
+              </div>
+
+              {/* Delete */}
+              {isAdmin && (
+                <div className="border-t border-slate-100 pt-4">
+                  <button onClick={async () => {
+                    if (!confirm(`Delete milestone "${selectedMs.name}"?`)) return;
+                    await removeMilestone(project.id, selectedMs.id);
+                    setSelectedId(null);
+                    router.refresh();
+                  }} className="text-xs text-red-400 hover:text-red-600 transition-colors">
+                    Delete this milestone
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Change Order Form ────────────────────────────────────────────────────────
+
+function ChangeOrderForm({ projectId, onDone, onCancel }: { projectId: string; onDone: () => void; onCancel: () => void }) {
+  const [name, setName]               = useState('');
+  const [budgetHours, setBudgetHours] = useState('');
+  const [budgetEur, setBudgetEur]     = useState('');
+  const [saving, setSaving]           = useState(false);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!name.trim()) return;
+    setSaving(true);
+    await upsertProjectChange(projectId, {
+      name: name.trim(),
+      budgetHours: parseFloat(budgetHours) || 0,
+      budgetEur:   parseFloat(budgetEur)   || 0,
+      status: 'pending',
+    });
+    setSaving(false);
+    onDone();
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="px-5 py-4 border-b border-slate-100 bg-indigo-50/30 space-y-3">
+      <div className="grid grid-cols-3 gap-3">
+        <div className="col-span-3">
+          <label className="block text-xs font-medium text-slate-500 mb-1">Change Order Name</label>
+          <input value={name} onChange={e => setName(e.target.value)} required
+            placeholder="e.g. Nachtrag 1 — LDAP Scope Extension"
+            className="w-full border border-slate-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400" />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-slate-500 mb-1">Additional Hours</label>
+          <input type="number" min="0" value={budgetHours} onChange={e => setBudgetHours(e.target.value)}
+            placeholder="0"
+            className="w-full border border-slate-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400" />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-slate-500 mb-1">Additional € Value</label>
+          <input type="number" min="0" value={budgetEur} onChange={e => setBudgetEur(e.target.value)}
+            placeholder="0"
+            className="w-full border border-slate-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400" />
+        </div>
+      </div>
+      <div className="flex gap-2 justify-end">
+        <button type="button" onClick={onCancel} className="text-sm text-slate-500 px-3 py-1.5">Cancel</button>
+        <button type="submit" disabled={saving || !name.trim()}
+          className="bg-slate-800 text-white text-sm px-4 py-1.5 rounded hover:bg-slate-700 disabled:opacity-50">
+          {saving ? 'Saving…' : 'Add Change Order'}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+// ─── Milestone / Payment Form ──────────────────────────────────────────────────
+
+function MilestoneForm({ projectId, onDone, onCancel, defaultType = 'milestone' }: {
+  projectId: string;
+  onDone: () => void;
+  onCancel: () => void;
+  defaultType?: FmoMilestoneType;
+}) {
+  const [msType, setMsType]         = useState<FmoMilestoneType>(defaultType);
+  const [name, setName]             = useState('');
+  const [date, setDate]             = useState('');
+  const [paymentAmount, setPayment] = useState('');
+  const [notes, setNotes]           = useState('');
+  const [saving, setSaving]         = useState(false);
+  const isPayment = msType === 'payment';
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!name.trim() || !date) return;
+    if (isPayment && !paymentAmount) return;
+    setSaving(true);
+    await upsertMilestone(projectId, {
+      milestoneType: msType,
+      name: name.trim(),
+      date,
+      paymentAmount: isPayment ? parseFloat(paymentAmount) || 0 : 0,
+      status: 'upcoming',
+      notes: notes.trim() || undefined,
+    });
+    setSaving(false);
+    onDone();
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="px-5 py-4 border-b border-slate-100 bg-indigo-50/30 space-y-3">
+      {/* Type selector */}
+      <div className="flex gap-2">
+        {(['milestone', 'payment'] as const).map(t => (
+          <button key={t} type="button" onClick={() => setMsType(t)}
+            className={`text-xs px-3 py-1.5 rounded border transition-colors ${
+              msType === t ? 'bg-slate-800 text-white border-slate-800' : 'text-slate-500 border-slate-200 hover:border-slate-400'
+            }`}>
+            {t === 'milestone' ? '◆ Milestone' : '€ Payment'}
+          </button>
+        ))}
+        <p className="text-xs text-slate-400 self-center ml-1">
+          {isPayment ? 'A payment release event with a € amount.' : 'A project event or delivery checkpoint.'}
+        </p>
+      </div>
+
+      <div className="grid grid-cols-3 gap-3">
+        <div className="col-span-2">
+          <label className="block text-xs font-medium text-slate-500 mb-1">
+            {isPayment ? 'Payment Name' : 'Milestone Name'}
+          </label>
+          <input value={name} onChange={e => setName(e.target.value)} required
+            placeholder={isPayment ? 'e.g. Abschlagsrechnung 1' : 'e.g. Go-Live Phase 1'}
+            className="w-full border border-slate-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400" />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-slate-500 mb-1">Date</label>
+          <input type="date" value={date} onChange={e => setDate(e.target.value)} required
+            className="w-full border border-slate-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400" />
+        </div>
+      </div>
+
+      {isPayment && (
+        <div>
+          <label className="block text-xs font-medium text-slate-500 mb-1">Amount (€)</label>
+          <input type="number" min="0" value={paymentAmount} onChange={e => setPayment(e.target.value)} required
+            placeholder="0"
+            className="w-full border border-slate-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400" />
+        </div>
+      )}
+
+      <div>
+        <label className="block text-xs font-medium text-slate-500 mb-1">Notes <span className="text-slate-300 font-normal">(optional)</span></label>
+        <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2}
+          placeholder={isPayment ? 'Invoice number, payment terms…' : 'Acceptance criteria, delivery items…'}
+          className="w-full border border-slate-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400 resize-none" />
+      </div>
+
+      <div className="flex gap-2 justify-end">
+        <button type="button" onClick={onCancel} className="text-sm text-slate-500 px-3 py-1.5">Cancel</button>
+        <button type="submit" disabled={saving || !name.trim() || !date || (isPayment && !paymentAmount)}
+          className="bg-slate-800 text-white text-sm px-4 py-1.5 rounded hover:bg-slate-700 disabled:opacity-50">
+          {saving ? 'Saving…' : isPayment ? 'Add Payment' : 'Add Milestone'}
+        </button>
+      </div>
+    </form>
+  );
+}
+
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export default function ProjectDetailClient({
@@ -143,7 +1111,6 @@ export default function ProjectDetailClient({
   const locale  = useLocale() as Locale;
 
   const [activeTab, setActiveTab]         = useState<Tab>('overview');
-  const [chartRange, setChartRange]       = useState<TimeRange>(() => initChartRange(entries));
   const [projType, setProjType]           = useState(project.projectType ?? 'tm');
   const [contractValue, setContractValue] = useState(String(project.contractValue ?? 0));
   const [contractHours, setContractHours] = useState(String(project.contractHours ?? 0));
@@ -153,6 +1120,24 @@ export default function ProjectDetailClient({
   const [savingWbs, setSavingWbs]         = useState(false);
   const [showOpsForm, setShowOpsForm]         = useState(false);
   const [editingContract, setEditingContract] = useState<FmoOperationContract | null>(null);
+  // Fixed Price frame
+  const [startDate, setStartDate]     = useState(project.startDate ?? '');
+  const [endDate, setEndDate]         = useState(project.endDate ?? '');
+  const [budgetHours, setBudgetHours] = useState(String(project.budgetHours ?? ''));
+  const [budgetEur, setBudgetEur]     = useState(String(project.budgetEur ?? ''));
+  const [fteHours, setFteHours]       = useState(String(project.fteHours ?? 1600));
+  const [savingFrame, setSavingFrame] = useState(false);
+  // Inline add forms
+  const [showChangeForm, setShowChangeForm]       = useState(false);
+  const [showWpForm, setShowWpForm]               = useState(false);
+  const [showMilestoneForm, setShowMilestoneForm] = useState(false);
+  // Dashboard period filter (KPI cards) — default: Jan → today of current year
+  const [dashboardRange, setDashboardRange] = useState<{ from: string; to: string }>(() => {
+    const now  = new Date();
+    const year = now.getFullYear();
+    const mo   = String(now.getMonth() + 1).padStart(2, '0');
+    return { from: `${year}-01`, to: `${year}-${mo}` };
+  });
 
   // ── Lookups ────────────────────────────────────────────────────────────────
 
@@ -169,17 +1154,25 @@ export default function ProjectDetailClient({
     new Set((project.operationContracts ?? []).flatMap(c => c.ticketIds)),
     [project.operationContracts]);
 
-  // ── All-time totals (not affected by chart range) ──────────────────────────
+  // ── Dashboard period filter ────────────────────────────────────────────────
 
-  const totalHours    = useMemo(() => entries.reduce((s, e) => s + e.spentTime, 0), [entries]);
-  const billableHours = useMemo(() => entries.filter(e => e.billingClass === 'V').reduce((s, e) => s + e.spentTime, 0), [entries]);
-  const devHoursAll   = useMemo(() => entries.filter(e => e.ticketId === null || !allOpsTicketSet.has(e.ticketId)).reduce((s, e) => s + e.spentTime, 0), [entries, allOpsTicketSet]);
-  const opsHoursAll   = useMemo(() => entries.filter(e => e.ticketId !== null && allOpsTicketSet.has(e.ticketId)).reduce((s, e) => s + e.spentTime, 0), [entries, allOpsTicketSet]);
+  const dashboardEntries = useMemo(() =>
+    dashboardRange.from
+      ? entries.filter(e => e.month >= dashboardRange.from && e.month <= dashboardRange.to)
+      : entries,
+    [entries, dashboardRange]);
 
-  // Member summary (all-time)
+  // ── KPI totals (scoped to dashboardEntries) ────────────────────────────────
+
+  const totalHours    = useMemo(() => dashboardEntries.reduce((s, e) => s + e.spentTime, 0), [dashboardEntries]);
+  const billableHours = useMemo(() => dashboardEntries.filter(e => e.billingClass === 'V').reduce((s, e) => s + e.spentTime, 0), [dashboardEntries]);
+  const devHoursAll   = useMemo(() => dashboardEntries.filter(e => e.ticketId === null || !allOpsTicketSet.has(e.ticketId)).reduce((s, e) => s + e.spentTime, 0), [dashboardEntries, allOpsTicketSet]);
+  const opsHoursAll   = useMemo(() => dashboardEntries.filter(e => e.ticketId !== null && allOpsTicketSet.has(e.ticketId)).reduce((s, e) => s + e.spentTime, 0), [dashboardEntries, allOpsTicketSet]);
+
+  // Member summary (period-scoped)
   const memberSummary = useMemo(() => {
     const map = new Map<string, { member: FmoMember; hours: number; tmHours: number; opsHours: number; cost: number; revenue: number }>();
-    for (const e of entries) {
+    for (const e of dashboardEntries) {
       const m = nameToMember[e.user];
       if (!m) continue;
       const ex = map.get(m.id) ?? { member: m, hours: 0, tmHours: 0, opsHours: 0, cost: 0, revenue: 0 };
@@ -193,50 +1186,40 @@ export default function ProjectDetailClient({
       map.set(m.id, ex);
     }
     return [...map.values()].sort((a, b) => b.hours - a.hours);
-  }, [entries, nameToMember, fixOpsTicketSet, allOpsTicketSet, project.memberRates]);
+  }, [dashboardEntries, nameToMember, fixOpsTicketSet, allOpsTicketSet, project.memberRates]);
 
-  // Ticket summary (all-time)
+  // Ticket summary (period-scoped)
   const ticketSummary = useMemo(() => {
     const map = new Map<number | string, { name: string; wbsCode: string | null; billingClass: string | null; subCategory: string | null; hours: number }>();
-    for (const e of entries) {
+    for (const e of dashboardEntries) {
       const key = e.ticketId ?? e.ticketName;
       const ex = map.get(key);
       if (ex) ex.hours += e.spentTime;
       else map.set(key, { name: e.ticketName, wbsCode: e.wbsCode, billingClass: e.billingClass, subCategory: e.subCategory, hours: e.spentTime });
     }
     return [...map.entries()].map(([id, v]) => ({ id, ...v })).sort((a, b) => b.hours - a.hours);
-  }, [entries]);
+  }, [dashboardEntries]);
 
-  // All-time economics totals
+  // Economics totals (period-scoped)
   const totalEconAll = useMemo(() => {
     let cost = 0, revenue = 0;
     for (const ms of memberSummary) { cost += ms.cost; revenue += ms.revenue; }
-    // Add fixprice ops revenue for all months
-    const months = [...new Set(entries.map(e => e.month))];
+    const months = [...new Set(dashboardEntries.map(e => e.month))];
     const opsRevenue = months.reduce((s, month) =>
       s + (project.operationContracts ?? []).filter(c => c.type === 'fixprice')
         .reduce((cs, c) => cs + ((c.monthlyOverrides ?? {})[month] ?? c.defaultMonthlyAmount), 0), 0);
     revenue += opsRevenue;
     return { cost: Math.round(cost), revenue: Math.round(revenue), pl: Math.round(revenue - cost) };
-  }, [memberSummary, entries, project.operationContracts]);
+  }, [memberSummary, dashboardEntries, project.operationContracts]);
 
   const marginAll = totalEconAll.revenue > 0 ? Math.round(totalEconAll.pl / totalEconAll.revenue * 100) : 0;
 
-  // ── Chart-range filtered entries ───────────────────────────────────────────
-
-  const chartEntries = useMemo(
-    () => chartRange.from
-      ? entries.filter(e => e.month >= chartRange.from && e.month <= chartRange.to)
-      : entries,
-    [entries, chartRange],
-  );
-
-  // ── Chart data (chart-range) ───────────────────────────────────────────────
+  // ── Chart data (same period filter as KPIs) ───────────────────────────────
 
   // Velocity
   const velocityData = useMemo(() => {
     const totals = new Map<string, number>();
-    for (const e of chartEntries) totals.set(e.month, (totals.get(e.month) ?? 0) + e.spentTime);
+    for (const e of dashboardEntries) totals.set(e.month, (totals.get(e.month) ?? 0) + e.spentTime);
     const months = [...totals.keys()].sort();
     return months.map((month, i) => {
       const h = totals.get(month)!;
@@ -244,12 +1227,12 @@ export default function ProjectDetailClient({
       const avg = slice.reduce((s, m) => s + (totals.get(m) ?? 0), 0) / slice.length;
       return { month: month.slice(0, 7), hours: h, avg3m: Math.round(avg * 10) / 10 };
     });
-  }, [chartEntries]);
+  }, [dashboardEntries]);
 
   // Dev vs Operations monthly
   const devVsOpsData = useMemo(() => {
     const monthMap = new Map<string, { Development: number; Operations: number }>();
-    for (const e of chartEntries) {
+    for (const e of dashboardEntries) {
       const isOps = e.ticketId !== null && allOpsTicketSet.has(e.ticketId);
       const row = monthMap.get(e.month) ?? { Development: 0, Operations: 0 };
       if (isOps) row.Operations += e.spentTime;
@@ -267,13 +1250,13 @@ export default function ProjectDetailClient({
         'Ops %': total > 0 ? Math.round(r.Operations / total * 100) : 0,
       };
     });
-  }, [chartEntries, allOpsTicketSet]);
+  }, [dashboardEntries, allOpsTicketSet]);
 
   // Category stacked bar
   const { categoryData, categoryKeys } = useMemo(() => {
     const monthMap = new Map<string, Map<string, number>>();
     const catSet   = new Set<string>();
-    for (const e of chartEntries) {
+    for (const e of dashboardEntries) {
       if (!monthMap.has(e.month)) monthMap.set(e.month, new Map());
       const label = e.billingClass === 'V'
         ? 'Billable'
@@ -291,24 +1274,24 @@ export default function ProjectDetailClient({
       return row;
     });
     return { categoryData: data, categoryKeys: cats };
-  }, [chartEntries, subCategories]);
+  }, [dashboardEntries, subCategories]);
 
   // Monthly by member (top 5)
   const topMembers = useMemo(() => memberSummary.slice(0, 5).map(ms => ms.member.name), [memberSummary]);
   const monthlyByMember = useMemo(() => {
-    const months = [...new Set(chartEntries.map(e => e.month))].sort();
+    const months = [...new Set(dashboardEntries.map(e => e.month))].sort();
     return months.map(month => {
       const row: Record<string, any> = { month: month.slice(0, 7) };
       for (const name of topMembers)
-        row[name] = chartEntries.filter(e => e.month === month && e.user === name).reduce((s, e) => s + e.spentTime, 0);
+        row[name] = dashboardEntries.filter(e => e.month === month && e.user === name).reduce((s, e) => s + e.spentTime, 0);
       return row;
     });
-  }, [chartEntries, topMembers]);
+  }, [dashboardEntries, topMembers]);
 
   // Economics by month (chart-range)
   const economicsByMonth = useMemo(() => {
     const monthTotals = new Map<string, { cost: number; tmRevenue: number; opsRevenue: number }>();
-    for (const e of chartEntries) {
+    for (const e of dashboardEntries) {
       const m   = nameToMember[e.user];
       const row = monthTotals.get(e.month) ?? { cost: 0, tmRevenue: 0, opsRevenue: 0 };
       if (m) {
@@ -338,14 +1321,14 @@ export default function ProjectDetailClient({
         cumPl:      Math.round(cumPl),
       };
     });
-  }, [chartEntries, nameToMember, fixOpsTicketSet, project.memberRates, project.operationContracts]);
+  }, [dashboardEntries, nameToMember, fixOpsTicketSet, project.memberRates, project.operationContracts]);
 
   // Ops contract profitability (fixprice only, chart-range)
   const opsContractAnalysis = useMemo(() => {
-    const months = [...new Set(chartEntries.map(e => e.month))].sort();
+    const months = [...new Set(dashboardEntries.map(e => e.month))].sort();
     return (project.operationContracts ?? []).filter(c => c.type === 'fixprice').map(c => {
       const ctSet    = new Set(c.ticketIds);
-      const ctEntries = chartEntries.filter(e => e.ticketId !== null && ctSet.has(e.ticketId));
+      const ctEntries = dashboardEntries.filter(e => e.ticketId !== null && ctSet.has(e.ticketId));
       const hours    = ctEntries.reduce((s, e) => s + e.spentTime, 0);
       const cost     = ctEntries.reduce((s, e) => s + e.spentTime * (nameToMember[e.user]?.costRate ?? 0), 0);
       const revenue  = months.reduce((s, m) => s + ((c.monthlyOverrides ?? {})[m] ?? c.defaultMonthlyAmount), 0);
@@ -354,19 +1337,148 @@ export default function ProjectDetailClient({
       const implied  = hours > 0 ? revenue / hours : 0;
       return { contract: c, hours: Math.round(hours * 10) / 10, cost: Math.round(cost), revenue: Math.round(revenue), implied: Math.round(implied), pl: Math.round(pl), margin };
     });
-  }, [chartEntries, nameToMember, project.operationContracts]);
+  }, [dashboardEntries, nameToMember, project.operationContracts]);
 
   const hasRates     = Object.values(project.memberRates ?? {}).some(r => r.billingRate > 0);
   const hasCostRates = Object.values(members).some(m => (m.costRate ?? 0) > 0);
   const hasOpsFixed  = (project.operationContracts ?? []).some(c => c.type === 'fixprice');
   const hasOps       = allOpsTicketSet.size > 0;
 
+  // ── Three-bucket financials by month (chart-range) ─────────────────────────
+
+  const threeWayByMonth = useMemo(() => {
+    const fixOpsContracts = (project.operationContracts ?? []).filter(c => c.type === 'fixprice');
+    const monthMap = new Map<string, { devCost: number; devRev: number; adminCost: number; opsCost: number; opsRev: number }>();
+
+    for (const e of dashboardEntries) {
+      const member      = nameToMember[e.user];
+      const costRate    = member?.costRate ?? 0;
+      const billingRate = member ? ((project.memberRates ?? {})[member.id]?.billingRate ?? 0) : 0;
+      const isOps       = e.ticketId !== null && allOpsTicketSet.has(e.ticketId);
+      const isFixOps    = e.ticketId !== null && fixOpsTicketSet.has(e.ticketId);
+
+      const row = monthMap.get(e.month) ?? { devCost: 0, devRev: 0, adminCost: 0, opsCost: 0, opsRev: 0 };
+      if (isOps) {
+        row.opsCost += e.spentTime * costRate;
+        if (!isFixOps) row.opsRev += e.spentTime * billingRate;
+      } else if (e.billingClass === 'I') {
+        row.adminCost += e.spentTime * costRate;
+      } else {
+        row.devCost += e.spentTime * costRate;
+        row.devRev  += e.spentTime * billingRate;
+      }
+      monthMap.set(e.month, row);
+    }
+
+    // Fixprice ops revenue = monthly flat fees
+    for (const [month, row] of monthMap) {
+      row.opsRev += fixOpsContracts.reduce((s, c) =>
+        s + ((c.monthlyOverrides ?? {})[month] ?? c.defaultMonthlyAmount), 0);
+    }
+
+    const months = [...monthMap.keys()].sort();
+    let cumPl = 0;
+    return months.map(month => {
+      const r         = monthMap.get(month)!;
+      const totalCost = r.devCost + r.adminCost + r.opsCost;
+      const totalRev  = r.devRev + r.opsRev;
+      const pl        = totalRev - totalCost;
+      cumPl          += pl;
+      return {
+        month:      month.slice(0, 7),
+        devCost:    Math.round(r.devCost),
+        adminCost:  Math.round(r.adminCost),
+        opsCost:    Math.round(r.opsCost),
+        totalCost:  Math.round(totalCost),
+        devRev:     Math.round(r.devRev),
+        opsRev:     Math.round(r.opsRev),
+        totalRev:   Math.round(totalRev),
+        pl:         Math.round(pl),
+        cumPl:      Math.round(cumPl),
+        devMargin:  r.devRev  > 0 ? Math.round((r.devRev  - r.devCost)  / r.devRev  * 100) : null,
+        opsMargin:  r.opsRev  > 0 ? Math.round((r.opsRev  - r.opsCost)  / r.opsRev  * 100) : null,
+        totMargin:  totalRev  > 0 ? Math.round((totalRev  - totalCost)  / totalRev  * 100) : null,
+      };
+    });
+  }, [dashboardEntries, nameToMember, fixOpsTicketSet, allOpsTicketSet, project.memberRates, project.operationContracts]);
+
+  // ── Three-bucket KPI totals (dashboard-period) ─────────────────────────────
+
+  const threeWayTotals = useMemo(() => {
+    const fixOpsContracts = (project.operationContracts ?? []).filter(c => c.type === 'fixprice');
+    let devCost = 0, devRev = 0, devH = 0;
+    let adminCost = 0, adminH = 0;
+    let opsCost = 0, opsRev = 0, opsH = 0;
+
+    for (const e of dashboardEntries) {
+      const member      = nameToMember[e.user];
+      const costRate    = member?.costRate ?? 0;
+      const billingRate = member ? ((project.memberRates ?? {})[member.id]?.billingRate ?? 0) : 0;
+      const isOps       = e.ticketId !== null && allOpsTicketSet.has(e.ticketId);
+      const isFixOps    = e.ticketId !== null && fixOpsTicketSet.has(e.ticketId);
+
+      if (isOps) {
+        opsCost += e.spentTime * costRate; opsH += e.spentTime;
+        if (!isFixOps) opsRev += e.spentTime * billingRate;
+      } else if (e.billingClass === 'I') {
+        adminCost += e.spentTime * costRate; adminH += e.spentTime;
+      } else {
+        devCost += e.spentTime * costRate; devRev += e.spentTime * billingRate; devH += e.spentTime;
+      }
+    }
+
+    const months = [...new Set(dashboardEntries.map(e => e.month))];
+    opsRev += months.reduce((s, month) =>
+      s + fixOpsContracts.reduce((cs, c) => cs + ((c.monthlyOverrides ?? {})[month] ?? c.defaultMonthlyAmount), 0), 0);
+
+    const totalCost = devCost + adminCost + opsCost;
+    const totalRev  = devRev + opsRev;
+    const margin    = (rev: number, cost: number) => rev > 0 ? Math.round((rev - cost) / rev * 100) : null;
+    return {
+      dev:   { cost: Math.round(devCost),   rev: Math.round(devRev),  hours: devH,   margin: margin(devRev,  devCost)  },
+      admin: { cost: Math.round(adminCost), hours: adminH },
+      ops:   { cost: Math.round(opsCost),   rev: Math.round(opsRev),  hours: opsH,   margin: margin(opsRev,  opsCost)  },
+      total: { cost: Math.round(totalCost), rev: Math.round(totalRev), pl: Math.round(totalRev - totalCost), margin: margin(totalRev, totalCost) },
+    };
+  }, [dashboardEntries, nameToMember, fixOpsTicketSet, allOpsTicketSet, project.memberRates, project.operationContracts]);
+
+  // Fixed Price computed values
+  const totalBudgetHours = useMemo(() => {
+    const base   = project.budgetHours ?? 0;
+    const extras = (project.changes ?? []).filter(c => c.status === 'approved').reduce((s, c) => s + c.budgetHours, 0);
+    return base + extras;
+  }, [project.budgetHours, project.changes]);
+
+  const totalBudgetEur = useMemo(() => {
+    const base   = project.budgetEur ?? 0;
+    const extras = (project.changes ?? []).filter(c => c.status === 'approved').reduce((s, c) => s + c.budgetEur, 0);
+    return base + extras;
+  }, [project.budgetEur, project.changes]);
+
+  const impliedRate = totalBudgetHours > 0 && totalBudgetEur > 0
+    ? Math.round(totalBudgetEur / totalBudgetHours)
+    : 0;
+
+  const burndownData = useMemo(() => {
+    if (!totalBudgetHours) return [];
+    const monthTotals = new Map<string, number>();
+    for (const e of entries) monthTotals.set(e.month, (monthTotals.get(e.month) ?? 0) + e.spentTime);
+    const months = [...monthTotals.keys()].sort();
+    let cum = 0;
+    return months.map(month => {
+      cum += monthTotals.get(month)!;
+      return { month: month.slice(0, 7), consumed: Math.round(cum * 10) / 10, budget: totalBudgetHours };
+    });
+  }, [entries, totalBudgetHours]);
+
   const TABS: { id: Tab; label: string }[] = [
-    { id: 'overview', label: 'Overview' },
-    { id: 'team',     label: 'Team' },
-    { id: 'tickets',  label: 'Tickets' },
-    { id: 'trends',   label: 'Trends' },
-    { id: 'settings', label: 'Settings' },
+    { id: 'overview',   label: 'Overview' },
+    { id: 'team',       label: 'Team' },
+    { id: 'tickets',    label: 'Tickets' },
+    { id: 'trends',     label: 'Trends' },
+    { id: 'financials', label: 'Financials' },
+    { id: 'milestones', label: 'Milestones' },
+    { id: 'settings',   label: 'Settings' },
   ];
 
   // ── Render ─────────────────────────────────────────────────────────────────
@@ -405,6 +1517,75 @@ export default function ProjectDetailClient({
         </div>
       </div>
 
+      {/* Period filter for KPI cards */}
+      {(() => {
+        const now     = new Date();
+        const year    = now.getFullYear();
+        const mo      = String(now.getMonth() + 1).padStart(2, '0');
+        const ytdFrom = `${year}-01`;
+        const ytdTo   = `${year}-${mo}`;
+
+        function mo_(n: number) {
+          const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() + n);
+          return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        }
+
+        const isYtd     = dashboardRange.from === ytdFrom && dashboardRange.to === ytdTo;
+        const isAllTime = dashboardRange.from === '' && dashboardRange.to === '';
+        const is3m      = dashboardRange.from === mo_(-3) && dashboardRange.to === mo_(0);
+        const is6m      = dashboardRange.from === mo_(-6) && dashboardRange.to === mo_(0);
+        const is12m     = dashboardRange.from === mo_(-12) && dashboardRange.to === mo_(0);
+        const isCustom  = !isYtd && !isAllTime && !is3m && !is6m && !is12m;
+
+        const btnCls = (active: boolean) =>
+          `text-xs px-2.5 py-1 rounded border transition-colors ${
+            active
+              ? 'bg-slate-800 text-white border-slate-800'
+              : 'text-slate-500 border-slate-200 hover:border-slate-400 hover:text-slate-700'
+          }`;
+
+        return (
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-xs text-slate-400 shrink-0">Period</span>
+            <div className="flex gap-1">
+              <button onClick={() => setDashboardRange({ from: ytdFrom, to: ytdTo })} className={btnCls(isYtd)}>
+                This Year
+              </button>
+              <button onClick={() => setDashboardRange({ from: mo_(-3), to: mo_(0) })} className={btnCls(is3m)}>
+                Last 3 Months
+              </button>
+              <button onClick={() => setDashboardRange({ from: mo_(-6), to: mo_(0) })} className={btnCls(is6m)}>
+                Last 6 Months
+              </button>
+              <button onClick={() => setDashboardRange({ from: mo_(-12), to: mo_(0) })} className={btnCls(is12m)}>
+                Last 12 Months
+              </button>
+              <button onClick={() => setDashboardRange({ from: '', to: '' })} className={btnCls(isAllTime)}>
+                All Time
+              </button>
+            </div>
+            {/* Custom date pickers — hidden when All Time is active */}
+            {!isAllTime && (
+              <div className="flex items-center gap-1.5">
+                <input type="month" value={dashboardRange.from}
+                  onChange={e => setDashboardRange(r => ({ ...r, from: e.target.value, to: r.to || e.target.value }))}
+                  className="border border-slate-200 rounded px-2 py-1 text-xs text-slate-600 focus:outline-none focus:border-slate-400" />
+                <span className="text-slate-300 text-xs">→</span>
+                <input type="month" value={dashboardRange.to} min={dashboardRange.from}
+                  onChange={e => setDashboardRange(r => ({ ...r, to: e.target.value }))}
+                  className="border border-slate-200 rounded px-2 py-1 text-xs text-slate-600 focus:outline-none focus:border-slate-400" />
+              </div>
+            )}
+            {isCustom && (
+              <button onClick={() => setDashboardRange({ from: ytdFrom, to: ytdTo })}
+                className="text-xs text-slate-400 hover:text-slate-700 underline underline-offset-2">
+                This Year
+              </button>
+            )}
+          </div>
+        );
+      })()}
+
       {/* KPI cards — two rows */}
       <div className="space-y-3">
         {/* Row 1: hours */}
@@ -428,7 +1609,7 @@ export default function ProjectDetailClient({
             {[
               { label: 'Total Cost',    value: totalEconAll.cost    > 0 ? fmtEur(totalEconAll.cost)    : '—', cls: 'text-red-600' },
               { label: 'Total Revenue', value: totalEconAll.revenue > 0 ? fmtEur(totalEconAll.revenue) : '—', cls: 'text-emerald-700' },
-              { label: 'P&L',          value: totalEconAll.revenue > 0 ? fmtEur(totalEconAll.pl)      : '—', cls: totalEconAll.pl >= 0 ? 'text-emerald-700' : 'text-red-500' },
+              { label: 'Profit and Loss', value: totalEconAll.revenue > 0 ? fmtEur(totalEconAll.pl) : '—', cls: totalEconAll.pl >= 0 ? 'text-emerald-700' : 'text-red-500' },
               { label: 'Margin',       value: totalEconAll.revenue > 0 ? `${marginAll}%`               : '—', cls: marginAll >= 0 ? 'text-emerald-700' : 'text-red-500' },
             ].map(kpi => (
               <div key={kpi.label} className="bg-white rounded-lg border border-slate-200 px-4 py-3">
@@ -663,7 +1844,6 @@ export default function ProjectDetailClient({
       {/* ── TRENDS ── */}
       {activeTab === 'trends' && (
         <div className="space-y-6">
-          <ChartTimeFilter value={chartRange} defaultRange={initChartRange(entries)} onChange={setChartRange} />
 
           {/* Velocity */}
           {velocityData.length > 0 && (
@@ -766,16 +1946,16 @@ export default function ProjectDetailClient({
                   {hasOpsFixed && (
                     <Bar dataKey="opsRevenue" fill="#7c3aed" opacity={0.85} name="Ops (Pauschal)" stackId="rev" radius={[3,3,0,0]} />
                   )}
-                  <Line type="monotone" dataKey="pl" stroke="#a16207" strokeWidth={2} dot={{ r: 3 }} name="P&L" />
+                  <Line type="monotone" dataKey="pl" stroke="#a16207" strokeWidth={2} dot={{ r: 3 }} name="Profit & Loss" />
                 </ComposedChart>
               </ResponsiveContainer>
             </div>
           )}
 
-          {/* Cumulative P&L */}
+          {/* Cumulative Profit and Loss */}
           {economicsByMonth.length > 0 && hasRates && hasCostRates && (
             <div className="bg-white rounded-lg border border-slate-200 p-4">
-              <h3 className="text-sm font-semibold text-gray-800 mb-4">Cumulative P&L</h3>
+              <h3 className="text-sm font-semibold text-gray-800 mb-4">Cumulative Profit and Loss</h3>
               <ResponsiveContainer width="100%" height={240}>
                 <ComposedChart data={economicsByMonth} margin={{ top: 4, right: 8, left: 0, bottom: 8 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
@@ -783,30 +1963,304 @@ export default function ProjectDetailClient({
                   <YAxis tick={{ fontSize: 11 }} tickFormatter={v => `${Math.round(v / 1000)}k`} />
                   <Tooltip {...TOOLTIP_STYLE} formatter={(v, name) => [fmtEur(Number(v)), String(name)]} />
                   <Bar dataKey="revenue" fill="#dde1ff" name="Revenue" radius={[3,3,0,0]} opacity={0.7} />
-                  <Line type="monotone" dataKey="cumPl" stroke="#4338ca" strokeWidth={2} dot={{ r: 3 }} name="Cumulative P&L" />
+                  <Line type="monotone" dataKey="cumPl" stroke="#4338ca" strokeWidth={2} dot={{ r: 3 }} name="Cumulative Profit and Loss" />
                 </ComposedChart>
               </ResponsiveContainer>
             </div>
           )}
 
-          {/* Ops Contract Profitability */}
+          {!hasRates && !hasCostRates && (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-sm text-amber-800">
+              Configure member cost rates in member profiles and billing rates in the{' '}
+              <button className="underline" onClick={() => setActiveTab('team')}>Team tab</button>{' '}
+              to unlock financial charts.
+            </div>
+          )}
+
+          {/* Fixed Price: Budget Burndown */}
+          {(project.projectType ?? 'tm') === 'fixprice' && burndownData.length > 0 && totalBudgetHours > 0 && (
+            <div className="bg-white rounded-lg border border-slate-200 p-4">
+              <h3 className="text-sm font-semibold text-gray-800 mb-1">Budget Burndown</h3>
+              <p className="text-xs text-gray-400 mb-4">
+                Cumulative hours consumed vs total budget of {totalBudgetHours}h
+                {impliedRate > 0 && ` (${impliedRate} €/h implied)`}
+              </p>
+              <ResponsiveContainer width="100%" height={260}>
+                <ComposedChart data={burndownData} margin={{ top: 4, right: 8, left: 0, bottom: 8 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                  <XAxis dataKey="month" tick={{ fontSize: 10 }} interval={0} angle={-35} textAnchor="end" height={48} />
+                  <YAxis tick={{ fontSize: 11 }} tickFormatter={v => `${v}h`} />
+                  <Tooltip {...TOOLTIP_STYLE} formatter={v => [`${v}h`, '']} />
+                  <ReferenceLine y={totalBudgetHours} stroke="#b91c1c" strokeDasharray="6 3"
+                    label={{ value: `Budget ${totalBudgetHours}h`, position: 'insideTopRight', fontSize: 10, fill: '#b91c1c' }} />
+                  <Bar dataKey="consumed" fill="#4338ca" opacity={0.85} name="Hours consumed" radius={[3,3,0,0]} />
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+
+          {/* Fixed Price: Work Package Progress overview */}
+          {(project.projectType ?? 'tm') === 'fixprice' && (project.workPackages ?? []).length > 0 && (
+            <div className="bg-white rounded-lg border border-slate-200 p-4">
+              <h3 className="text-sm font-semibold text-gray-800 mb-4">Arbeitspakete — Completion Overview</h3>
+              <div className="space-y-3">
+                {(project.workPackages ?? []).map(wp => {
+                  const latest = wp.notes.length > 0 ? wp.notes[wp.notes.length - 1] : null;
+                  const pct    = latest?.completion ?? 0;
+                  const wpPct  = totalBudgetHours > 0 ? Math.round(wp.budgetHours / totalBudgetHours * 100) : 0;
+                  return (
+                    <div key={wp.id}>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-xs text-slate-700 font-medium">{wp.name}</span>
+                        <span className={`text-xs font-semibold ${pct >= 100 ? 'text-emerald-600' : pct >= 70 ? 'text-amber-600' : 'text-slate-600'}`}>
+                          {pct}% · {wp.budgetHours}h ({wpPct}% of budget)
+                        </span>
+                      </div>
+                      <div className="h-2.5 bg-slate-100 rounded-full overflow-hidden">
+                        <div className={`h-full rounded-full transition-all ${pct >= 100 ? 'bg-emerald-500' : pct >= 70 ? 'bg-amber-400' : 'bg-indigo-500'}`}
+                          style={{ width: `${Math.min(100, pct)}%` }} />
+                      </div>
+                      {latest && (
+                        <p className="text-xs text-slate-400 mt-0.5 truncate">{latest.statusText}</p>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── FINANCIALS ── */}
+      {activeTab === 'financials' && (
+        <div className="space-y-6">
+
+          {/* Guard: need at least cost rates */}
+          {!hasCostRates && (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-sm text-amber-800">
+              Configure member cost rates in member profiles to unlock cost breakdowns.
+            </div>
+          )}
+
+          {/* KPI summary — column order: Revenue · Cost · Net Profit · Margin */}
+          {hasCostRates && (() => {
+            const cols   = hasOps ? 'grid-cols-3' : 'grid-cols-2';
+            const devNp  = threeWayTotals.dev.rev  - threeWayTotals.dev.cost;
+            const opsNp  = threeWayTotals.ops.rev  - threeWayTotals.ops.cost;
+            const totNp  = threeWayTotals.total.pl;
+            const allH   = threeWayTotals.dev.hours + threeWayTotals.admin.hours + threeWayTotals.ops.hours;
+
+            return (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm border-separate border-spacing-y-1 min-w-[520px]">
+                  <thead>
+                    <tr>
+                      <th className="text-left text-xs font-medium text-slate-400 pb-1 pr-4 w-36" />
+                      <th className="text-right text-xs font-semibold text-emerald-700 pb-1 px-3">Development</th>
+                      {hasOps && <th className="text-right text-xs font-semibold text-violet-700 pb-1 px-3">Operations</th>}
+                      <th className="text-right text-xs font-semibold text-slate-700 pb-1 px-3">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {/* Revenue */}
+                    {hasRates && (
+                      <tr className="bg-emerald-50/40 rounded-lg">
+                        <td className="text-xs text-slate-500 font-medium py-2.5 pr-4 pl-3 rounded-l-lg">Revenue</td>
+                        <td className="text-right font-semibold text-emerald-700 py-2.5 px-3">
+                          {threeWayTotals.dev.rev > 0 ? fmtEur(threeWayTotals.dev.rev) : '—'}
+                        </td>
+                        {hasOps && (
+                          <td className="text-right font-semibold text-violet-700 py-2.5 px-3">
+                            {threeWayTotals.ops.rev > 0 ? fmtEur(threeWayTotals.ops.rev) : '—'}
+                          </td>
+                        )}
+                        <td className="text-right font-bold text-emerald-800 py-2.5 px-3 rounded-r-lg">
+                          {threeWayTotals.total.rev > 0 ? fmtEur(threeWayTotals.total.rev) : '—'}
+                        </td>
+                      </tr>
+                    )}
+
+                    {/* Cost */}
+                    <tr className="bg-slate-50 rounded-lg">
+                      <td className="text-xs text-slate-500 font-medium py-2.5 pr-4 pl-3 rounded-l-lg">
+                        Cost
+                        <span className="block text-slate-400 font-normal mt-0.5">
+                          {allH > 0 ? fmtH(allH, locale) : ''}
+                        </span>
+                      </td>
+                      <td className="text-right font-semibold text-indigo-700 py-2.5 px-3">
+                        {threeWayTotals.dev.cost > 0 ? fmtEur(threeWayTotals.dev.cost) : '—'}
+                        {threeWayTotals.dev.hours > 0 && (
+                          <span className="block text-xs text-slate-400 font-normal">{fmtH(threeWayTotals.dev.hours, locale)}</span>
+                        )}
+                      </td>
+                      {hasOps && (
+                        <td className="text-right font-semibold text-violet-700 py-2.5 px-3">
+                          {threeWayTotals.ops.cost > 0 ? fmtEur(threeWayTotals.ops.cost) : '—'}
+                          {threeWayTotals.ops.hours > 0 && (
+                            <span className="block text-xs text-slate-400 font-normal">{fmtH(threeWayTotals.ops.hours, locale)}</span>
+                          )}
+                        </td>
+                      )}
+                      <td className="text-right font-bold text-slate-900 py-2.5 px-3 rounded-r-lg">
+                        {threeWayTotals.total.cost > 0 ? fmtEur(threeWayTotals.total.cost) : '—'}
+                      </td>
+                    </tr>
+
+                    {/* Net Profit */}
+                    {hasRates && (
+                      <tr className={`rounded-lg ${totNp >= 0 ? 'bg-emerald-50/40' : 'bg-red-50/40'}`}>
+                        <td className="text-xs text-slate-500 font-medium py-2.5 pr-4 pl-3 rounded-l-lg">Net Profit</td>
+                        {[devNp, ...(hasOps ? [opsNp] : []), totNp].map((np, i) => {
+                          const last = i === (hasOps ? 2 : 1);
+                          return (
+                            <td key={i} className={`text-right py-2.5 px-3 ${last ? 'rounded-r-lg font-bold' : 'font-semibold'} ${np >= 0 ? 'text-emerald-700' : 'text-red-500'}`}>
+                              {np !== 0 ? `${np >= 0 ? '+' : ''}${fmtEur(np)}` : '—'}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    )}
+
+                    {/* Margin */}
+                    {hasRates && (
+                      <tr className="bg-slate-50 rounded-lg">
+                        <td className="text-xs text-slate-500 font-medium py-2.5 pr-4 pl-3 rounded-l-lg">Margin</td>
+                        {[threeWayTotals.dev.margin, ...(hasOps ? [threeWayTotals.ops.margin] : []), threeWayTotals.total.margin].map((m, i) => {
+                          const last  = i === (hasOps ? 2 : 1);
+                          const isPos = m !== null && m >= 0;
+                          return (
+                            <td key={i} className={`text-right py-2.5 px-3 ${last ? 'rounded-r-lg font-bold text-base' : 'font-semibold'} ${
+                              m === null ? 'text-slate-300' : isPos ? 'text-emerald-700' : 'text-red-500'
+                            }`}>
+                              {m === null ? '—' : `${m}%`}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            );
+          })()}
+
+          {/* Chart 1: Monthly Cost Breakdown */}
+          {threeWayByMonth.length > 0 && hasCostRates && (
+            <div className="bg-white rounded-lg border border-slate-200 p-4">
+              <h3 className="text-sm font-semibold text-gray-800 mb-1">Monthly Cost Breakdown</h3>
+              <p className="text-xs text-gray-400 mb-4">Development · Operations — internal cost (hours × cost rate)</p>
+              <ResponsiveContainer width="100%" height={260}>
+                <BarChart data={threeWayByMonth} margin={{ top: 4, right: 8, left: 0, bottom: 8 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                  <XAxis dataKey="month" tick={{ fontSize: 10 }} interval={0} angle={-35} textAnchor="end" height={48} />
+                  <YAxis tick={{ fontSize: 11 }} tickFormatter={v => `${Math.round(v / 1000)}k`} />
+                  <Tooltip {...TOOLTIP_STYLE} formatter={(v, name) => [fmtEur(Number(v)), String(name)]} />
+                  <Legend wrapperStyle={{ fontSize: '12px' }} />
+                  <Bar dataKey="devCost" fill="#4338ca" name="Development" opacity={0.85} stackId="cost" radius={hasOps ? [0,0,0,0] : [3,3,0,0]} />
+                  {hasOps && <Bar dataKey="opsCost" fill="#7c3aed" name="Operations" opacity={0.85} stackId="cost" radius={[3,3,0,0]} />}
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+
+          {/* Chart 2: Monthly Revenue Breakdown */}
+          {threeWayByMonth.length > 0 && hasRates && (
+            <div className="bg-white rounded-lg border border-slate-200 p-4">
+              <h3 className="text-sm font-semibold text-gray-800 mb-1">Monthly Revenue Breakdown</h3>
+              <p className="text-xs text-gray-400 mb-4">Dev (T&M billing) · Ops (flat fee or hourly)</p>
+              <ResponsiveContainer width="100%" height={260}>
+                <BarChart data={threeWayByMonth} margin={{ top: 4, right: 8, left: 0, bottom: 8 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                  <XAxis dataKey="month" tick={{ fontSize: 10 }} interval={0} angle={-35} textAnchor="end" height={48} />
+                  <YAxis tick={{ fontSize: 11 }} tickFormatter={v => `${Math.round(v / 1000)}k`} />
+                  <Tooltip {...TOOLTIP_STYLE} formatter={(v, name) => [fmtEur(Number(v)), String(name)]} />
+                  <Legend wrapperStyle={{ fontSize: '12px' }} />
+                  <Bar dataKey="devRev" fill="#059669" name="Dev Revenue" opacity={0.85} stackId="rev" radius={hasOps ? [0,0,0,0] : [3,3,0,0]} />
+                  {hasOps && <Bar dataKey="opsRev" fill="#7c3aed" name="Ops Revenue" opacity={0.85} stackId="rev" radius={[3,3,0,0]} />}
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+
+          {/* Chart 3: Cost vs Revenue + P&L line */}
+          {threeWayByMonth.length > 0 && hasRates && hasCostRates && (
+            <div className="bg-white rounded-lg border border-slate-200 p-4">
+              <h3 className="text-sm font-semibold text-gray-800 mb-1">Cost vs Revenue & Monthly Profit and Loss</h3>
+              <p className="text-xs text-gray-400 mb-4">Total cost (red) vs total revenue (green) with monthly profit and loss line</p>
+              <ResponsiveContainer width="100%" height={280}>
+                <ComposedChart data={threeWayByMonth} margin={{ top: 4, right: 8, left: 0, bottom: 8 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                  <XAxis dataKey="month" tick={{ fontSize: 10 }} interval={0} angle={-35} textAnchor="end" height={48} />
+                  <YAxis yAxisId="eur" tick={{ fontSize: 11 }} tickFormatter={v => `${Math.round(v / 1000)}k`} />
+                  <YAxis yAxisId="pl"  orientation="right" tick={{ fontSize: 11 }} tickFormatter={v => `${Math.round(v / 1000)}k`} />
+                  <Tooltip {...TOOLTIP_STYLE} formatter={(v, name) => [fmtEur(Number(v)), String(name)]} />
+                  <Legend wrapperStyle={{ fontSize: '12px' }} />
+                  <Bar   yAxisId="eur" dataKey="totalCost"  fill="#b91c1c" opacity={0.8}  name="Total Cost"    radius={[3,3,0,0]} />
+                  <Bar   yAxisId="eur" dataKey="totalRev"   fill="#059669" opacity={0.75} name="Total Revenue" radius={[3,3,0,0]} />
+                  <Line  yAxisId="pl"  type="monotone" dataKey="pl" stroke="#a16207" strokeWidth={2} dot={{ r: 3 }} name="Monthly P&L" />
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+
+          {/* Chart 4: Margin % over time */}
+          {threeWayByMonth.filter(d => d.totMargin !== null).length > 1 && hasRates && hasCostRates && (
+            <div className="bg-white rounded-lg border border-slate-200 p-4">
+              <h3 className="text-sm font-semibold text-gray-800 mb-1">Margin % by Category</h3>
+              <p className="text-xs text-gray-400 mb-4">Monthly margin per branch — shows which area is most productive</p>
+              <ResponsiveContainer width="100%" height={240}>
+                <ComposedChart data={threeWayByMonth} margin={{ top: 4, right: 8, left: 0, bottom: 8 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                  <XAxis dataKey="month" tick={{ fontSize: 10 }} interval={0} angle={-35} textAnchor="end" height={48} />
+                  <YAxis tick={{ fontSize: 11 }} tickFormatter={v => `${v}%`} domain={['auto', 'auto']} />
+                  <Tooltip {...TOOLTIP_STYLE} formatter={(v, name) => [v !== null ? `${v}%` : '—', String(name)]} />
+                  <Legend wrapperStyle={{ fontSize: '12px' }} />
+                  <ReferenceLine y={0} stroke="#e2e8f0" />
+                  <Line type="monotone" dataKey="devMargin" stroke="#4338ca" strokeWidth={2} dot={{ r: 3 }} connectNulls name="Dev Margin"   />
+                  {hasOps && <Line type="monotone" dataKey="opsMargin" stroke="#7c3aed" strokeWidth={2} dot={{ r: 3 }} connectNulls name="Ops Margin"   />}
+                  <Line type="monotone" dataKey="totMargin" stroke="#a16207" strokeWidth={2} strokeDasharray="5 3" dot={{ r: 3 }} connectNulls name="Total Margin" />
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+
+          {/* Chart 5: Cumulative Profit and Loss */}
+          {threeWayByMonth.length > 1 && hasRates && hasCostRates && (
+            <div className="bg-white rounded-lg border border-slate-200 p-4">
+              <h3 className="text-sm font-semibold text-gray-800 mb-1">Cumulative Profit and Loss</h3>
+              <p className="text-xs text-gray-400 mb-4">Running total — does the project pay its way over time?</p>
+              <ResponsiveContainer width="100%" height={220}>
+                <ComposedChart data={threeWayByMonth} margin={{ top: 4, right: 8, left: 0, bottom: 8 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                  <XAxis dataKey="month" tick={{ fontSize: 10 }} interval={0} angle={-35} textAnchor="end" height={48} />
+                  <YAxis tick={{ fontSize: 11 }} tickFormatter={v => `${Math.round(v / 1000)}k`} />
+                  <Tooltip {...TOOLTIP_STYLE} formatter={(v, name) => [fmtEur(Number(v)), String(name)]} />
+                  <ReferenceLine y={0} stroke="#e2e8f0" />
+                  <Bar dataKey="pl" name="Monthly P&L" fill="#dde1ff" radius={[3,3,0,0]} />
+                  <Line type="monotone" dataKey="cumPl" stroke="#4338ca" strokeWidth={2} dot={{ r: 3 }} name="Cumulative Profit and Loss" />
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+
+          {/* Ops Contract Profitability table */}
           {hasOpsFixed && opsContractAnalysis.length > 0 && (
             <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
               <div className="px-5 py-3 border-b border-slate-100 bg-slate-50">
-                <h3 className="text-sm font-semibold text-gray-800">Pauschal Operations — Profitability Analysis</h3>
-                <p className="text-xs text-slate-400 mt-0.5">
-                  Revenue = fixed monthly fee · Cost = actual hours × member cost rate · compares if the flat rate is worth it
-                </p>
+                <h3 className="text-sm font-semibold text-gray-800">Pauschal Operations — Profitability per Contract</h3>
+                <p className="text-xs text-slate-400 mt-0.5">Revenue = fixed monthly fee · Cost = actual hours × member cost rate</p>
               </div>
               <table className="w-full text-sm">
                 <thead className="text-xs text-slate-500 font-medium border-b border-slate-200 bg-slate-50">
                   <tr>
                     <th className="px-4 py-3 text-left">Contract</th>
-                    <th className="px-4 py-3 text-right">Hours Tracked</th>
-                    <th className="px-4 py-3 text-right">Actual Cost</th>
-                    <th className="px-4 py-3 text-right">Fixed Revenue</th>
-                    <th className="px-4 py-3 text-right">Implied Rate</th>
-                    <th className="px-4 py-3 text-right">P&L</th>
+                    <th className="px-4 py-3 text-right">Hours</th>
+                    <th className="px-4 py-3 text-right">Cost</th>
+                    <th className="px-4 py-3 text-right">Revenue</th>
+                    <th className="px-4 py-3 text-right">Implied €/h</th>
+                    <th className="px-4 py-3 text-right">Net Profit</th>
                     <th className="px-4 py-3 text-right">Margin</th>
                   </tr>
                 </thead>
@@ -821,9 +2275,7 @@ export default function ProjectDetailClient({
                       <td className="px-4 py-3 text-right text-red-600">{cost > 0 ? fmtEur(cost) : '—'}</td>
                       <td className="px-4 py-3 text-right text-emerald-700 font-medium">{fmtEur(revenue)}</td>
                       <td className="px-4 py-3 text-right text-slate-500 text-xs">{implied > 0 ? `${implied} €/h` : '—'}</td>
-                      <td className={`px-4 py-3 text-right font-semibold ${pl >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
-                        {fmtEur(pl)}
-                      </td>
+                      <td className={`px-4 py-3 text-right font-semibold ${pl >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>{fmtEur(pl)}</td>
                       <td className={`px-4 py-3 text-right font-semibold ${(margin ?? 0) >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
                         {margin !== null ? `${margin}%` : '—'}
                       </td>
@@ -834,13 +2286,65 @@ export default function ProjectDetailClient({
             </div>
           )}
 
-          {!hasRates && !hasCostRates && (
+          {!hasCostRates && !hasRates && (
             <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-sm text-amber-800">
-              Configure member cost rates in member profiles and billing rates in the{' '}
-              <button className="underline" onClick={() => setActiveTab('team')}>Team tab</button>{' '}
-              to unlock financial charts.
+              No rates configured. Set cost rates in member profiles and billing rates in the{' '}
+              <button className="underline" onClick={() => setActiveTab('team')}>Team tab</button>.
             </div>
           )}
+        </div>
+      )}
+
+      {/* ── MILESTONES ── */}
+      {activeTab === 'milestones' && (
+        <div className="space-y-8">
+          <MilestonesTab
+            project={project}
+            isAdmin={isAdmin}
+            totalBudgetEur={totalBudgetEur}
+            showMilestoneForm={showMilestoneForm}
+            setShowMilestoneForm={setShowMilestoneForm}
+          />
+
+          {/* Arbeitspakete */}
+          <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
+            <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100 bg-slate-50">
+              <div>
+                <h3 className="text-sm font-semibold text-gray-800">Arbeitspakete (Work Packages)</h3>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  {(project.workPackages ?? []).length} packages
+                  {(project.workPackages ?? []).some(w => w.budgetHours > 0) && (
+                    <> · {(project.workPackages ?? []).reduce((s, w) => s + w.budgetHours, 0)}h allocated{totalBudgetHours > 0 && ` of ${totalBudgetHours}h`}</>
+                  )}
+                </p>
+              </div>
+              {isAdmin && !showWpForm && (
+                <button onClick={() => setShowWpForm(true)}
+                  className="text-xs text-indigo-600 hover:text-indigo-800 border border-indigo-200 rounded px-3 py-1.5">
+                  + Add
+                </button>
+              )}
+            </div>
+            <div className="p-5 space-y-4">
+              {showWpForm && isAdmin && (
+                <WorkPackageForm projectId={project.id}
+                  allTickets={Object.values(tickets)}
+                  onDone={() => { setShowWpForm(false); router.refresh(); }}
+                  onCancel={() => setShowWpForm(false)} />
+              )}
+              {(project.workPackages ?? []).map(wp => (
+                <WorkPackageCard
+                  key={wp.id} wp={wp} projectId={project.id}
+                  totalBudgetHours={totalBudgetHours} totalBudgetEur={totalBudgetEur}
+                  isAdmin={isAdmin} onDone={() => router.refresh()}
+                  entries={entries} allTickets={Object.values(tickets)}
+                />
+              ))}
+              {(project.workPackages ?? []).length === 0 && !showWpForm && (
+                <p className="text-sm text-slate-400">No work packages yet.</p>
+              )}
+            </div>
+          </div>
         </div>
       )}
 
@@ -953,6 +2457,143 @@ export default function ProjectDetailClient({
               </div>
             ))}
           </div>
+
+          {/* ── Project Frame (Fixed Price) ── */}
+          {(projType === 'fixprice') && (
+            <div className="bg-white rounded-lg border border-slate-200 p-5 space-y-4">
+              <h3 className="text-sm font-semibold text-gray-800">Project Frame</h3>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-slate-500 mb-1">Start Date</label>
+                  <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} disabled={!isAdmin}
+                    className="w-full border border-slate-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400 disabled:bg-slate-50" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-500 mb-1">End Date</label>
+                  <input type="date" value={endDate} min={startDate} onChange={e => setEndDate(e.target.value)} disabled={!isAdmin}
+                    className="w-full border border-slate-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400 disabled:bg-slate-50" />
+                </div>
+              </div>
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-slate-500 mb-1">Budget Hours (h)</label>
+                  <input type="number" min="0" value={budgetHours} onChange={e => setBudgetHours(e.target.value)} disabled={!isAdmin}
+                    className="w-full border border-slate-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400 disabled:bg-slate-50" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-500 mb-1">
+                    Or FTE <span className="text-slate-400 font-normal">(× {fteHours}h)</span>
+                  </label>
+                  <input type="number" min="0" step="0.1" disabled={!isAdmin}
+                    value={parseFloat(budgetHours) > 0 && parseFloat(fteHours) > 0 ? Math.round(parseFloat(budgetHours) / parseFloat(fteHours) * 10) / 10 : ''}
+                    onChange={e => setBudgetHours(String(Math.round(parseFloat(e.target.value) * parseFloat(fteHours))))}
+                    className="w-full border border-slate-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400 disabled:bg-slate-50" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-500 mb-1">Budget (€)</label>
+                  <input type="number" min="0" value={budgetEur} onChange={e => setBudgetEur(e.target.value)} disabled={!isAdmin}
+                    className="w-full border border-slate-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400 disabled:bg-slate-50" />
+                </div>
+              </div>
+              {parseFloat(budgetHours) > 0 && parseFloat(budgetEur) > 0 && (
+                <p className="text-xs text-slate-400">
+                  Implied rate: {Math.round(parseFloat(budgetEur) / parseFloat(budgetHours))} €/h ·{' '}
+                  Hours per FTE: <input type="number" value={fteHours} onChange={e => setFteHours(e.target.value)} disabled={!isAdmin}
+                    className="w-16 border-b border-slate-300 bg-transparent text-xs text-center focus:outline-none focus:border-indigo-400" />
+                </p>
+              )}
+              {isAdmin && (
+                <button disabled={savingFrame} onClick={async () => {
+                  setSavingFrame(true);
+                  await updateProjectFrame(project.id, {
+                    startDate, endDate,
+                    budgetHours: parseFloat(budgetHours) || 0,
+                    budgetEur:   parseFloat(budgetEur)   || 0,
+                    fteHours:    parseFloat(fteHours)    || 1600,
+                  });
+                  setSavingFrame(false);
+                  router.refresh();
+                }} className="px-4 py-2 bg-slate-800 text-white text-sm rounded hover:bg-slate-700 disabled:opacity-50">
+                  {savingFrame ? 'Saving…' : 'Save Frame'}
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* ── Nachträge (Fixed Price) ── */}
+          {projType === 'fixprice' && (
+            <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
+              <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100 bg-slate-50">
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-800">Nachträge (Change Orders)</h3>
+                  <p className="text-xs text-slate-400">
+                    {(project.changes ?? []).filter(c => c.status === 'approved').length} approved ·{' '}
+                    +{(project.changes ?? []).filter(c => c.status === 'approved').reduce((s, c) => s + c.budgetHours, 0)}h ·{' '}
+                    +{(project.changes ?? []).filter(c => c.status === 'approved').reduce((s, c) => s + c.budgetEur, 0).toLocaleString('de-DE')} €
+                  </p>
+                </div>
+                {isAdmin && !showChangeForm && (
+                  <button onClick={() => setShowChangeForm(true)}
+                    className="text-xs text-indigo-600 hover:text-indigo-800 border border-indigo-200 rounded px-3 py-1.5">
+                    + Add
+                  </button>
+                )}
+              </div>
+              {showChangeForm && isAdmin && (
+                <ChangeOrderForm projectId={project.id} onDone={() => { setShowChangeForm(false); router.refresh(); }} onCancel={() => setShowChangeForm(false)} />
+              )}
+              {(project.changes ?? []).length > 0 && (
+                <table className="w-full text-sm">
+                  <thead className="text-xs text-slate-400 font-medium border-b border-slate-100">
+                    <tr>
+                      <th className="px-4 py-2 text-left">Name</th>
+                      <th className="px-4 py-2 text-right">Hours</th>
+                      <th className="px-4 py-2 text-right">€</th>
+                      <th className="px-4 py-2 text-center">Status</th>
+                      {isAdmin && <th className="px-4 py-2" />}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50">
+                    {(project.changes ?? []).map(c => (
+                      <tr key={c.id} className="hover:bg-slate-50">
+                        <td className="px-4 py-2 text-slate-700">{c.name}</td>
+                        <td className="px-4 py-2 text-right text-slate-600">+{c.budgetHours}h</td>
+                        <td className="px-4 py-2 text-right text-slate-600">+{c.budgetEur.toLocaleString('de-DE')} €</td>
+                        <td className="px-4 py-2 text-center">
+                          {isAdmin ? (
+                            <select value={c.status}
+                              onChange={async e => {
+                                await upsertProjectChange(project.id, { ...c, status: e.target.value as FmoChangeStatus });
+                                router.refresh();
+                              }}
+                              className="text-xs border border-slate-200 rounded px-1.5 py-0.5 focus:outline-none">
+                              <option value="pending">Pending</option>
+                              <option value="approved">Approved</option>
+                              <option value="rejected">Rejected</option>
+                            </select>
+                          ) : (
+                            <span className={`text-xs px-2 py-0.5 rounded-full ${
+                              c.status === 'approved' ? 'bg-emerald-50 text-emerald-700' :
+                              c.status === 'rejected' ? 'bg-red-50 text-red-600' : 'bg-amber-50 text-amber-700'
+                            }`}>{c.status}</span>
+                          )}
+                        </td>
+                        {isAdmin && (
+                          <td className="px-4 py-2 text-center">
+                            <button onClick={async () => { if (!confirm(`Delete "${c.name}"?`)) return; await removeProjectChange(project.id, c.id); router.refresh(); }}
+                              className="text-gray-300 hover:text-red-400">×</button>
+                          </td>
+                        )}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+              {(project.changes ?? []).length === 0 && !showChangeForm && (
+                <p className="px-5 py-4 text-sm text-slate-400">No change orders yet.</p>
+              )}
+            </div>
+          )}
 
           {/* WBS Scope */}
           <div className="bg-white rounded-lg border border-slate-200 p-5 space-y-4">

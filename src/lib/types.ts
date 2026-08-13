@@ -381,19 +381,83 @@ export interface FmoOperationContract {
   monthlyOverrides: Record<string, number>; // "YYYY-MM" → override €
 }
 
+export type FmoChangeStatus    = 'pending' | 'approved' | 'rejected';
+export type FmoMilestoneStatus = 'upcoming' | 'reached'  | 'delayed';
+
+export interface FmoProjectChange {
+  id: string;
+  name: string;
+  budgetHours: number;
+  budgetEur: number;
+  status: FmoChangeStatus;
+  createdAt: string;
+}
+
+export interface FmoWorkPackageNote {
+  id: string;
+  timestamp: string;   // ISO
+  statusText: string;
+  completion: number;  // 0–100
+}
+
+export interface FmoWorkPackageTask {
+  id: string;
+  text: string;
+}
+
+export interface FmoAcceptanceCriterion {
+  id: string;
+  text: string;
+  checked: boolean;
+}
+
+export interface FmoWorkPackage {
+  id: string;
+  name: string;
+  budgetHours: number;
+  startDate?: string;  // "YYYY-MM-DD"
+  endDate?: string;    // "YYYY-MM-DD"
+  description?: string;
+  tasks?: FmoWorkPackageTask[];
+  acceptanceCriteria?: FmoAcceptanceCriterion[];
+  ticketIds?: number[];  // linked project tickets — used for planned vs booked tracking
+  notes: FmoWorkPackageNote[];
+}
+
+export type FmoMilestoneType = 'milestone' | 'payment';
+
+export interface FmoProjectMilestone {
+  id: string;
+  milestoneType: FmoMilestoneType; // 'milestone' = event, 'payment' = money release
+  name: string;
+  date: string;          // "YYYY-MM-DD"
+  paymentAmount: number; // used when milestoneType === 'payment'
+  status: FmoMilestoneStatus;
+  notes?: string;
+}
+
 export interface FmoProject {
   id: string;
   name: string;
   description?: string;
-  wbsCodes: string[];          // WBS codes — all their tickets are included
-  ticketIds: number[];         // extra tickets added individually (mixed / tickets mode)
-  excludedTicketIds: number[]; // tickets excluded from a selected WBS code
+  wbsCodes: string[];
+  ticketIds: number[];
+  excludedTicketIds: number[];
   createdAt: string;
-  projectType: FmoProjectType;                        // default 'tm'
-  contractValue: number;                              // fixprice: total €
-  contractHours: number;                              // fixprice: budget h
-  memberRates: Record<string, FmoProjectMemberRate>;  // memberId → rate
+  projectType: FmoProjectType;
+  contractValue: number;
+  contractHours: number;
+  memberRates: Record<string, FmoProjectMemberRate>;
   operationContracts: FmoOperationContract[];
+  // ── Fixed Price frame ──
+  startDate?: string;                    // "YYYY-MM-DD"
+  endDate?: string;
+  budgetHours?: number;                  // total budgeted hours (can derive from budgetFte)
+  budgetEur?: number;                    // total contract value €
+  fteHours?: number;                     // hours/FTE — default 1600
+  changes?: FmoProjectChange[];          // Nachträge / change orders
+  workPackages?: FmoWorkPackage[];        // Arbeitspakete
+  milestones?: FmoProjectMilestone[];
 }
 
 // ─── FMO Planning ─────────────────────────────────────────────────────────────

@@ -6,16 +6,95 @@ import { useRouter } from 'next/navigation';
 import { useTranslations, useLocale } from 'next-intl';
 import { fmtH, type Locale } from '@/lib/i18n';
 import type { FmoMember, FmoEntry } from '@/lib/types';
+import { useRole } from '@/components/RoleProvider';
+import { updateFmoMember } from '@/actions/fmo';
 
 type MatchReason =
   | { kind: 'ticket'; label: string; hours: number }
   | { kind: 'project'; label: string; hours: number }
   | null;
 
-function TypeBadge({ type, tIntern, tExtern }: { type: 'intern' | 'extern'; tIntern: string; tExtern: string }) {
-  return type === 'intern'
-    ? <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">{tIntern}</span>
-    : <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-orange-100 text-orange-800">{tExtern}</span>;
+function TypeToggle({
+  member,
+  isAdmin,
+  tIntern,
+  tExtern,
+}: {
+  member: FmoMember;
+  isAdmin: boolean;
+  tIntern: string;
+  tExtern: string;
+}) {
+  const t        = useTranslations('members');
+  const router   = useRouter();
+  const [saving, setSaving] = useState(false);
+  const isIntern = member.type === 'intern';
+
+  if (!isAdmin) {
+    return isIntern
+      ? <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">{tIntern}</span>
+      : <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-orange-100 text-orange-800">{tExtern}</span>;
+  }
+
+  return (
+    <button
+      type="button"
+      disabled={saving}
+      onClick={async e => {
+        e.stopPropagation();
+        setSaving(true);
+        await updateFmoMember(member.id, { type: isIntern ? 'extern' : 'intern' });
+        setSaving(false);
+        router.refresh();
+      }}
+      title={t('toggleTitle')}
+      className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium transition-opacity cursor-pointer hover:opacity-70 ${
+        saving ? 'opacity-40' : ''
+      } ${isIntern ? 'bg-blue-100 text-blue-800' : 'bg-orange-100 text-orange-800'}`}
+    >
+      {isIntern ? tIntern : tExtern}
+      <span className="ml-1 text-[10px] opacity-50">⇄</span>
+    </button>
+  );
+}
+
+function CostRateCell({
+  member,
+  isAdmin,
+}: {
+  member: FmoMember;
+  isAdmin: boolean;
+}) {
+  const router = useRouter();
+
+  if (!isAdmin) {
+    return (
+      <span className={member.costRate > 0 ? 'text-slate-700' : 'text-amber-600'}>
+        {member.costRate > 0 ? `${member.costRate} €/h` : '—'}
+      </span>
+    );
+  }
+
+  return (
+    <div className="flex items-center justify-end gap-1" onClick={e => e.stopPropagation()}>
+      <input
+        type="number"
+        min="0"
+        step="0.5"
+        defaultValue={member.costRate || ''}
+        placeholder="—"
+        className="w-16 text-right border-0 border-b border-slate-200 bg-transparent text-sm text-slate-700 focus:outline-none focus:border-indigo-400 placeholder:text-amber-400"
+        onBlur={async e => {
+          const val = parseFloat(e.target.value) || 0;
+          if (val !== member.costRate) {
+            await updateFmoMember(member.id, { costRate: val });
+            router.refresh();
+          }
+        }}
+      />
+      <span className="text-xs text-slate-400 shrink-0">€/h</span>
+    </div>
+  );
 }
 
 export default function MembersClient({
@@ -26,9 +105,9 @@ export default function MembersClient({
   entries: FmoEntry[];
 }) {
   const t = useTranslations('members');
-  const tCommon = useTranslations('common');
   const locale = useLocale() as Locale;
   const router = useRouter();
+  const isAdmin = useRole() === 'admin';
 
   const [query, setQuery] = useState('');
 
@@ -57,7 +136,6 @@ export default function MembersClient({
 
     const result: { m: FmoMember; reason: MatchReason }[] = [];
     for (const m of sorted) {
-      // Name match — no reason badge needed
       if (m.name.toLowerCase().includes(q)) {
         result.push({ m, reason: null });
         continue;
@@ -65,13 +143,11 @@ export default function MembersClient({
 
       const memberEntries = byMember.get(m.name) ?? [];
 
-      // Ticket match (by name or numeric id)
       const ticketEntries = memberEntries.filter(e =>
         e.ticketName.toLowerCase().includes(q) ||
         (e.ticketId !== null && String(e.ticketId).includes(q))
       );
       if (ticketEntries.length) {
-        // pick the ticket with most hours as the representative label
         const byTicket = new Map<string, { label: string; hours: number }>();
         for (const e of ticketEntries) {
           const key = e.ticketId != null ? String(e.ticketId) : e.ticketName;
@@ -87,7 +163,6 @@ export default function MembersClient({
         continue;
       }
 
-      // Project match
       const projectEntries = memberEntries.filter(e => e.project.toLowerCase().includes(q));
       if (projectEntries.length) {
         const byProject = new Map<string, number>();
@@ -109,7 +184,11 @@ export default function MembersClient({
         <span className="text-sm text-slate-500">{t('countSummary', { extern: externCount, intern: internCount })}</span>
       </div>
 
-      {/* Smart search */}
+      {isAdmin && (
+        <p className="text-xs text-slate-400">{t('adminHint')}</p>
+      )}
+
+      {/* Search */}
       <div className="space-y-1">
         <div className="relative">
           <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
@@ -118,7 +197,7 @@ export default function MembersClient({
           <input
             value={query}
             onChange={e => setQuery(e.target.value)}
-            placeholder="Search by name, ticket or project…"
+            placeholder={t('searchPlaceholder')}
             className="w-full pl-9 pr-9 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-slate-300"
           />
           {query && (
@@ -132,7 +211,7 @@ export default function MembersClient({
         </div>
         {query && (
           <p className="text-xs text-slate-400 pl-1">
-            {filteredWithReason.length} of {sorted.length} members
+            {t('searchResult', { count: filteredWithReason.length, total: sorted.length })}
           </p>
         )}
       </div>
@@ -142,9 +221,15 @@ export default function MembersClient({
           <thead className="bg-slate-50 border-b border-slate-200">
             <tr>
               <th className="px-4 py-3 text-left font-semibold text-slate-600">{t('name')}</th>
-              <th className="px-4 py-3 text-left font-semibold text-slate-600">{t('type')}</th>
+              <th className="px-4 py-3 text-left font-semibold text-slate-600">
+                {t('type')}
+                {isAdmin && <span className="ml-1 font-normal text-slate-400 text-xs">(click to toggle)</span>}
+              </th>
               <th className="px-4 py-3 text-left font-semibold text-slate-600">{t('partnerCompany')}</th>
-              <th className="px-4 py-3 text-right font-semibold text-slate-600">{t('costRate')}</th>
+              <th className="px-4 py-3 text-right font-semibold text-slate-600">
+                {t('costRate')}
+                {isAdmin && <span className="ml-1 font-normal text-slate-400 text-xs">(editable)</span>}
+              </th>
               <th className="px-4 py-3 text-right font-semibold text-slate-600">{t('totalHours')}</th>
               <th className="px-4 py-3" />
             </tr>
@@ -170,7 +255,7 @@ export default function MembersClient({
                             ? 'bg-indigo-50 text-indigo-600'
                             : 'bg-slate-100 text-slate-500'
                         }`}>
-                          {reason.kind === 'ticket' ? 'Ticket' : 'Project'}:{' '}
+                          {reason.kind === 'ticket' ? t('matchTicket') : t('matchProject')}:{' '}
                           {reason.label.length > 42 ? reason.label.slice(0, 42) + '…' : reason.label}
                           {' '}· {fmtH(reason.hours, locale)}
                         </span>
@@ -178,10 +263,19 @@ export default function MembersClient({
                     </div>
                   </td>
                   <td className="px-4 py-3">
-                    <TypeBadge type={m.type} tIntern={t('intern')} tExtern={t('extern')} />
+                    <TypeToggle
+                      member={m}
+                      isAdmin={isAdmin}
+                      tIntern={t('intern')}
+                      tExtern={t('extern')}
+                    />
                   </td>
-                  <td className="px-4 py-3 text-slate-600">{m.partnerCompany || <span className="text-slate-400">—</span>}</td>
-                  <td className="px-4 py-3 text-right text-slate-700">{m.costRate > 0 ? `${m.costRate} €/h` : <span className="text-amber-600">—</span>}</td>
+                  <td className="px-4 py-3 text-slate-600">
+                    {m.partnerCompany || <span className="text-slate-400">—</span>}
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    <CostRateCell member={m} isAdmin={isAdmin} />
+                  </td>
                   <td className="px-4 py-3 text-right text-slate-700">{fmtH(hours, locale)}</td>
                   <td className="px-4 py-3">
                     <Link
@@ -189,7 +283,7 @@ export default function MembersClient({
                       onClick={e => e.stopPropagation()}
                       className="text-xs text-slate-400 hover:text-slate-700 whitespace-nowrap"
                     >
-                      Details →
+                      {t('details')}
                     </Link>
                   </td>
                 </tr>
@@ -198,7 +292,7 @@ export default function MembersClient({
             {filteredWithReason.length === 0 && (
               <tr>
                 <td colSpan={6} className="px-4 py-8 text-center text-slate-400">
-                  {query ? `No members match "${query}"` : t('noMembers')}
+                  {t('noMembers')}
                 </td>
               </tr>
             )}

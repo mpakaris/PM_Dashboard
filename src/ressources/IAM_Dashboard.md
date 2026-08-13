@@ -20,6 +20,9 @@ Reference document. Extracted from `Therese_Board.xlsx` so future conversations 
 
 **Row count:** 7,293 data rows (plus 1 header row)  
 **Period:** Months 1–6 of 2026 (January–June)
+**Format:** Legacy 7-column format — no `WBS-Override` column. WBS mapping was
+derived post-import from this file. New exports from SecTrack include the
+`WBS-Override` column directly (see SecTrack CSV format below).
 
 ### Columns (in order)
 
@@ -68,23 +71,51 @@ zuordnungMA = EMPLOYEE_TABLE[user] ?? "Unknown"
 
 Look up `User` in the employee mapping table. If not found, mark as `"Unknown"` and flag the row.
 
-### Zuordnung h (Activity Category)
+### Classification — Two Types
 
+The app models two independent classification dimensions per WBS code:
+
+**Type 1 — Billing Class** (derived from `wbs[0]`, never overridable):
 ```
-wbs_prefix = wbs[0]           // first character, e.g. "V" or "I"
-iwbs_code  = wbs.slice(6, 10) // Excel: MID(WBS, 7, 4), e.g. "1700" or "1059"
+'V' → Billable  (Verrechenbar)
+'I' → Internal  (Intern)
+```
+Additional prefix letters are registered in `FmoMappingStore.billingClasses` when new
+WBS types appear.
 
-if wbs_prefix === "V":
-    return "Verrechenbar"
-else:
-    result = IWBS_TABLE[iwbs_code]
-    if result: return result
-    result = WBS_TABLE[wbs]
-    if result: return result
-    return "Unmapped"
+**Type 2 — Sub-Category** (only applies to I.* entries; V.* entries have no sub-type):
+```
+wbs_prefix = wbs[0]
+if wbs_prefix === 'V': return null  // Billable — no further sub-classification
+
+iwbs_code = wbs.slice(6, 10)        // Excel: MID(WBS, 7, 4)
+
+IWBS auto-derive table:
+  '1059' → 'admin'      '8000' → 'admin'
+  '1099' → 'presales'   '1069' → 'portfolio'
+  '1076' → 'opm'        '1066' → 'opm'
+  '1055' → 'opm'        '1056' → 'opm'
+
+Full-code fallback:
+  'I.05921059.00.02' → 'training'
+  'I.05921059.00.03' → 'absence'
+
+Admin override (subCategoryOverride) takes priority over auto-derive.
+null = Unmapped sub-category (surfaces in the Unmapped report tab).
 ```
 
-This mirrors the original Excel formula:
+Pre-seeded sub-categories (admin can add more in the WBS admin view):
+
+| Slug | Label |
+|---|---|
+| `admin` | Administration |
+| `training` | Training |
+| `presales` | Presales |
+| `portfolio` | Portfolioentwicklung |
+| `opm` | OPM |
+| `absence` | Absence |
+
+This mirrors the original Excel formula for reference:
 ```
 =IF(LEFT(WBS,1)="V", "Verrechenbar",
    IFERROR(VLOOKUP(MID(WBS,7,4), IWBS_table, 2, FALSE),
@@ -207,6 +238,185 @@ Total hours month 2 = 161.5
 - Intern/Admin: 1.5 / 161.5 = 0.00929  
 - Portfolioentwicklung: 1 / 161.5 = 0.00619  
 - Verrechenbar: 159 / 161.5 = 0.98452  
+
+---
+
+## Operations Contracts
+
+Some projects (e.g. Barmer) combine regular T&M work with **fixed-price Operations
+contracts**. These must be modelled separately because:
+
+- Team members book hours to Operations tickets in SecTrack — those hours **cost** the
+  company (external rate × hours)
+- The client **does not pay per hour** for these tickets — billing is a fixed monthly
+  contract amount regardless of actual hours booked
+
+### Data model
+
+```typescript
+// src/lib/types.ts
+interface OperationContract {
+  id: string;
+  name: string;
+  defaultMonthlyAmount: number;             // € per month (baseline)
+  monthlyOverrides: Record<string, number>; // "YYYY-MM" → € override
+  ticketIds: string[];                      // SecTrack task strings (entries.task)
+}
+```
+
+`monthlyOverrides` allows the contract value to vary month-by-month. Any month absent
+from `monthlyOverrides` uses `defaultMonthlyAmount`.
+
+### Shared utility module
+
+All computations on `OperationContract` live in **one place only**:
+
+```typescript
+// src/lib/operationsUtils.ts
+export function opAmount(c: OperationContract, month: string): number
+export function totalOpsIncome(contracts: OperationContract[], months: string[]): number
+export function buildOpTicketSet(contracts: OperationContract[]): Set<string>
+```
+
+No other file reimplements these. Components that need them import from
+`src/lib/operationsUtils`.
+
+### Revenue formula
+
+```
+totalRevenue    = tmRevenue + operationsIncome
+tmRevenue       = Σ (hours on NON-ops tickets × billingRate per user)
+operationsIncome = totalOpsIncome(contracts, months)   ← from operationsUtils
+
+totalCost       = Σ (ALL hours × costRate per user)    ← ops hours still cost us
+netIncome       = totalRevenue − totalCost
+```
+
+**Key invariant:** ops ticket hours are excluded from T&M billing but are **never**
+excluded from cost. The fixed contract amount is the revenue for ops work — no more,
+no less.
+
+**State rule:** `operationTicketSet` and `operationsIncome` always derive from the
+server-authoritative prop (`project.operationContracts`), not from local React state.
+This ensures a deleted contract immediately restores prior revenue without a state-sync
+lag.
+
+### Module structure
+
+Operations code is split into focused, single-responsibility files:
+
+| File | Responsibility |
+|---|---|
+| `src/lib/types.ts` | `OperationContract` type definition |
+| `src/lib/operationsUtils.ts` | Pure helper functions — no React, no DB |
+| `src/components/OperationContractModal.tsx` | Shared modal (used by PA + Planning) |
+| `src/app/projekt-analysis/[id]/OperationsTab.tsx` | Operations tab UI for Project Analysis |
+| `src/app/planning/[id]/ProjectOperationsSection.tsx` | Operations section inside Planning project card |
+
+The shared `OperationContractModal` accepts an optional `tasks` prop — Project Analysis
+passes the ticket list for assignment; Forecast Planning omits it (ticket assignment
+lives in Project Analysis, not in planning).
+
+### Utilization reporting impact
+
+In `Auslastung h`, hours on Operations tickets still appear under their WBS category
+(`Verrechenbar` for Barmer Operations tickets). The T&M vs fixed-price distinction is
+captured at the Project Analysis layer, not the WBS layer.
+
+| View | What is shown |
+|---|---|
+| Auslastung h / % | All hours by WBS category — Operations hours under their WBS, unchanged |
+| Project Analysis → Employees | T&M Subtotal row + Operations Income row + Net Total |
+| Project Analysis → Operations tab | Contract list, per-month income, assigned ticket pills |
+| Project Analysis → Trends | DevOpsMonthlyChart; colour-coded ticket chart; split velocity |
+| Forecast Planning | Operations contracts per project card, planned monthly income |
+
+### Barmer example
+
+| Contract | Default monthly amount |
+|---|---|
+| Operation Contract 1 (IAM Betrieb — Standard) | 20,000 € |
+| Operation Contract 2 (IAM Betrieb — Extended) | 10,000 € |
+
+Tickets such as `#34977 - BARMER (DTSEC) SAP IDM Migration` are assigned to these
+contracts. Their hours are excluded from hourly billing; they appear in the cost line
+only.
+
+---
+
+## WBS → Ticket Hierarchy
+
+The app models a three-level hierarchy derived entirely from existing data:
+
+```
+WBS Element  (Kostenstelle — e.g. V.05921700.81.03 "DTSec Barmer IAM Entwicklung")
+  └── Ticket  (SecTrack task — one ticket maps to exactly one WBS)
+        └── Time Entry  (one row per person/day booking in SecTrack)
+```
+
+**Relationship storage rule:** the link is stored on the ticket (`FmoTicket.wbsCode`),
+never as a nested structure. The tree is derived by grouping at read time. This keeps
+WBS and Ticket independent and avoids synchronisation bugs.
+
+**Data provenance:** every `FmoWbsEntry` and `FmoTicket` carries a `syncSource` field
+(`'manual' | 'excel' | 'sectrack' | 'sap'`) and `syncedAt` timestamp. Records seeded
+from Therese_Board.xlsx get `syncSource: 'excel'`. Manually added records get
+`syncSource: 'manual'`. When a remote API is connected later, records get
+`syncSource: 'sectrack'` or `'sap'`. Admins can see provenance in the UI.
+
+**Budget fields:** `FmoWbsEntry.budgetHours` and `budgetValue` are defined in the type
+but left `undefined` in the current Excel seed — they will be populated automatically
+when a SAP/SecTrack data source provides planned values. No UI change needed at that
+point; the columns are already in the WBS table (showing "—" until populated).
+
+### From Therese_Board.xlsx
+
+The hierarchy is seeded from two sheets in one upload via `ExcelDataSource`:
+
+| Sheet | What is extracted |
+|---|---|
+| `Mapping` | WBS code → label, category (seeds `FmoWbsEntry`) |
+| `Spent Time` | Task ID + WBS per row → unique ticket→WBS pairs (seeds `FmoTicket`) |
+
+The `seedFromDataSource` action (US-021) is idempotent: admin-overridden WBS
+assignments on tickets are never overwritten by a re-upload.
+
+### Future: Remote Data Source
+
+When SecTrack or SAP connectivity is available, a `RemoteDataSource` class is added to
+`src/lib/wbsDataSource.ts` implementing the same `WbsDataSource` interface. The import
+page automatically shows a "Sync now" button for it. No action or UI code changes.
+
+---
+
+## SecTrack CSV Format (Extended — Current)
+
+The extended CSV export from SecTrack resolves the previous requirement to separately
+seed ticket→WBS mappings from this Excel file. **Use the extended format going forward.**
+
+```
+Project, Task, Date, User, Activity, Comment, Spent time,
+WBS-Override, Billing Type, Customer, Task ID (Tasks)
+```
+
+Key columns added over the legacy format:
+
+| Column | Example | Impact |
+|---|---|---|
+| `WBS-Override` | `V.05921700.81.01` | WBS code per entry — eliminates Excel ticket→WBS seeding for new uploads |
+| `Billing Type` | `""` or `"Fixprice"` | Identifies fixed-price / Operations entries directly from SecTrack |
+| `Customer` | `- Barmer (DTSEC)` | Customer context per entry |
+| `Task ID (Tasks)` | `40116` | Numeric ticket ID as explicit column (preferred over regex extraction) |
+
+**Fixprice entries** (`Billing Type = "Fixprice"`) are excluded from T&M hourly
+billing; their revenue is covered by the fixed-price Operations Contract monthly amount.
+The `billingType` field on `FmoEntry` is the ground truth for this distinction.
+
+The Excel file (`Therese_Board.xlsx`) is now only needed for:
+1. WBS labels — the CSV has codes (`V.05921700.81.01`) but not names
+   (`DTSec Barmer IAM Betrieb`)
+2. Employee classification (Intern/Extern) from the Mapping sheet
+3. Backfilling legacy entries exported in the old 7-column format
 
 ---
 
