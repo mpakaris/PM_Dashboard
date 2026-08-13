@@ -929,21 +929,10 @@ function MilestonesTab({
   const router  = useRouter();
   const confirm = useConfirm();
   const toast   = useToast();
-  const [selectedId, setSelectedId]   = useState<string | null>(null);
-  const [editingNotes, setEditingNotes] = useState('');
-  const [savingNotes, setSavingNotes]   = useState(false);
 
   const today  = new Date().toISOString().slice(0, 10);
   const sorted = [...(project.milestones ?? [])].sort((a, b) => a.date.localeCompare(b.date));
 
-  // Auto-select next upcoming milestone; fall back to first
-  const effectiveId = selectedId
-    ?? sorted.find(m => m.status === 'upcoming' && m.date >= today)?.id
-    ?? sorted[0]?.id
-    ?? null;
-  const selectedMs = sorted.find(m => m.id === effectiveId) ?? null;
-
-  useEffect(() => { setEditingNotes(selectedMs?.notes ?? ''); }, [selectedMs?.id]);
 
   const totalPayments = sorted.reduce((s, m) => s + m.paymentAmount, 0);
   const releasedPay   = sorted.filter(m => m.status === 'reached').reduce((s, m) => s + m.paymentAmount, 0);
@@ -1064,191 +1053,106 @@ function MilestonesTab({
         </div>
       )}
 
-      {/* ── Timeline + Detail panel ── */}
+      {/* ── Milestone table ── */}
       {sorted.length > 0 && (
-        <div className="flex gap-4 items-start">
-
-          {/* Timeline list */}
-          <div className="w-64 shrink-0 bg-white rounded-lg border border-slate-200 overflow-hidden">
-            <div className="flex items-center justify-between px-4 py-2.5 border-b border-slate-100 bg-slate-50">
-              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Timeline</p>
-              {isAdmin && !showMilestoneForm && (
-                <button onClick={() => setShowMilestoneForm(true)} className="text-xs text-indigo-500 hover:text-indigo-700">+ Add</button>
-              )}
-            </div>
-            <div className="relative py-2">
-              {/* Vertical guide line — centered under the dot column (w-7 → center = 14px, outer px-2 = 8px → 22px = ~1.375rem) */}
-              <div className="absolute top-0 bottom-0 left-[1.375rem] w-px bg-slate-200" />
-              {timelineItems.map((item, idx) => {
-                if (item.type === 'today') return (
-                  <div key="today" className="flex items-center gap-3.5 px-2 py-1.5">
-                    <div className="w-7 flex justify-center shrink-0">
-                      <div className="w-2.5 h-2.5 rounded-full border-2 border-dashed border-blue-400 bg-blue-50 relative z-10" />
-                    </div>
-                    <span className="text-xs font-bold text-blue-500">Today</span>
-                  </div>
-                );
-                const ms = item.ms;
-                const isActive  = ms.id === effectiveId;
-                const isPay     = isPaymentMs(ms);
-                const nodeColor = ms.status === 'reached' ? 'text-emerald-600' : ms.status === 'delayed' ? 'text-red-500' : isActive ? 'text-indigo-500' : 'text-slate-400';
+        <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
+          <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100 bg-slate-50">
+            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Milestones</p>
+            {isAdmin && !showMilestoneForm && (
+              <button onClick={() => setShowMilestoneForm(true)} className="text-xs text-indigo-500 hover:text-indigo-700">+ Add</button>
+            )}
+          </div>
+          <table className="w-full text-sm">
+            <thead className="text-xs text-slate-400 font-medium border-b border-slate-100 bg-slate-50/50">
+              <tr>
+                <th className="px-5 py-2.5 text-left">Name</th>
+                <th className="px-4 py-2.5 text-left">Date</th>
+                <th className="px-4 py-2.5 text-left">When</th>
+                <th className="px-4 py-2.5 text-left">Status</th>
+                {hasPayments && <th className="px-4 py-2.5 text-right">Payment</th>}
+                <th className="px-4 py-2.5 text-left">Notes</th>
+                {isAdmin && <th className="px-4 py-2.5 w-8" />}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-50">
+              {sorted.map(ms => {
+                const isPay = isPaymentMs(ms);
+                const statusCls =
+                  ms.status === 'reached' ? 'bg-emerald-100 text-emerald-700' :
+                  ms.status === 'delayed'  ? 'bg-red-100 text-red-600' :
+                  'bg-slate-100 text-slate-500';
                 return (
-                  <button key={ms.id} onClick={() => setSelectedId(ms.id)}
-                    className={`w-full flex items-center gap-3.5 px-2 py-2.5 text-left transition-colors ${
-                      isActive ? 'bg-indigo-50' : 'hover:bg-slate-50'
-                    }`}>
-                    <div className="w-7 flex justify-center shrink-0">
-                      {isPay ? (
-                        // Payment: circle with € sign
-                        <div className={`w-5 h-5 rounded-full border-2 relative z-10 flex items-center justify-center text-[9px] font-bold
-                          ${ms.status === 'reached' ? 'bg-emerald-500 border-emerald-500 text-white' :
-                            ms.status === 'delayed'  ? 'bg-red-400 border-red-400 text-white' :
-                            isActive ? 'bg-indigo-400 border-indigo-400 text-white' : 'bg-white border-slate-300 text-slate-400'}`}>
-                          €
-                        </div>
+                  <tr key={ms.id} className="hover:bg-slate-50/60">
+                    <td className="px-5 py-3">
+                      <div className="flex items-center gap-2">
+                        <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${isPay ? 'bg-violet-50 text-violet-600' : 'bg-indigo-50 text-indigo-600'}`}>
+                          {isPay ? '€' : '◆'}
+                        </span>
+                        <span className="font-medium text-slate-800">{ms.name}</span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-slate-500 whitespace-nowrap">
+                      {new Date(ms.date + 'T00:00:00').toLocaleDateString('de-DE', { day: '2-digit', month: 'short', year: 'numeric' })}
+                    </td>
+                    <td className="px-4 py-3 text-slate-400 text-xs whitespace-nowrap">{relDate(ms.date)}</td>
+                    <td className="px-4 py-3">
+                      {isAdmin ? (
+                        <select
+                          value={ms.status}
+                          onChange={async e => {
+                            await upsertMilestone(project.id, { ...ms, status: e.target.value as FmoMilestoneStatus });
+                            router.refresh();
+                          }}
+                          className={`text-xs font-medium px-2 py-1 rounded border-0 cursor-pointer focus:outline-none focus:ring-2 focus:ring-slate-300 ${statusCls}`}
+                        >
+                          <option value="upcoming">{isPay ? 'Pending' : 'Upcoming'}</option>
+                          <option value="reached">{isPay ? 'Paid ✓' : 'Reached ✓'}</option>
+                          <option value="delayed">{isPay ? 'Overdue ⚠' : 'Delayed ⚠'}</option>
+                        </select>
                       ) : (
-                        // Milestone: rotated square (diamond)
-                        <div className={`w-3 h-3 rotate-45 border-2 relative z-10 ${dotCls(ms, isActive)}`} />
+                        <span className={`text-xs font-medium px-2 py-1 rounded ${statusCls}`}>{statusLabel(ms)}</span>
                       )}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className={`text-xs font-semibold truncate leading-tight ${isActive ? 'text-indigo-700' : 'text-slate-800'}`}>{ms.name}</p>
-                      <p className="text-xs text-slate-400">
-                        {new Date(ms.date + 'T00:00:00').toLocaleDateString('de-DE', { day: '2-digit', month: 'short', year: 'numeric' })}
-                      </p>
-                    </div>
-                    {isPay && ms.paymentAmount > 0 && (
-                      <span className={`text-xs font-bold shrink-0 pr-1 ${ms.status === 'reached' ? 'text-emerald-600' : 'text-slate-300'}`}>
-                        {ms.paymentAmount >= 1000 ? `${Math.round(ms.paymentAmount / 1000)}k` : ms.paymentAmount}€
-                      </span>
+                    </td>
+                    {hasPayments && (
+                      <td className="px-4 py-3 text-right font-medium tabular-nums">
+                        {ms.paymentAmount > 0
+                          ? <span className={ms.status === 'reached' ? 'text-emerald-600' : 'text-slate-600'}>{fmt(ms.paymentAmount)}</span>
+                          : <span className="text-slate-300">—</span>}
+                      </td>
                     )}
-                  </button>
+                    <td className="px-4 py-3 text-xs text-slate-400 max-w-xs">
+                      {isAdmin ? (
+                        <input
+                          defaultValue={ms.notes ?? ''}
+                          placeholder="Notes…"
+                          className="w-full bg-transparent border-0 border-b border-transparent hover:border-slate-200 focus:border-indigo-300 focus:outline-none text-slate-600 placeholder:text-slate-300 py-0.5"
+                          onBlur={async e => {
+                            const val = e.target.value.trim() || undefined;
+                            if (val !== (ms.notes ?? undefined)) {
+                              await upsertMilestone(project.id, { ...ms, notes: val });
+                              router.refresh();
+                            }
+                          }}
+                        />
+                      ) : (
+                        <span className="truncate">{ms.notes ?? '—'}</span>
+                      )}
+                    </td>
+                    {isAdmin && (
+                      <td className="px-4 py-3 text-center">
+                        <button onClick={async () => {
+                          if (!await confirm(`Delete milestone "${ms.name}"?`, { destructive: true, confirmLabel: 'Delete' })) return;
+                          await removeMilestone(project.id, ms.id);
+                          router.refresh();
+                          toast.success('Milestone deleted');
+                        }} className="text-slate-300 hover:text-red-400 transition-colors">×</button>
+                      </td>
+                    )}
+                  </tr>
                 );
               })}
-            </div>
-          </div>
-
-          {/* Detail panel */}
-          {selectedMs && (
-            <div className="flex-1 min-w-0 bg-white rounded-lg border border-slate-200 p-6 space-y-6">
-
-              {/* Header */}
-              <div>
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className={`text-xs px-2 py-0.5 rounded font-semibold ${
-                        isPaymentMs(selectedMs) ? 'bg-violet-50 text-violet-700' : 'bg-indigo-50 text-indigo-700'
-                      }`}>
-                        {isPaymentMs(selectedMs) ? '€ Payment' : '◆ Milestone'}
-                      </span>
-                    </div>
-                    <h2 className="text-xl font-bold text-slate-800 leading-tight">{selectedMs.name}</h2>
-                  </div>
-                  <span className={`text-xs px-2.5 py-1 rounded-full shrink-0 font-semibold mt-0.5 ${
-                    selectedMs.status === 'reached' ? 'bg-emerald-100 text-emerald-700' :
-                    selectedMs.status === 'delayed'  ? 'bg-red-100 text-red-600' :
-                    'bg-slate-100 text-slate-500'
-                  }`}>
-                    {statusLabel(selectedMs)}
-                  </span>
-                </div>
-                <p className="text-sm text-slate-500 mt-1.5">
-                  {new Date(selectedMs.date + 'T00:00:00').toLocaleDateString('de-DE', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' })}
-                  <span className="text-slate-300 mx-2">·</span>
-                  <span className="text-slate-400">{relDate(selectedMs.date)}</span>
-                </p>
-              </div>
-
-              {/* Payment block */}
-              {selectedMs.paymentAmount > 0 && (
-                <div className={`rounded-lg p-4 border ${
-                  selectedMs.status === 'reached' ? 'bg-emerald-50 border-emerald-200' :
-                  selectedMs.status === 'delayed'  ? 'bg-red-50 border-red-200' :
-                  'bg-slate-50 border-slate-200'
-                }`}>
-                  <p className="text-xs text-slate-400 mb-1">Payment Release</p>
-                  <p className={`text-3xl font-bold ${
-                    selectedMs.status === 'reached' ? 'text-emerald-600' :
-                    selectedMs.status === 'delayed'  ? 'text-red-500' : 'text-slate-800'
-                  }`}>{fmt(selectedMs.paymentAmount)}</p>
-                  <p className="text-xs text-slate-500 mt-1.5">
-                    {selectedMs.status === 'reached' && 'Payment released.'}
-                    {selectedMs.status === 'delayed'  && 'Payment blocked — milestone delayed.'}
-                    {selectedMs.status === 'upcoming' && (selectedMs.date <= today ? 'Due — not yet released.' : `Due ${relDate(selectedMs.date)}.`)}
-                  </p>
-                </div>
-              )}
-
-              {/* Status buttons (admin) */}
-              {isAdmin && (
-                <div>
-                  <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">Status</p>
-                  <div className="flex gap-2">
-                    {(['upcoming', 'reached', 'delayed'] as const).map(s => (
-                      <button key={s} onClick={async () => { await upsertMilestone(project.id, { ...selectedMs, status: s }); router.refresh(); }}
-                        className={`text-xs px-3 py-1.5 rounded border transition-colors ${
-                          selectedMs.status === s
-                            ? s === 'reached' ? 'bg-emerald-600 text-white border-emerald-600'
-                            : s === 'delayed'  ? 'bg-red-500 text-white border-red-500'
-                            : 'bg-slate-800 text-white border-slate-800'
-                            : 'text-slate-500 border-slate-200 hover:border-slate-400 hover:text-slate-700'
-                        }`}>
-                        {isPaymentMs(selectedMs)
-                      ? (s === 'reached' ? 'Paid ✓' : s === 'delayed' ? 'Overdue ⚠' : 'Pending')
-                      : (s === 'reached' ? 'Reached ✓' : s === 'delayed' ? 'Delayed ⚠' : 'Upcoming')}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Notes */}
-              <div>
-                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">Notes</p>
-                {isAdmin ? (
-                  <div className="space-y-2">
-                    <textarea value={editingNotes} onChange={e => setEditingNotes(e.target.value)} rows={4}
-                      placeholder="Invoice number, acceptance criteria, delivery items…"
-                      className="w-full border border-slate-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400 resize-none" />
-                    {editingNotes !== (selectedMs.notes ?? '') && (
-                      <div className="flex gap-2 justify-end">
-                        <button type="button" onClick={() => setEditingNotes(selectedMs.notes ?? '')}
-                          className="text-xs text-slate-400 hover:text-slate-600 px-3 py-1">Discard</button>
-                        <button type="button" disabled={savingNotes} onClick={async () => {
-                          setSavingNotes(true);
-                          await upsertMilestone(project.id, { ...selectedMs, notes: editingNotes || undefined });
-                          setSavingNotes(false);
-                          router.refresh();
-                        }} className="bg-slate-800 text-white text-xs px-3 py-1.5 rounded hover:bg-slate-700 disabled:opacity-50">
-                          {savingNotes ? 'Saving…' : 'Save Notes'}
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  selectedMs.notes
-                    ? <p className="text-sm text-slate-600 whitespace-pre-wrap">{selectedMs.notes}</p>
-                    : <p className="text-sm text-slate-400">No notes.</p>
-                )}
-              </div>
-
-              {/* Delete */}
-              {isAdmin && (
-                <div className="border-t border-slate-100 pt-4">
-                  <button onClick={async () => {
-                    if (!await confirm(`Delete milestone "${selectedMs.name}"?`, { destructive: true, confirmLabel: 'Delete' })) return;
-                    await removeMilestone(project.id, selectedMs.id);
-                    setSelectedId(null);
-                    router.refresh();
-                    toast.success(`Milestone deleted`);
-                  }} className="text-xs text-red-400 hover:text-red-600 transition-colors">
-                    Delete this milestone
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
+            </tbody>
+          </table>
         </div>
       )}
     </div>
