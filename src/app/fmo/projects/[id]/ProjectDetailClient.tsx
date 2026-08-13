@@ -929,6 +929,7 @@ function MilestonesTab({
   const router  = useRouter();
   const confirm = useConfirm();
   const toast   = useToast();
+  const [editingMs, setEditingMs] = useState<FmoProjectMilestone | null>(null);
 
   const today  = new Date().toISOString().slice(0, 10);
   const sorted = [...(project.milestones ?? [])].sort((a, b) => a.date.localeCompare(b.date));
@@ -1033,11 +1034,16 @@ function MilestonesTab({
         </div>
       )}
 
-      {/* ── Add form ── */}
-      {showMilestoneForm && isAdmin && (
+      {/* ── Add / Edit form ── */}
+      {showMilestoneForm && isAdmin && !editingMs && (
         <MilestoneForm projectId={project.id}
           onDone={() => { setShowMilestoneForm(false); router.refresh(); }}
           onCancel={() => setShowMilestoneForm(false)} />
+      )}
+      {editingMs && isAdmin && (
+        <MilestoneForm projectId={project.id} initial={editingMs}
+          onDone={() => { setEditingMs(null); router.refresh(); }}
+          onCancel={() => setEditingMs(null)} />
       )}
 
       {/* ── Empty state ── */}
@@ -1139,13 +1145,36 @@ function MilestonesTab({
                       )}
                     </td>
                     {isAdmin && (
-                      <td className="px-4 py-3 text-center">
-                        <button onClick={async () => {
-                          if (!await confirm(`Delete milestone "${ms.name}"?`, { destructive: true, confirmLabel: 'Delete' })) return;
-                          await removeMilestone(project.id, ms.id);
-                          router.refresh();
-                          toast.success('Milestone deleted');
-                        }} className="text-slate-300 hover:text-red-400 transition-colors">×</button>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center justify-end gap-1">
+                          <button
+                            onClick={() => { setShowMilestoneForm(false); setEditingMs(ms); }}
+                            title="Edit"
+                            className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded transition-colors"
+                          >
+                            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                            </svg>
+                          </button>
+                          <button
+                            onClick={async () => {
+                              if (!await confirm(`Delete milestone "${ms.name}"?`, { destructive: true, confirmLabel: 'Delete' })) return;
+                              await removeMilestone(project.id, ms.id);
+                              router.refresh();
+                              toast.success('Milestone deleted');
+                            }}
+                            title="Delete"
+                            className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors"
+                          >
+                            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                              <polyline points="3 6 5 6 21 6" />
+                              <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                              <path d="M10 11v6M14 11v6" />
+                              <path d="M9 6V4h6v2" />
+                            </svg>
+                          </button>
+                        </div>
                       </td>
                     )}
                   </tr>
@@ -1216,17 +1245,19 @@ function ChangeOrderForm({ projectId, onDone, onCancel }: { projectId: string; o
 
 // ─── Milestone / Payment Form ──────────────────────────────────────────────────
 
-function MilestoneForm({ projectId, onDone, onCancel, defaultType = 'milestone' }: {
+function MilestoneForm({ projectId, onDone, onCancel, defaultType = 'milestone', initial }: {
   projectId: string;
   onDone: () => void;
   onCancel: () => void;
   defaultType?: FmoMilestoneType;
+  initial?: FmoProjectMilestone;
 }) {
-  const [msType, setMsType]         = useState<FmoMilestoneType>(defaultType);
-  const [name, setName]             = useState('');
-  const [date, setDate]             = useState('');
-  const [paymentAmount, setPayment] = useState('');
-  const [notes, setNotes]           = useState('');
+  const isEdit = !!initial;
+  const [msType, setMsType]         = useState<FmoMilestoneType>(initial?.milestoneType ?? defaultType);
+  const [name, setName]             = useState(initial?.name ?? '');
+  const [date, setDate]             = useState(initial?.date ?? '');
+  const [paymentAmount, setPayment] = useState(initial?.paymentAmount ? String(initial.paymentAmount) : '');
+  const [notes, setNotes]           = useState(initial?.notes ?? '');
   const [saving, setSaving]         = useState(false);
   const isPayment = msType === 'payment';
 
@@ -1236,11 +1267,11 @@ function MilestoneForm({ projectId, onDone, onCancel, defaultType = 'milestone' 
     if (isPayment && !paymentAmount) return;
     setSaving(true);
     await upsertMilestone(projectId, {
+      ...(isEdit ? { id: initial!.id, status: initial!.status } : { status: 'upcoming' }),
       milestoneType: msType,
       name: name.trim(),
       date,
       paymentAmount: isPayment ? parseFloat(paymentAmount) || 0 : 0,
-      status: 'upcoming',
       notes: notes.trim() || undefined,
     });
     setSaving(false);
@@ -1300,7 +1331,7 @@ function MilestoneForm({ projectId, onDone, onCancel, defaultType = 'milestone' 
         <button type="button" onClick={onCancel} className="text-sm text-slate-500 px-3 py-1.5">Cancel</button>
         <button type="submit" disabled={saving || !name.trim() || !date || (isPayment && !paymentAmount)}
           className="bg-slate-800 text-white text-sm px-4 py-1.5 rounded hover:bg-slate-700 disabled:opacity-50">
-          {saving ? 'Saving…' : isPayment ? 'Add Payment' : 'Add Milestone'}
+          {saving ? 'Saving…' : isEdit ? 'Save Changes' : isPayment ? 'Add Payment' : 'Add Milestone'}
         </button>
       </div>
     </form>
