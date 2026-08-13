@@ -343,6 +343,7 @@ function WorkPackageCard({
   const router  = useRouter();
   const confirm = useConfirm();
   const toast   = useToast();
+  const [open, setOpen]                     = useState(false);
   const [showNote, setShowNote]             = useState(false);
   const [noteText, setNoteText]             = useState('');
   const [noteCompletion, setNoteCompletion] = useState(0);
@@ -420,7 +421,16 @@ function WorkPackageCard({
     <div className="border border-slate-200 rounded-lg overflow-hidden">
 
       {/* Header */}
-      <div className="flex items-start gap-3 px-4 py-3 bg-slate-50">
+      <div
+        className="flex items-start gap-3 px-4 py-3 bg-slate-50 cursor-pointer select-none"
+        onClick={() => setOpen(o => !o)}
+      >
+        <svg
+          className={`w-4 h-4 text-slate-400 shrink-0 mt-0.5 transition-transform ${open ? 'rotate-180' : ''}`}
+          viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}
+        >
+          <path d="m6 9 6 6 6-6" />
+        </svg>
         <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold text-slate-800">{wp.name}</p>
           <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-0.5">
@@ -461,9 +471,9 @@ function WorkPackageCard({
         )}
 
         {isAdmin && (
-          <>
-            <button onClick={() => setEditing(true)}
-              className="text-xs text-slate-400 hover:text-slate-700 border border-slate-200 rounded px-2 py-1 shrink-0">
+          <div className="flex items-center gap-1 shrink-0" onClick={e => e.stopPropagation()}>
+            <button onClick={() => { setEditing(true); setOpen(true); }}
+              className="text-xs text-slate-400 hover:text-slate-700 border border-slate-200 rounded px-2 py-1">
               Edit
             </button>
             <button onClick={async () => {
@@ -471,10 +481,12 @@ function WorkPackageCard({
               await removeWorkPackage(projectId, wp.id);
               router.refresh();
               toast.success(`"${wp.name}" deleted`);
-            }} className="text-gray-300 hover:text-red-400 shrink-0">×</button>
-          </>
+            }} className="text-gray-300 hover:text-red-400">×</button>
+          </div>
         )}
       </div>
+
+      {open && (<>
 
       {/* Budget burn bar */}
       {hasLinks && budget > 0 && (
@@ -632,6 +644,8 @@ function WorkPackageCard({
           )}
         </div>
       )}
+
+      </>)}
     </div>
   );
 }
