@@ -659,12 +659,24 @@ function d2t(dateStr: string): number {
   return new Date(dateStr + 'T00:00:00').getTime();
 }
 
+function Chevron({ open }: { open: boolean }) {
+  return (
+    <svg className={`w-3 h-3 shrink-0 text-slate-400 transition-transform ${open ? '' : '-rotate-90'}`}
+      viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round">
+      <path d="m6 9 6 6 6-6" />
+    </svg>
+  );
+}
+
 function ProjectGantt({ project }: { project: FmoProject }) {
   const wps        = (project.workPackages  ?? []);
   const milestones = [...(project.milestones ?? [])].sort((a, b) => a.date.localeCompare(b.date));
 
-  const datedWps    = wps.filter(wp => wp.startDate && wp.endDate);
-  const undatedWps  = wps.filter(wp => !wp.startDate || !wp.endDate);
+  const datedWps   = wps.filter(wp => wp.startDate && wp.endDate);
+  const undatedWps = wps.filter(wp => !wp.startDate || !wp.endDate);
+
+  const [wpOpen, setWpOpen] = useState(true);
+  const [msOpen, setMsOpen] = useState(true);
 
   if (datedWps.length === 0 && milestones.length === 0) return null;
 
@@ -675,16 +687,12 @@ function ProjectGantt({ project }: { project: FmoProject }) {
     ...(project.startDate ? [project.startDate] : []),
     ...(project.endDate   ? [project.endDate]   : []),
   ];
-
-  const rawMin = allDates.reduce((a, b) => a < b ? a : b);
-  const rawMax = allDates.reduce((a, b) => a > b ? a : b);
-
-  // Pad to full-month boundaries
+  const rawMin     = allDates.reduce((a, b) => a < b ? a : b);
+  const rawMax     = allDates.reduce((a, b) => a > b ? a : b);
   const rangeStart = new Date(rawMin + 'T00:00:00');
   rangeStart.setDate(1);
   const rangeEnd = new Date(rawMax + 'T00:00:00');
-  rangeEnd.setMonth(rangeEnd.getMonth() + 1, 1); // first day of next month
-
+  rangeEnd.setMonth(rangeEnd.getMonth() + 1, 1);
   const span = rangeEnd.getTime() - rangeStart.getTime();
 
   function pct(dateStr: string): number {
@@ -695,102 +703,114 @@ function ProjectGantt({ project }: { project: FmoProject }) {
   const months: { label: string; p: number }[] = [];
   const cur = new Date(rangeStart);
   while (cur < rangeEnd) {
-    months.push({
-      label: cur.toLocaleString('default', { month: 'short', year: '2-digit' }),
-      p: (cur.getTime() - rangeStart.getTime()) / span * 100,
-    });
+    months.push({ label: cur.toLocaleString('default', { month: 'short', year: '2-digit' }), p: (cur.getTime() - rangeStart.getTime()) / span * 100 });
     cur.setMonth(cur.getMonth() + 1);
   }
+  const n    = months.length;
+  const step = n <= 6 ? 1 : n <= 12 ? 2 : n <= 24 ? 3 : n <= 48 ? 6 : 12;
 
-  const today     = new Date().toISOString().slice(0, 10);
-  const todayPct  = pct(today);
+  const today    = new Date().toISOString().slice(0, 10);
+  const todayPct = pct(today);
   const showToday = todayPct > 0 && todayPct < 100;
 
-  // ── Section heights ──────────────────────────────────────────────────────────
-  const HEADER_H   = 28;
-  const SECTION_H  = 24;
+  // ── Heights (collapse-aware) ─────────────────────────────────────────────────
+  const HEADER_H  = 28;
+  const SECTION_H = 24;
 
-  const wpSectionH   = datedWps.length > 0
-    ? SECTION_H + datedWps.length * ROW_H + (undatedWps.length > 0 ? undatedWps.length * 22 : 0)
-    : 0;
-  const msSectionH   = milestones.length > 0 ? SECTION_H + milestones.length * ROW_H : 0;
-  const totalBarH    = wpSectionH + (datedWps.length > 0 && milestones.length > 0 ? 8 : 0) + msSectionH;
+  const wpRowsH  = datedWps.length * ROW_H + (undatedWps.length > 0 ? undatedWps.length * 22 : 0);
+  const msRowsH  = milestones.length * ROW_H;
+  const wpSectionH = datedWps.length > 0 ? SECTION_H + (wpOpen ? wpRowsH : 0) : 0;
+  const msSectionH = milestones.length > 0 ? SECTION_H + (msOpen ? msRowsH : 0) : 0;
+  const gapH       = datedWps.length > 0 && milestones.length > 0 ? 8 : 0;
+  const totalBarH  = wpSectionH + gapH + msSectionH;
 
   return (
     <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
-      <div className="px-5 py-3 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
-        <div>
-          <h3 className="text-sm font-semibold text-gray-800">Project Timeline</h3>
-          <p className="text-xs text-slate-400 mt-0.5">
-            {datedWps.length} work package{datedWps.length !== 1 ? 's' : ''} · {milestones.length} milestone{milestones.length !== 1 ? 's' : ''}
-            {showToday && <span className="ml-2 text-red-400">· red line = today</span>}
-          </p>
-        </div>
+      <div className="px-5 py-3 border-b border-slate-100 bg-slate-50">
+        <h3 className="text-sm font-semibold text-gray-800">Project Timeline</h3>
+        <p className="text-xs text-slate-400 mt-0.5">
+          {datedWps.length} work package{datedWps.length !== 1 ? 's' : ''} · {milestones.length} milestone{milestones.length !== 1 ? 's' : ''}
+          {showToday && <span className="ml-2 text-red-400">· red line = today</span>}
+        </p>
       </div>
 
       <div className="overflow-x-auto">
         <div style={{ minWidth: 560 }} className="px-5 pb-5 pt-4">
 
-          {/* ── Month header ─────────────────────────────────────────── */}
-          {(() => {
-            // Show at most ~10 labels; pick the smallest clean interval that achieves that
-            const n = months.length;
-            const step = n <= 6 ? 1 : n <= 12 ? 2 : n <= 24 ? 3 : n <= 48 ? 6 : 12;
-            return (
+          {/* Month header */}
           <div className="flex" style={{ height: HEADER_H }}>
             <div style={{ width: LABEL_W, minWidth: LABEL_W }} className="shrink-0" />
             <div className="flex-1 relative">
               {months.map((m, i) => (
                 <div key={m.label} style={{ left: `${m.p}%` }}
                   className="absolute top-0 flex flex-col items-start select-none pointer-events-none">
-                  {i % step === 0 && (
-                    <span className="text-[10px] text-slate-400 whitespace-nowrap pr-1">{m.label}</span>
-                  )}
+                  {i % step === 0 && <span className="text-[10px] text-slate-400 whitespace-nowrap pr-1">{m.label}</span>}
                   <div className={`w-px bg-slate-200 mt-0.5 ${i % step === 0 ? 'h-2' : 'h-1'}`} />
                 </div>
               ))}
             </div>
           </div>
-            );
-          })()}
 
-          {/* ── Chart body: labels + bars ────────────────────────────── */}
+          {/* Chart body */}
           <div className="flex">
-            {/* Label column */}
+
+            {/* ── Label column ── */}
             <div style={{ width: LABEL_W, minWidth: LABEL_W }} className="shrink-0 pr-3">
 
               {datedWps.length > 0 && (
                 <>
-                  <div style={{ height: SECTION_H }} className="flex items-end pb-1">
-                    <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide">Work Packages</span>
-                  </div>
-                  {datedWps.map(wp => {
-                    const completion = wp.notes.length > 0 ? wp.notes[wp.notes.length - 1].completion : 0;
-                    return (
-                      <div key={wp.id} style={{ height: ROW_H }} className="flex flex-col justify-center">
-                        <span className="text-xs text-slate-700 truncate leading-tight" title={wp.name}>{wp.name}</span>
-                        <span className="text-[10px] text-slate-400 leading-none">
-                          {wp.budgetHours > 0 ? `${wp.budgetHours}h` : ''}{completion > 0 ? ` · ${completion}%` : ''}
-                        </span>
-                      </div>
-                    );
-                  })}
-                  {undatedWps.map(wp => (
-                    <div key={wp.id} style={{ height: 22 }} className="flex items-center">
-                      <span className="text-[10px] text-slate-400 italic truncate" title={wp.name}>{wp.name} (no dates)</span>
-                    </div>
-                  ))}
+                  {/* WP section header */}
+                  <button
+                    type="button"
+                    onClick={() => setWpOpen(o => !o)}
+                    style={{ height: SECTION_H }}
+                    className="w-full flex items-center gap-1.5 hover:text-slate-600 select-none"
+                  >
+                    <Chevron open={wpOpen} />
+                    <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide">
+                      Work Packages ({datedWps.length + undatedWps.length})
+                    </span>
+                  </button>
+                  {wpOpen && (
+                    <>
+                      {datedWps.map(wp => {
+                        const completion = wp.notes.length > 0 ? wp.notes[wp.notes.length - 1].completion : 0;
+                        return (
+                          <div key={wp.id} style={{ height: ROW_H }} className="flex flex-col justify-center">
+                            <span className="text-xs text-slate-700 truncate leading-tight" title={wp.name}>{wp.name}</span>
+                            <span className="text-[10px] text-slate-400 leading-none">
+                              {wp.budgetHours > 0 ? `${wp.budgetHours}h` : ''}{completion > 0 ? ` · ${completion}%` : ''}
+                            </span>
+                          </div>
+                        );
+                      })}
+                      {undatedWps.map(wp => (
+                        <div key={wp.id} style={{ height: 22 }} className="flex items-center">
+                          <span className="text-[10px] text-slate-400 italic truncate" title={wp.name}>{wp.name} (no dates)</span>
+                        </div>
+                      ))}
+                    </>
+                  )}
                 </>
               )}
 
-              {datedWps.length > 0 && milestones.length > 0 && <div style={{ height: 8 }} />}
+              {datedWps.length > 0 && milestones.length > 0 && <div style={{ height: gapH }} />}
 
               {milestones.length > 0 && (
                 <>
-                  <div style={{ height: SECTION_H }} className="flex items-end pb-1">
-                    <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide">Milestones</span>
-                  </div>
-                  {milestones.map(ms => {
+                  {/* Milestone section header */}
+                  <button
+                    type="button"
+                    onClick={() => setMsOpen(o => !o)}
+                    style={{ height: SECTION_H }}
+                    className="w-full flex items-center gap-1.5 hover:text-slate-600 select-none"
+                  >
+                    <Chevron open={msOpen} />
+                    <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide">
+                      Milestones ({milestones.length})
+                    </span>
+                  </button>
+                  {msOpen && milestones.map(ms => {
                     const color = ms.status === 'reached' ? '#16a34a' : ms.status === 'delayed' ? '#dc2626' : '#64748b';
                     return (
                       <div key={ms.id} style={{ height: ROW_H }} className="flex flex-col justify-center">
@@ -803,7 +823,7 @@ function ProjectGantt({ project }: { project: FmoProject }) {
               )}
             </div>
 
-            {/* Bar / marker column */}
+            {/* ── Bar / marker column ── */}
             <div className="flex-1 relative" style={{ height: totalBarH }}>
 
               {/* Month grid lines */}
@@ -818,12 +838,17 @@ function ProjectGantt({ project }: { project: FmoProject }) {
                   className="absolute inset-y-0 w-px bg-red-400 z-10 pointer-events-none" />
               )}
 
-              {/* ── Work package bars ───────────────────────── */}
-              {datedWps.length > 0 && (() => {
+              {/* WP section header row (bar side — empty, keeps alignment) */}
+              {datedWps.length > 0 && (
+                <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: SECTION_H }}
+                  className="border-b border-slate-100 bg-slate-50/40" />
+              )}
+
+              {/* WP bars */}
+              {wpOpen && datedWps.length > 0 && (() => {
                 let offsetY = SECTION_H;
                 return datedWps.map(wp => {
-                  const top   = offsetY;
-                  offsetY += ROW_H;
+                  const top  = offsetY; offsetY += ROW_H;
                   const l    = pct(wp.startDate!);
                   const r    = pct(wp.endDate!);
                   const w    = Math.max(r - l, 0.5);
@@ -834,10 +859,7 @@ function ProjectGantt({ project }: { project: FmoProject }) {
                       style={{ position: 'absolute', top: top + 6, left: `${l}%`, width: `${w}%`, height: ROW_H - 12 }}
                       className="rounded overflow-hidden border border-indigo-300 bg-indigo-50"
                     >
-                      {completion > 0 && (
-                        <div style={{ width: `${completion}%` }}
-                          className="h-full bg-indigo-400 opacity-50" />
-                      )}
+                      {completion > 0 && <div style={{ width: `${completion}%` }} className="h-full bg-indigo-400 opacity-50" />}
                       {w > 4 && (
                         <span className="absolute inset-0 flex items-center px-1.5 text-[10px] font-medium text-indigo-800 truncate">
                           {completion > 0 ? `${completion}%` : ''}
@@ -848,38 +870,35 @@ function ProjectGantt({ project }: { project: FmoProject }) {
                 });
               })()}
 
-              {/* ── Milestone markers ───────────────────────── */}
-              {milestones.length > 0 && (() => {
-                const msTop0 = (datedWps.length > 0 ? wpSectionH + 8 : 0) + SECTION_H;
+              {/* MS section header row (bar side) */}
+              {milestones.length > 0 && (
+                <div style={{ position: 'absolute', top: wpSectionH + gapH, left: 0, right: 0, height: SECTION_H }}
+                  className="border-b border-slate-100 bg-slate-50/40" />
+              )}
+
+              {/* Milestone markers */}
+              {msOpen && milestones.length > 0 && (() => {
+                const msTop0 = wpSectionH + gapH + SECTION_H;
                 return milestones.map((ms, i) => {
-                  const topCenter = msTop0 + i * ROW_H + ROW_H / 2;
-                  const l = pct(ms.date);
-                  const isPayment = ms.milestoneType === 'payment';
+                  const topCenter   = msTop0 + i * ROW_H + ROW_H / 2;
+                  const l           = pct(ms.date);
+                  const isPayment   = ms.milestoneType === 'payment';
                   const borderColor = ms.status === 'reached' ? '#16a34a' : ms.status === 'delayed' ? '#dc2626' : '#64748b';
                   const bgColor     = isPayment
                     ? (ms.status === 'reached' ? '#fef9c3' : '#fef3c7')
                     : (ms.status === 'reached' ? '#dcfce7' : ms.status === 'delayed' ? '#fee2e2' : '#f1f5f9');
-                  const DIAMOND = 14;
+                  const D = 14;
                   return (
                     <div key={ms.id} title={`${ms.name} — ${ms.date} (${ms.status})`}
-                      style={{
-                        position: 'absolute',
-                        top: topCenter - DIAMOND / 2,
-                        left: `${l}%`,
-                        width: DIAMOND,
-                        height: DIAMOND,
-                        transform: 'translateX(-50%) rotate(45deg)',
-                        background: bgColor,
-                        border: `2px solid ${borderColor}`,
-                        borderRadius: 2,
-                        zIndex: 5,
-                      }}
+                      style={{ position: 'absolute', top: topCenter - D / 2, left: `${l}%`,
+                        width: D, height: D, transform: 'translateX(-50%) rotate(45deg)',
+                        background: bgColor, border: `2px solid ${borderColor}`, borderRadius: 2, zIndex: 5 }}
                     />
                   );
                 });
               })()}
 
-              {/* Today label at bottom */}
+              {/* Today label */}
               {showToday && (
                 <div style={{ position: 'absolute', bottom: -18, left: `${todayPct}%`, transform: 'translateX(-50%)' }}>
                   <span className="text-[10px] text-red-400 whitespace-nowrap select-none">Today</span>
@@ -890,24 +909,12 @@ function ProjectGantt({ project }: { project: FmoProject }) {
 
           {/* Legend */}
           <div className="flex flex-wrap gap-4 mt-6 pt-3 border-t border-slate-100">
-            <span className="flex items-center gap-1.5 text-[10px] text-slate-400">
-              <span className="inline-block w-4 h-3 rounded border border-indigo-300 bg-indigo-50" /> Work package
-            </span>
-            <span className="flex items-center gap-1.5 text-[10px] text-slate-400">
-              <span className="inline-block w-4 h-3 rounded border border-indigo-300 bg-indigo-400 opacity-50" /> Completion fill
-            </span>
-            <span className="flex items-center gap-1.5 text-[10px] text-slate-400">
-              <span className="inline-block w-3 h-3 rotate-45 border-2 border-slate-500 bg-slate-100" /> Milestone
-            </span>
-            <span className="flex items-center gap-1.5 text-[10px] text-slate-400">
-              <span className="inline-block w-3 h-3 rotate-45 border-2 border-amber-400 bg-amber-100" /> Payment
-            </span>
-            <span className="flex items-center gap-1.5 text-[10px] text-slate-400">
-              <span className="inline-block w-px h-3 bg-green-600" /> Reached
-            </span>
-            <span className="flex items-center gap-1.5 text-[10px] text-slate-400">
-              <span className="inline-block w-px h-3 bg-red-500" /> Delayed
-            </span>
+            <span className="flex items-center gap-1.5 text-[10px] text-slate-400"><span className="inline-block w-4 h-3 rounded border border-indigo-300 bg-indigo-50" /> Work package</span>
+            <span className="flex items-center gap-1.5 text-[10px] text-slate-400"><span className="inline-block w-4 h-3 rounded border border-indigo-300 bg-indigo-400 opacity-50" /> Completion fill</span>
+            <span className="flex items-center gap-1.5 text-[10px] text-slate-400"><span className="inline-block w-3 h-3 rotate-45 border-2 border-slate-500 bg-slate-100" /> Milestone</span>
+            <span className="flex items-center gap-1.5 text-[10px] text-slate-400"><span className="inline-block w-3 h-3 rotate-45 border-2 border-amber-400 bg-amber-100" /> Payment</span>
+            <span className="flex items-center gap-1.5 text-[10px] text-slate-400"><span className="inline-block w-px h-3 bg-green-600" /> Reached</span>
+            <span className="flex items-center gap-1.5 text-[10px] text-slate-400"><span className="inline-block w-px h-3 bg-red-500" /> Delayed</span>
           </div>
         </div>
       </div>
