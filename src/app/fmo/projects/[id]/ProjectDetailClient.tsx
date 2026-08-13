@@ -2337,19 +2337,21 @@ export default function ProjectDetailClient({
                         </td>
                       </tr>
                       {isExpanded && monthly && (() => {
+                        let cum = 0;
                         const bars = [...monthly.entries()]
                           .sort(([a], [b]) => a.localeCompare(b))
-                          .map(([month, hours]) => ({ month: month.slice(0, 7), hours }));
+                          .map(([month, hours]) => { cum += hours; return { month: month.slice(0, 7), hours, cumulative: Math.round(cum * 10) / 10 }; });
                         return (
                           <tr className="bg-indigo-50/30">
                             <td colSpan={6} className="px-6 py-4">
                               <ResponsiveContainer width="100%" height={160}>
-                                <BarChart data={bars} margin={{ top: 4, right: 8, left: 0, bottom: 4 }}>
+                                <ComposedChart data={bars} margin={{ top: 4, right: 8, left: 0, bottom: 4 }}>
                                   <XAxis dataKey="month" tick={{ fontSize: 9 }} interval={0} angle={-35} textAnchor="end" height={36} />
                                   <YAxis tick={{ fontSize: 9 }} tickFormatter={v => `${v}h`} width={32} />
-                                  <Tooltip {...TOOLTIP_STYLE} formatter={v => typeof v === 'number' ? fmtH(v, locale) : v} />
-                                  <Bar dataKey="hours" fill="#6366f1" radius={[3, 3, 0, 0]} opacity={0.85} />
-                                </BarChart>
+                                  <Tooltip {...TOOLTIP_STYLE} formatter={(v, name) => [typeof v === 'number' ? fmtH(v, locale) : v, name === 'cumulative' ? 'Cumulative' : 'Monthly']} />
+                                  <Bar dataKey="hours" fill="#6366f1" radius={[3, 3, 0, 0]} opacity={0.5} name="Monthly" />
+                                  <Line type="monotone" dataKey="cumulative" stroke="#4338ca" strokeWidth={2} dot={{ r: 2, fill: '#4338ca' }} name="Cumulative" />
+                                </ComposedChart>
                               </ResponsiveContainer>
                             </td>
                           </tr>
