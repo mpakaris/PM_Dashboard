@@ -1,5 +1,6 @@
 import { Redis } from '@upstash/redis';
 import { unstable_cache, revalidateTag } from 'next/cache';
+import { cache } from 'react';
 import { AppData, Assignment, Project, Forecast, ElsapMirror, TimesheetStore, InvoicingStore, SubContractorStore, ProjektAnalysisProject, FmoStore, FmoMappingStore, FmoProject } from './types';
 import { getMonthsBetween } from './utils';
 
@@ -216,24 +217,21 @@ const EMPTY_FMO_MAPPINGS: FmoMappingStore = {
   subCategories: {},
 };
 
-export const readFmoStore = unstable_cache(
-  async (): Promise<FmoStore> => {
-    const raw = await withRetry(() => redis.get<any>(FMO_STORE_KEY));
-    if (!raw) return { ...EMPTY_FMO_STORE, importStats: { ...EMPTY_FMO_STORE.importStats } };
-    return {
-      entries: raw.entries ?? [],
-      lastUpload: raw.lastUpload ?? '',
-      sources: raw.sources ?? [],
-      importStats: raw.importStats ?? { ...EMPTY_FMO_STORE.importStats },
-    };
-  },
-  ['fmo-store'],
-  { tags: ['fmo-store'], revalidate: 300 }
-);
+// readFmoStore uses React cache() (request-level deduplication only).
+// The FMO store is ~8MB — Next.js unstable_cache hard-limits at 2MB and would error on every request.
+export const readFmoStore = cache(async (): Promise<FmoStore> => {
+  const raw = await withRetry(() => redis.get<any>(FMO_STORE_KEY));
+  if (!raw) return { ...EMPTY_FMO_STORE, importStats: { ...EMPTY_FMO_STORE.importStats } };
+  return {
+    entries: raw.entries ?? [],
+    lastUpload: raw.lastUpload ?? '',
+    sources: raw.sources ?? [],
+    importStats: raw.importStats ?? { ...EMPTY_FMO_STORE.importStats },
+  };
+});
 
 export async function writeFmoStore(store: FmoStore): Promise<void> {
   await withRetry(() => redis.set(FMO_STORE_KEY, store));
-  revalidateTag('fmo-store', 'default');
 }
 
 export const readFmoMappings = unstable_cache(

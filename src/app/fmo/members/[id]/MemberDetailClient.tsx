@@ -8,12 +8,13 @@ import {
   PieChart, Pie, Cell, CartesianGrid,
   ComposedChart, Line,
 } from 'recharts';
-import { fmtH, type Locale } from '@/lib/i18n';
-import type { FmoMember, FmoEntry, WbsSubCategory } from '@/lib/types';
+import { fmtH, fmtEur, type Locale } from '@/lib/i18n';
+import type { FmoMember, FmoEntry, WbsSubCategory, FmoProject, FmoWbsEntry } from '@/lib/types';
+import { entryBelongsToProject } from '@/lib/utils';
 import { updateFmoMember } from '@/actions/fmo';
 import { ChartTimeFilter, initChartRange, type TimeRange } from '@/components/ChartTimeFilter';
 
-type Tab = 'profile' | 'tickets' | 'charts' | 'utilization';
+type Tab = 'profile' | 'tickets' | 'charts' | 'utilization' | 'profitability';
 
 // Muted, dignified palette — 700-level Tailwind equivalents
 const COLORS = [
@@ -62,11 +63,19 @@ export default function MemberDetailClient({
   entries,
   allEntries,
   subCategories,
+  wbs,
+  projects,
+  prevId,
+  nextId,
 }: {
   member: FmoMember;
   entries: FmoEntry[];
   allEntries: FmoEntry[];
   subCategories: Record<string, WbsSubCategory>;
+  wbs: Record<string, FmoWbsEntry>;
+  projects: FmoProject[];
+  prevId: string | null;
+  nextId: string | null;
 }) {
   const t = useTranslations('members');
   const tCommon = useTranslations('common');
@@ -84,6 +93,8 @@ export default function MemberDetailClient({
   const [capacity, setCapacity]         = useState(String(member.monthlyCapacity ?? 160));
   const [billableTarget, setBillTarget] = useState(String(member.monthlyBillableTarget ?? 120));
   const [utilRange, setUtilRange]       = useState<TimeRange>({ from: '', to: '' });
+  const [profitRange, setProfitRange]   = useState<TimeRange>(() => initChartRange(entries));
+  const [wbsLocalRates, setWbsLocalRates] = useState<Record<string, number>>({});
   const [saving, setSaving]       = useState(false);
   const [saved, setSaved]         = useState(false);
   const [error, setError]         = useState('');
@@ -360,11 +371,110 @@ export default function MemberDetailClient({
     return tUtil('unmapped');
   };
 
+  // ── Profitability ──────────────────────────────────────────────────────────
+  const profitability = useMemo(() => {
+    const rangedEntries = profitRange.from
+      ? entries.filter(e => e.month >= profitRange.from && e.month <= profitRange.to)
+      : entries;
+
+    const byProject = new Map<string, { project: FmoProject; isFixprice: boolean; wbsCode: string | null; totalHours: number; billableHours: number; internalHours: number; cost: number; revenue: number }>();
+
+    for (const e of rangedEntries) {
+      const project    = projects.find(p => entryBelongsToProject(e, p));
+      const isFixprice = project?.projectType === 'fixprice';
+
+      let key: string;
+      let displayName: string;
+      let rowWbsCode: string | null = null;
+      if (project) {
+        key = project.id;
+        displayName = project.name;
+      } else if (e.wbsCode) {
+        key = `__wbs__${e.wbsCode}`;
+        rowWbsCode = e.wbsCode;
+        const wbsEntry = wbs[e.wbsCode];
+        displayName = wbsEntry ? `${wbsEntry.label} [${e.wbsCode}]` : `[${e.wbsCode}]`;
+      } else {
+        key = '__nowbs__';
+        displayName = 'No WBS / no project';
+      }
+
+      if (!byProject.has(key)) {
+        byProject.set(key, {
+          project: project ?? { id: key, name: displayName, wbsCodes: [], ticketIds: [], excludedTicketIds: [], createdAt: '', projectType: 'tm', contractValue: 0, contractHours: 0, memberRates: {}, operationContracts: [] },
+          isFixprice,
+          wbsCode: rowWbsCode,
+          totalHours: 0, billableHours: 0, internalHours: 0, cost: 0, revenue: 0,
+        });
+      }
+      const s = byProject.get(key)!;
+      s.totalHours += e.spentTime;
+      s.cost       += e.spentTime * member.costRate;
+      if (e.billingClass === 'V') {
+        let billingRate = 0;
+        if (!isFixprice) {
+          if (project) {
+            billingRate = project.memberRates[member.id]?.billingRate ?? 0;
+          } else if (e.wbsCode) {
+            // Use locally-set rate for WBS rows
+            billingRate = wbsLocalRates[e.wbsCode] ?? 0;
+          }
+        }
+        s.billableHours += e.spentTime;
+        s.revenue       += e.spentTime * billingRate;
+      } else {
+        s.internalHours += e.spentTime;
+      }
+    }
+
+    const rows = [...byProject.values()]
+      .map(s => ({
+        ...s,
+        profit: s.isFixprice ? null : s.revenue - s.cost,
+        margin: s.isFixprice ? null : (s.cost === 0 ? null : s.revenue === 0 ? -100 : Math.round((s.revenue - s.cost) / s.revenue * 100)),
+        missingRate: !s.isFixprice && s.billableHours > 0 && s.revenue === 0 && !s.wbsCode,
+      }))
+      .sort((a, b) => {
+        // Fixprice rows last, then by profit desc
+        if (a.isFixprice !== b.isFixprice) return a.isFixprice ? 1 : -1;
+        return (b.profit ?? 0) - (a.profit ?? 0);
+      });
+
+    // Monthly chart — T&M only: exclude fixed price entries entirely
+    const monthMap = new Map<string, { cost: number; revenue: number }>();
+    for (const e of rangedEntries) {
+      const project    = projects.find(p => entryBelongsToProject(e, p));
+      const isFixprice = project?.projectType === 'fixprice';
+      if (isFixprice) continue; // fixed price cost excluded — revenue is contract-based, not per hour
+      if (!monthMap.has(e.month)) monthMap.set(e.month, { cost: 0, revenue: 0 });
+      const m = monthMap.get(e.month)!;
+      m.cost += e.spentTime * member.costRate;
+      if (e.billingClass === 'V') {
+        const billingRate = project ? (project.memberRates[member.id]?.billingRate ?? 0) : 0;
+        m.revenue += e.spentTime * billingRate;
+      }
+    }
+    const monthly = [...monthMap.entries()].sort(([a], [b]) => a.localeCompare(b))
+      .map(([month, m]) => ({ month, cost: Math.round(m.cost), revenue: Math.round(m.revenue), profit: Math.round(m.revenue - m.cost) }));
+
+    // Totals — fixprice excluded from revenue/profit (cost still counts)
+    const tmRows       = rows.filter(r => !r.isFixprice);
+    const totalCost    = rows.reduce((s, r) => s + r.cost,    0);
+    const tmRevenue    = tmRows.reduce((s, r) => s + r.revenue, 0);
+    const tmProfit     = tmRevenue - tmRows.reduce((s, r) => s + r.cost, 0);
+    const tmCost      = tmRows.reduce((s, r) => s + r.cost, 0);
+    const totalMargin = tmCost === 0 ? null : tmRevenue === 0 ? -100 : Math.round(tmProfit / tmRevenue * 100);
+    const fixpriceCost = rows.filter(r => r.isFixprice).reduce((s, r) => s + r.cost, 0);
+
+    return { rows, monthly, totalCost, tmRevenue, tmProfit, totalMargin, fixpriceCost, hasFixprice: fixpriceCost > 0 };
+  }, [entries, projects, member, profitRange, wbs, wbsLocalRates]);
+
   const TABS: { id: Tab; label: string }[] = [
-    { id: 'tickets',     label: 'Tickets' },
-    { id: 'utilization', label: 'Utilization' },
-    { id: 'charts',      label: 'Charts' },
-    { id: 'profile',     label: t('profile') },
+    { id: 'tickets',       label: 'Tickets' },
+    { id: 'utilization',   label: 'Utilization' },
+    { id: 'charts',        label: 'Charts' },
+    { id: 'profitability', label: 'Profitability' },
+    { id: 'profile',       label: t('profile') },
   ];
 
   return (
@@ -377,6 +487,24 @@ export default function MemberDetailClient({
         <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${member.type === 'intern' ? 'bg-blue-100 text-blue-800' : 'bg-orange-100 text-orange-800'}`}>
           {member.type === 'intern' ? t('intern') : t('extern')}
         </span>
+        <div className="ml-auto flex items-center gap-1">
+          <Link
+            href={prevId ? `/fmo/members/${prevId}` : '#'}
+            aria-disabled={!prevId}
+            className={`p-1.5 rounded border text-sm transition-colors ${prevId ? 'border-slate-200 text-slate-500 hover:border-slate-400 hover:text-slate-700' : 'border-slate-100 text-slate-300 pointer-events-none'}`}
+            title="Previous member"
+          >
+            ←
+          </Link>
+          <Link
+            href={nextId ? `/fmo/members/${nextId}` : '#'}
+            aria-disabled={!nextId}
+            className={`p-1.5 rounded border text-sm transition-colors ${nextId ? 'border-slate-200 text-slate-500 hover:border-slate-400 hover:text-slate-700' : 'border-slate-100 text-slate-300 pointer-events-none'}`}
+            title="Next member"
+          >
+            →
+          </Link>
+        </div>
       </div>
 
       {/* KPI row */}
@@ -841,6 +969,199 @@ export default function MemberDetailClient({
       })()}
 
       {/* ── Profile Tab ── */}
+      {/* ── PROFITABILITY ── */}
+      {activeTab === 'profitability' && (
+        <div className="space-y-6">
+          <ChartTimeFilter value={profitRange} defaultRange={initChartRange(entries)} onChange={setProfitRange} />
+          {/* KPI cards */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {[
+              { label: 'Total Cost',           value: fmtEur(profitability.totalCost,  locale), color: 'text-slate-800',   sub: profitability.hasFixprice ? `incl. ${fmtEur(profitability.fixpriceCost, locale)} fixed price` : undefined },
+              { label: 'T&M Revenue',          value: fmtEur(profitability.tmRevenue,  locale), color: 'text-emerald-700', sub: profitability.hasFixprice ? 'fixed price excluded' : undefined },
+              { label: 'T&M Net Profit',       value: fmtEur(profitability.tmProfit,   locale), color: profitability.tmProfit >= 0 ? 'text-emerald-700' : 'text-red-600', sub: undefined },
+              { label: 'T&M Margin',           value: profitability.totalMargin !== null ? `${profitability.totalMargin}%` : '—', color: (profitability.totalMargin ?? 0) >= 0 ? 'text-emerald-700' : 'text-red-600', sub: undefined },
+            ].map(k => (
+              <div key={k.label} className="bg-white rounded-lg border border-slate-200 px-4 py-3">
+                <p className="text-xs text-slate-400 mb-1">{k.label}</p>
+                <p className={`text-xl font-bold ${k.color}`}>{k.value}</p>
+                {k.sub && <p className="text-xs text-slate-400 mt-0.5">{k.sub}</p>}
+              </div>
+            ))}
+          </div>
+
+          {/* Warnings */}
+          {member.costRate === 0 && (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-sm text-amber-800">
+              ⚠ No cost rate set — cost figures are 0. Set a cost rate in the Profile tab.
+            </div>
+          )}
+          {profitability.hasFixprice && (
+            <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 text-sm text-blue-800">
+              ℹ This member works on Fixed Price projects. Revenue for those projects is contract-based, not per hour — they are excluded from the T&M revenue and profit/margin calculations. Only their cost is included in the total cost.
+            </div>
+          )}
+
+          {/* Monthly cost vs revenue chart */}
+          {profitability.monthly.length > 0 && (
+            <div className="bg-white rounded-lg border border-slate-200 p-4">
+              <h3 className="text-sm font-semibold text-gray-800 mb-1">Monthly Cost vs T&M Revenue</h3>
+              <p className="text-xs text-gray-400 mb-4">Cost (red) vs billable T&M revenue (green) per month — fixed price revenue not shown</p>
+              <ResponsiveContainer width="100%" height={240}>
+                <ComposedChart data={profitability.monthly} margin={{ top: 4, right: 8, left: 0, bottom: 8 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                  <XAxis dataKey="month" tick={{ fontSize: 10 }} interval={0} angle={-35} textAnchor="end" height={48} />
+                  <YAxis tick={{ fontSize: 11 }} tickFormatter={v => `${Math.round(v / 1000)}k`} />
+                  <Tooltip {...TOOLTIP_STYLE} formatter={(v, name) => [fmtEur(Number(v), locale), String(name)]} />
+                  <Legend wrapperStyle={{ fontSize: '12px' }} />
+                  <Bar dataKey="cost"    fill="#fca5a5" opacity={0.9} name="Cost"    radius={[3,3,0,0]} />
+                  <Bar dataKey="revenue" fill="#6ee7b7" opacity={0.9} name="Revenue" radius={[3,3,0,0]} />
+                  <Line type="monotone" dataKey="profit" stroke="#4338ca" strokeWidth={2} dot={{ r: 3 }} name="Profit" />
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+
+          {/* T&M project breakdown */}
+          {(() => {
+            const tmRows = profitability.rows.filter(r => !r.isFixprice);
+            if (tmRows.length === 0) return null;
+            return (
+              <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
+                <div className="px-4 py-3 border-b border-slate-100 bg-slate-50">
+                  <h3 className="text-sm font-semibold text-slate-700">T&amp;M Projects — Breakdown</h3>
+                </div>
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-slate-100 text-slate-500">
+                      <th className="text-left px-4 py-2 font-medium">Project</th>
+                      <th className="text-right px-4 py-2 font-medium">Total h</th>
+                      <th className="text-right px-4 py-2 font-medium">Billable h</th>
+                      <th className="text-right px-4 py-2 font-medium">Internal h</th>
+                      <th className="text-right px-4 py-2 font-medium">Cost</th>
+                      <th className="text-right px-4 py-2 font-medium">Rate €/h</th>
+                      <th className="text-right px-4 py-2 font-medium">Revenue</th>
+                      <th className="text-right px-4 py-2 font-medium">Profit / Loss</th>
+                      <th className="text-right px-4 py-2 font-medium">Margin</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50">
+                    {tmRows.map((r, i) => (
+                      <tr key={i} className="hover:bg-slate-50/40">
+                        <td className="px-4 py-2 font-medium text-slate-700">
+                          <div className="flex items-center gap-1.5">
+                            {r.project.name}
+                            {r.missingRate && <span className="text-orange-500 text-xs" title="Billable hours but no billing rate set">no rate</span>}
+                          </div>
+                        </td>
+                        <td className="px-4 py-2 text-right text-slate-600">{fmtH(r.totalHours, locale)}</td>
+                        <td className="px-4 py-2 text-right text-slate-600">{fmtH(r.billableHours, locale)}</td>
+                        <td className="px-4 py-2 text-right text-slate-400">{fmtH(r.internalHours, locale)}</td>
+                        <td className="px-4 py-2 text-right text-slate-600">{fmtEur(r.cost, locale)}</td>
+                        {/* Rate column — editable for WBS rows, read-only for project rows */}
+                        <td className="px-4 py-2 text-right">
+                          {r.wbsCode ? (
+                            <div className="flex items-center justify-end gap-1">
+                              <input
+                                type="number"
+                                min="0"
+                                step="0.5"
+                                placeholder="—"
+                                defaultValue={wbsLocalRates[r.wbsCode] || ''}
+                                className="w-16 text-right bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 text-xs text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-300 focus:bg-white placeholder:text-slate-300"
+                                onBlur={e => {
+                                  const val = parseFloat(e.target.value) || 0;
+                                  setWbsLocalRates(prev => ({ ...prev, [r.wbsCode!]: val }));
+                                }}
+                              />
+                              <span className="text-xs text-slate-400">€/h</span>
+                            </div>
+                          ) : (
+                            <span className="text-slate-400 text-xs">
+                              {r.billableHours > 0 ? `${Math.round(r.revenue / r.billableHours)} €/h` : '—'}
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-4 py-2 text-right text-emerald-700">{fmtEur(r.revenue, locale)}</td>
+                        <td className={`px-4 py-2 text-right font-semibold ${(r.profit ?? 0) >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>
+                          {(r.profit ?? 0) >= 0 ? '+' : ''}{fmtEur(r.profit ?? 0, locale)}
+                        </td>
+                        <td className={`px-4 py-2 text-right ${r.margin === null ? 'text-slate-300' : r.margin >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                          {r.margin !== null ? `${r.margin}%` : '—'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="border-t border-slate-200 bg-slate-50 font-semibold text-xs">
+                      <td className="px-4 py-2 text-slate-600">Total</td>
+                      <td className="px-4 py-2 text-right text-slate-600">{fmtH(tmRows.reduce((s, r) => s + r.totalHours, 0), locale)}</td>
+                      <td className="px-4 py-2 text-right text-slate-600">{fmtH(tmRows.reduce((s, r) => s + r.billableHours, 0), locale)}</td>
+                      <td className="px-4 py-2 text-right text-slate-400">{fmtH(tmRows.reduce((s, r) => s + r.internalHours, 0), locale)}</td>
+                      <td className="px-4 py-2 text-right text-slate-600">{fmtEur(profitability.totalCost - profitability.fixpriceCost, locale)}</td>
+                      <td className="px-4 py-2" />
+                      <td className="px-4 py-2 text-right text-emerald-700">{fmtEur(profitability.tmRevenue, locale)}</td>
+                      <td className={`px-4 py-2 text-right ${profitability.tmProfit >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>
+                        {profitability.tmProfit >= 0 ? '+' : ''}{fmtEur(profitability.tmProfit, locale)}
+                      </td>
+                      <td className={`px-4 py-2 text-right ${(profitability.totalMargin ?? 0) >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                        {profitability.totalMargin !== null ? `${profitability.totalMargin}%` : '—'}
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+                <p className="px-4 py-2 text-xs text-slate-400 border-t border-slate-50">
+                  Revenue = billable (V-class) hours × billing rate per project. &ldquo;no rate&rdquo; = rate not configured in the project&apos;s Team tab.
+                </p>
+              </div>
+            );
+          })()}
+
+          {/* Fixed Price project breakdown — cost only */}
+          {profitability.hasFixprice && (() => {
+            const fpRows = profitability.rows.filter(r => r.isFixprice);
+            return (
+              <div className="bg-white rounded-lg border border-blue-100 overflow-hidden">
+                <div className="px-4 py-3 border-b border-blue-100 bg-blue-50/60 flex items-center gap-2">
+                  <h3 className="text-sm font-semibold text-blue-800">Fixed Price Projects — Cost Contribution</h3>
+                  <span className="text-xs text-blue-500">Revenue is contract-based, not per hour — P&amp;L not applicable</span>
+                </div>
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-blue-50 text-slate-500">
+                      <th className="text-left px-4 py-2 font-medium">Project</th>
+                      <th className="text-right px-4 py-2 font-medium">Total h</th>
+                      <th className="text-right px-4 py-2 font-medium">Billable h</th>
+                      <th className="text-right px-4 py-2 font-medium">Internal h</th>
+                      <th className="text-right px-4 py-2 font-medium">Cost</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-blue-50">
+                    {fpRows.map((r, i) => (
+                      <tr key={i} className="hover:bg-blue-50/40">
+                        <td className="px-4 py-2 font-medium text-slate-700">{r.project.name}</td>
+                        <td className="px-4 py-2 text-right text-slate-600">{fmtH(r.totalHours, locale)}</td>
+                        <td className="px-4 py-2 text-right text-slate-600">{fmtH(r.billableHours, locale)}</td>
+                        <td className="px-4 py-2 text-right text-slate-400">{fmtH(r.internalHours, locale)}</td>
+                        <td className="px-4 py-2 text-right text-slate-600">{fmtEur(r.cost, locale)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="border-t border-blue-100 bg-blue-50/40 font-semibold text-xs">
+                      <td className="px-4 py-2 text-slate-600">Total</td>
+                      <td className="px-4 py-2 text-right text-slate-600">{fmtH(fpRows.reduce((s, r) => s + r.totalHours, 0), locale)}</td>
+                      <td className="px-4 py-2 text-right text-slate-600">{fmtH(fpRows.reduce((s, r) => s + r.billableHours, 0), locale)}</td>
+                      <td className="px-4 py-2 text-right text-slate-400">{fmtH(fpRows.reduce((s, r) => s + r.internalHours, 0), locale)}</td>
+                      <td className="px-4 py-2 text-right text-slate-600">{fmtEur(profitability.fixpriceCost, locale)}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            );
+          })()}
+        </div>
+      )}
+
       {activeTab === 'profile' && (
         <form onSubmit={save} className="bg-white rounded-lg border border-slate-200 p-4 space-y-4 max-w-lg">
           <h2 className="font-semibold text-slate-700">{t('profile')}</h2>

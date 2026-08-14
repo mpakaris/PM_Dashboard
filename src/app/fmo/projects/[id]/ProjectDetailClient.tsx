@@ -1455,22 +1455,42 @@ export default function ProjectDetailClient({
 
   // Member summary (period-scoped)
   const memberSummary = useMemo(() => {
-    const map = new Map<string, { member: FmoMember; hours: number; tmHours: number; opsHours: number; cost: number; revenue: number }>();
+    const map = new Map<string, { member: FmoMember; hours: number; tmHours: number; opsHours: number; fixOpsHours: number; cost: number; revenue: number }>();
     for (const e of dashboardEntries) {
       const m = nameToMember[e.user];
       if (!m) continue;
-      const ex = map.get(m.id) ?? { member: m, hours: 0, tmHours: 0, opsHours: 0, cost: 0, revenue: 0 };
+      const ex = map.get(m.id) ?? { member: m, hours: 0, tmHours: 0, opsHours: 0, fixOpsHours: 0, cost: 0, revenue: 0 };
       ex.hours += e.spentTime;
       ex.cost  += e.spentTime * (m.costRate ?? 0);
       const isAnyOps = e.ticketId !== null && allOpsTicketSet.has(e.ticketId);
       const isFixOps = e.ticketId !== null && fixOpsTicketSet.has(e.ticketId);
-      if (isAnyOps) ex.opsHours += e.spentTime;
-      else          ex.tmHours  += e.spentTime;
-      if (!isFixOps) ex.revenue += e.spentTime * ((project.memberRates ?? {})[m.id]?.billingRate ?? 0);
+      if (isAnyOps) {
+        ex.opsHours += e.spentTime;
+        if (isFixOps) ex.fixOpsHours += e.spentTime;
+        else ex.revenue += e.spentTime * ((project.memberRates ?? {})[m.id]?.billingRate ?? 0); // hourly ops
+      } else {
+        ex.tmHours  += e.spentTime;
+        ex.revenue  += e.spentTime * ((project.memberRates ?? {})[m.id]?.billingRate ?? 0);
+      }
       map.set(m.id, ex);
     }
+
+    // Distribute fixprice ops pauschal revenue proportionally by fixOpsHours
+    const totalFixOpsHours = [...map.values()].reduce((s, r) => s + r.fixOpsHours, 0);
+    if (totalFixOpsHours > 0) {
+      const months = [...new Set(dashboardEntries.map(e => e.month))];
+      const totalPauschal = months.reduce((s, month) =>
+        s + (project.operationContracts ?? []).filter(c => c.type === 'fixprice')
+          .reduce((cs, c) => opsContractActiveInMonth(c, month)
+            ? cs + ((c.monthlyOverrides ?? {})[month] ?? c.defaultMonthlyAmount)
+            : cs, 0), 0);
+      for (const row of map.values()) {
+        row.revenue += totalPauschal * (row.fixOpsHours / totalFixOpsHours);
+      }
+    }
+
     return [...map.values()].sort((a, b) => b.hours - a.hours);
-  }, [dashboardEntries, nameToMember, fixOpsTicketSet, allOpsTicketSet, project.memberRates]);
+  }, [dashboardEntries, nameToMember, fixOpsTicketSet, allOpsTicketSet, project.memberRates, project.operationContracts]);
 
   // Ticket summary (period-scoped)
   const ticketSummary = useMemo(() => {
@@ -1499,17 +1519,39 @@ export default function ProjectDetailClient({
 
   // Economics totals (period-scoped)
   const totalEconAll = useMemo(() => {
-    let cost = 0, revenue = 0;
-    for (const ms of memberSummary) { cost += ms.cost; revenue += ms.revenue; }
+    let devCost = 0, opsCost = 0, devRevenue = 0, opsHourlyRevenue = 0;
+    for (const e of dashboardEntries) {
+      const m = nameToMember[e.user];
+      if (!m) continue;
+      const costRate    = m.costRate ?? 0;
+      const billingRate = (project.memberRates ?? {})[m.id]?.billingRate ?? 0;
+      const isOps       = e.ticketId !== null && allOpsTicketSet.has(e.ticketId);
+      const isFixOps    = e.ticketId !== null && fixOpsTicketSet.has(e.ticketId);
+      if (isOps) {
+        opsCost += e.spentTime * costRate;
+        // fixprice ops: flat fee covers revenue — don't add hourly billing on top
+        if (!isFixOps) opsHourlyRevenue += e.spentTime * billingRate;
+      } else {
+        devCost    += e.spentTime * costRate;
+        devRevenue += e.spentTime * billingRate;
+      }
+    }
     const months = [...new Set(dashboardEntries.map(e => e.month))];
-    const opsRevenue = months.reduce((s, month) =>
+    const opsPauschalRevenue = months.reduce((s, month) =>
       s + (project.operationContracts ?? []).filter(c => c.type === 'fixprice')
         .reduce((cs, c) => opsContractActiveInMonth(c, month)
           ? cs + ((c.monthlyOverrides ?? {})[month] ?? c.defaultMonthlyAmount)
           : cs, 0), 0);
-    revenue += opsRevenue;
-    return { cost: Math.round(cost), revenue: Math.round(revenue), pl: Math.round(revenue - cost) };
-  }, [memberSummary, dashboardEntries, project.operationContracts]);
+    const opsRevenue = Math.round(opsPauschalRevenue + opsHourlyRevenue);
+    const cost       = Math.round(devCost + opsCost);
+    const revenue    = Math.round(devRevenue) + opsRevenue;
+    return {
+      cost, revenue, pl: revenue - cost,
+      devCost:    Math.round(devCost),    opsCost:    Math.round(opsCost),
+      devRevenue: Math.round(devRevenue), opsRevenue,
+      devPl: Math.round(devRevenue - devCost), opsPl: Math.round(opsRevenue - opsCost),
+    };
+  }, [dashboardEntries, nameToMember, project.operationContracts, project.memberRates, allOpsTicketSet, fixOpsTicketSet]);
 
   const marginAll = totalEconAll.revenue > 0 ? Math.round(totalEconAll.pl / totalEconAll.revenue * 100) : 0;
 
@@ -2255,19 +2297,102 @@ export default function ProjectDetailClient({
             ))}
           </div>
           {(hasRates || hasCostRates) && (
+            <>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               {[
-                { label: 'Total Cost',      value: totalEconAll.cost    > 0 ? fmtEur(totalEconAll.cost)    : '—', cls: 'text-red-600' },
-                { label: 'Total Revenue',   value: totalEconAll.revenue > 0 ? fmtEur(totalEconAll.revenue) : '—', cls: 'text-emerald-700' },
-                { label: 'Profit and Loss', value: totalEconAll.revenue > 0 ? fmtEur(totalEconAll.pl)      : '—', cls: totalEconAll.pl >= 0 ? 'text-emerald-700' : 'text-red-500' },
-                { label: 'Margin',          value: totalEconAll.revenue > 0 ? `${marginAll}%`              : '—', cls: marginAll >= 0 ? 'text-emerald-700' : 'text-red-500' },
+                {
+                  label: 'Total Cost',
+                  value: totalEconAll.cost > 0 ? fmtEur(totalEconAll.cost) : '—',
+                  cls: 'text-red-600',
+                  sub: totalEconAll.cost > 0 && totalEconAll.opsCost > 0
+                    ? `Dev ${fmtEur(totalEconAll.devCost)} · Ops ${fmtEur(totalEconAll.opsCost)}`
+                    : null,
+                },
+                {
+                  label: 'Total Revenue',
+                  value: totalEconAll.revenue > 0 ? fmtEur(totalEconAll.revenue) : '—',
+                  cls: 'text-emerald-700',
+                  sub: totalEconAll.revenue > 0 && totalEconAll.opsRevenue > 0
+                    ? `Dev ${fmtEur(totalEconAll.devRevenue)} · Ops ${fmtEur(totalEconAll.opsRevenue)}`
+                    : null,
+                },
+                {
+                  label: 'Profit and Loss',
+                  value: totalEconAll.revenue > 0 ? fmtEur(totalEconAll.pl) : '—',
+                  cls: totalEconAll.pl >= 0 ? 'text-emerald-700' : 'text-red-500',
+                  sub: totalEconAll.revenue > 0 && totalEconAll.opsRevenue > 0
+                    ? `Dev ${fmtEur(totalEconAll.devPl)} · Ops ${fmtEur(totalEconAll.opsPl)}`
+                    : null,
+                },
+                {
+                  label: 'Margin',
+                  value: totalEconAll.revenue > 0 ? `${marginAll}%` : '—',
+                  cls: marginAll >= 0 ? 'text-emerald-700' : 'text-red-500',
+                  sub: null,
+                },
               ].map(kpi => (
                 <div key={kpi.label} className="bg-white rounded-lg border border-slate-200 px-4 py-3">
                   <p className="text-xs text-slate-400 mb-1">{kpi.label}</p>
                   <p className={`text-xl font-bold ${kpi.cls}`}>{kpi.value}</p>
+                  {kpi.sub && <p className="text-xs text-slate-400 mt-1">{kpi.sub}</p>}
                 </div>
               ))}
             </div>
+
+            {/* Dev vs Ops breakdown table */}
+            {(hasRates || hasCostRates) && totalEconAll.opsRevenue > 0 && (
+              <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
+                <div className="px-4 py-3 border-b border-slate-100 bg-slate-50">
+                  <p className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Dev vs Operations — Cost &amp; Revenue Breakdown</p>
+                </div>
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-slate-100 text-slate-500">
+                      <th className="text-left px-4 py-2 font-medium">Bucket</th>
+                      <th className="text-right px-4 py-2 font-medium">Cost</th>
+                      <th className="text-right px-4 py-2 font-medium">Revenue</th>
+                      <th className="text-right px-4 py-2 font-medium">P&amp;L</th>
+                      <th className="text-right px-4 py-2 font-medium">Margin</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50">
+                    {[
+                      { label: 'Development', cost: totalEconAll.devCost, revenue: totalEconAll.devRevenue, pl: totalEconAll.devPl },
+                      { label: 'Operations',  cost: totalEconAll.opsCost, revenue: totalEconAll.opsRevenue, pl: totalEconAll.opsPl },
+                    ].map(r => {
+                      const margin = r.cost === 0 ? null : r.revenue === 0 ? -100 : Math.round(r.pl / r.revenue * 100);
+                      return (
+                        <tr key={r.label} className="hover:bg-slate-50/40">
+                          <td className="px-4 py-2 font-medium text-slate-700">{r.label}</td>
+                          <td className="px-4 py-2 text-right text-slate-600">{r.cost > 0 ? fmtEur(r.cost) : '—'}</td>
+                          <td className="px-4 py-2 text-right text-emerald-700">{r.revenue > 0 ? fmtEur(r.revenue) : '—'}</td>
+                          <td className={`px-4 py-2 text-right font-semibold ${r.pl >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>
+                            {r.revenue > 0 ? `${r.pl >= 0 ? '+' : ''}${fmtEur(r.pl)}` : '—'}
+                          </td>
+                          <td className={`px-4 py-2 text-right ${margin === null ? 'text-slate-300' : margin >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                            {margin !== null ? `${margin}%` : '—'}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                  <tfoot>
+                    <tr className="border-t border-slate-200 bg-slate-50 font-semibold text-xs">
+                      <td className="px-4 py-2 text-slate-600">Total</td>
+                      <td className="px-4 py-2 text-right text-slate-600">{fmtEur(totalEconAll.cost)}</td>
+                      <td className="px-4 py-2 text-right text-emerald-700">{fmtEur(totalEconAll.revenue)}</td>
+                      <td className={`px-4 py-2 text-right ${totalEconAll.pl >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>
+                        {totalEconAll.pl >= 0 ? '+' : ''}{fmtEur(totalEconAll.pl)}
+                      </td>
+                      <td className={`px-4 py-2 text-right ${marginAll >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                        {totalEconAll.revenue > 0 ? `${marginAll}%` : '—'}
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            )}
+            </>
           )}
         </div>
       )}
@@ -2362,13 +2487,14 @@ export default function ProjectDetailClient({
                   <th className="px-4 py-3 text-right">Cost Rate</th>
                   {showBillingCols && <th className="px-4 py-3 text-right">Billing Rate</th>}
                   <th className="px-4 py-3 text-right">Total Cost (€)</th>
-                  {showBillingCols && <th className="px-4 py-3 text-right">Time & Material Revenue (€)</th>}
+                  {showBillingCols && <th className="px-4 py-3 text-right">Revenue (€)</th>}
                   {showBillingCols && <th className="px-4 py-3 text-right">Margin</th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
-                {memberSummary.map(({ member, tmHours, opsHours, cost, revenue }) => {
-                  const rowMargin   = revenue > 0 ? Math.round((revenue - cost) / revenue * 100) : null;
+                {memberSummary.map(({ member, tmHours, opsHours, fixOpsHours, cost, revenue }) => {
+                  const revRounded  = Math.round(revenue);
+                  const rowMargin   = cost === 0 ? null : revRounded === 0 ? -100 : Math.round((revRounded - cost) / revRounded * 100);
                   const billingRate = (project.memberRates ?? {})[member.id]?.billingRate ?? 0;
                   return (
                     <tr key={member.id} className="hover:bg-slate-50">
@@ -2400,7 +2526,11 @@ export default function ProjectDetailClient({
                         </td>
                       )}
                       <td className="px-4 py-2.5 text-right text-slate-700">{cost > 0 ? fmtEur(cost) : '—'}</td>
-                      {showBillingCols && <td className="px-4 py-2.5 text-right text-slate-700">{revenue > 0 ? fmtEur(revenue) : '—'}</td>}
+                      {showBillingCols && (
+                        <td className="px-4 py-2.5 text-right">
+                          {revRounded > 0 ? fmtEur(revRounded) : '—'}
+                        </td>
+                      )}
                       {showBillingCols && (
                         <td className={`px-4 py-2.5 text-right text-sm font-medium ${
                           rowMargin !== null ? (rowMargin >= 0 ? 'text-emerald-600' : 'text-red-500') : 'text-slate-400'
