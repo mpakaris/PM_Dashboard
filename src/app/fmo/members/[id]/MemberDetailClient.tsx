@@ -10,7 +10,8 @@ import {
 } from 'recharts';
 import { fmtH, fmtEur, type Locale } from '@/lib/i18n';
 import type { FmoMember, FmoEntry, WbsSubCategory, FmoProject, FmoWbsEntry } from '@/lib/types';
-import { entryBelongsToProject } from '@/lib/utils';
+import { entryBelongsToProject, rateAtMonth, fpImpliedRate } from '@/lib/utils';
+import { SortableTh } from '@/components/SortableTh';
 import { updateFmoMember } from '@/actions/fmo';
 import { ChartTimeFilter, initChartRange, type TimeRange } from '@/components/ChartTimeFilter';
 
@@ -98,6 +99,36 @@ export default function MemberDetailClient({
   const [saving, setSaving]       = useState(false);
   const [saved, setSaved]         = useState(false);
   const [error, setError]         = useState('');
+  const [costRateHistory, setCostRateHistory] = useState<Array<{ from: string; rate: number }>>(member.costRateHistory ?? []);
+  const [historyOpen, setHistoryOpen]         = useState((member.costRateHistory?.length ?? 0) > 0);
+
+  // Sort state for each table
+  const [tkSk, setTkSk] = useState<'name' | 'wbs' | 'category' | 'hours' | 'pct'>('hours');
+  const [tkSd, setTkSd] = useState<'asc' | 'desc'>('desc');
+  function onTkSort(col: string) { const k = col as typeof tkSk; if (tkSk === k) setTkSd(d => d === 'desc' ? 'asc' : 'desc'); else { setTkSk(k); setTkSd(k === 'name' || k === 'wbs' || k === 'category' ? 'asc' : 'desc'); } }
+
+  const [utSk, setUtSk] = useState<'month' | 'total' | 'billable' | 'admin' | 'vacation' | 'capUtil' | 'billUtil'>('month');
+  const [utSd, setUtSd] = useState<'asc' | 'desc'>('asc');
+  function onUtSort(col: string) { const k = col as typeof utSk; if (utSk === k) setUtSd(d => d === 'desc' ? 'asc' : 'desc'); else { setUtSk(k); setUtSd(k === 'month' ? 'asc' : 'desc'); } }
+
+  const [tmSk, setTmSk] = useState<'name' | 'totalHours' | 'billableHours' | 'internalHours' | 'cost' | 'revenue' | 'profit' | 'margin'>('totalHours');
+  const [tmSd, setTmSd] = useState<'asc' | 'desc'>('desc');
+  function onTmSort(col: string) { const k = col as typeof tmSk; if (tmSk === k) setTmSd(d => d === 'desc' ? 'asc' : 'desc'); else { setTmSk(k); setTmSd(k === 'name' ? 'asc' : 'desc'); } }
+
+  const [fpSk, setFpSk] = useState<'name' | 'totalHours' | 'billableHours' | 'internalHours' | 'cost' | 'revenue' | 'profit' | 'margin'>('totalHours');
+  const [fpSd, setFpSd] = useState<'asc' | 'desc'>('desc');
+  function onFpSort(col: string) { const k = col as typeof fpSk; if (fpSk === k) setFpSd(d => d === 'desc' ? 'asc' : 'desc'); else { setFpSk(k); setFpSd(k === 'name' ? 'asc' : 'desc'); } }
+
+  const currentMonth = new Date().toISOString().slice(0, 7);
+  const effectiveRate = rateAtMonth(
+    parseFloat(costRate) || member.costRate,
+    costRateHistory,
+    currentMonth,
+  );
+
+  async function saveCostRateHistory(history: Array<{ from: string; rate: number }>) {
+    await updateFmoMember(member.id, { costRateHistory: history });
+  }
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
@@ -105,7 +136,7 @@ export default function MemberDetailClient({
     const r = await updateFmoMember(member.id, {
       type,
       partnerCompany: type === 'extern' ? company : '',
-      costRate: parseFloat(costRate) || 0,
+      ...(costRateHistory.length === 0 && { costRate: parseFloat(costRate) || 0 }),
       monthlyCapacity: parseFloat(capacity) || 160,
       monthlyBillableTarget: parseFloat(billableTarget) || 120,
     });
@@ -246,8 +277,18 @@ export default function MemberDetailClient({
     }
     const qualified = new Set([...nonBillMap.entries()].filter(([, h]) => h >= 1).map(([u]) => u));
 
-    const ranged = (chartRange.from
-      ? allEntries.filter(e => e.month >= chartRange.from && e.month <= chartRange.to)
+    // When "All Time" is selected, bound by this member's own entry range
+    // so the x-axis doesn't stretch back to the earliest entry across all members.
+    let fromBound = chartRange.from;
+    let toBound   = chartRange.to;
+    if (!chartRange.from && entries.length > 0) {
+      const memberMonths = entries.map(e => e.month).sort();
+      fromBound = memberMonths[0];
+      toBound   = memberMonths[memberMonths.length - 1];
+    }
+
+    const ranged = (fromBound
+      ? allEntries.filter(e => e.month >= fromBound && e.month <= toBound)
       : allEntries
     ).filter(e => qualified.has(e.user));
 
@@ -280,7 +321,7 @@ export default function MemberDetailClient({
     });
 
     return { rows, globalAvg, qualifiedCount: qualified.size };
-  }, [allEntries, chartRange, member.name]);
+  }, [allEntries, entries, chartRange, member.name]);
 
   // 3. Hours by Ticket per Month (stacked, top 8)
   const { ticketBarData, top8Keys, ticketHasOthers } = useMemo(() => {
@@ -409,16 +450,16 @@ export default function MemberDetailClient({
       }
       const s = byProject.get(key)!;
       s.totalHours += e.spentTime;
-      s.cost       += e.spentTime * member.costRate;
+      s.cost       += e.spentTime * rateAtMonth(member.costRate, member.costRateHistory, e.month);
       if (e.billingClass === 'V') {
         let billingRate = 0;
-        if (!isFixprice) {
-          if (project) {
-            billingRate = project.memberRates[member.id]?.billingRate ?? 0;
-          } else if (e.wbsCode) {
-            // Use locally-set rate for WBS rows
-            billingRate = wbsLocalRates[e.wbsCode] ?? 0;
-          }
+        if (isFixprice && project) {
+          billingRate = fpImpliedRate(project);
+        } else if (project) {
+          const _mr = project.memberRates[member.id];
+          billingRate = rateAtMonth(_mr?.billingRate ?? 0, _mr?.billingRateHistory, e.month);
+        } else if (e.wbsCode) {
+          billingRate = wbsLocalRates[e.wbsCode] ?? 0;
         }
         s.billableHours += e.spentTime;
         s.revenue       += e.spentTime * billingRate;
@@ -430,8 +471,8 @@ export default function MemberDetailClient({
     const rows = [...byProject.values()]
       .map(s => ({
         ...s,
-        profit: s.isFixprice ? null : s.revenue - s.cost,
-        margin: s.isFixprice ? null : (s.cost === 0 ? null : s.revenue === 0 ? -100 : Math.round((s.revenue - s.cost) / s.revenue * 100)),
+        profit: s.revenue - s.cost,
+        margin: s.cost === 0 ? null : s.revenue === 0 ? -100 : Math.round((s.revenue - s.cost) / s.revenue * 100),
         missingRate: !s.isFixprice && s.billableHours > 0 && s.revenue === 0 && !s.wbsCode,
       }))
       .sort((a, b) => {
@@ -440,33 +481,35 @@ export default function MemberDetailClient({
         return (b.profit ?? 0) - (a.profit ?? 0);
       });
 
-    // Monthly chart — T&M only: exclude fixed price entries entirely
+    // Monthly chart — all project types, FP uses implied rate
     const monthMap = new Map<string, { cost: number; revenue: number }>();
     for (const e of rangedEntries) {
       const project    = projects.find(p => entryBelongsToProject(e, p));
       const isFixprice = project?.projectType === 'fixprice';
-      if (isFixprice) continue; // fixed price cost excluded — revenue is contract-based, not per hour
       if (!monthMap.has(e.month)) monthMap.set(e.month, { cost: 0, revenue: 0 });
       const m = monthMap.get(e.month)!;
-      m.cost += e.spentTime * member.costRate;
+      m.cost += e.spentTime * rateAtMonth(member.costRate, member.costRateHistory, e.month);
       if (e.billingClass === 'V') {
-        const billingRate = project ? (project.memberRates[member.id]?.billingRate ?? 0) : 0;
+        let billingRate = 0;
+        if (isFixprice && project) {
+          billingRate = fpImpliedRate(project);
+        } else if (project) {
+          const _mr2 = project.memberRates[member.id];
+          billingRate = _mr2 ? rateAtMonth(_mr2.billingRate, _mr2.billingRateHistory, e.month) : 0;
+        }
         m.revenue += e.spentTime * billingRate;
       }
     }
     const monthly = [...monthMap.entries()].sort(([a], [b]) => a.localeCompare(b))
       .map(([month, m]) => ({ month, cost: Math.round(m.cost), revenue: Math.round(m.revenue), profit: Math.round(m.revenue - m.cost) }));
 
-    // Totals — fixprice excluded from revenue/profit (cost still counts)
-    const tmRows       = rows.filter(r => !r.isFixprice);
     const totalCost    = rows.reduce((s, r) => s + r.cost,    0);
-    const tmRevenue    = tmRows.reduce((s, r) => s + r.revenue, 0);
-    const tmProfit     = tmRevenue - tmRows.reduce((s, r) => s + r.cost, 0);
-    const tmCost      = tmRows.reduce((s, r) => s + r.cost, 0);
-    const totalMargin = tmCost === 0 ? null : tmRevenue === 0 ? -100 : Math.round(tmProfit / tmRevenue * 100);
-    const fixpriceCost = rows.filter(r => r.isFixprice).reduce((s, r) => s + r.cost, 0);
+    const totalRevenue = rows.reduce((s, r) => s + r.revenue, 0);
+    const totalProfit  = totalRevenue - totalCost;
+    const totalMargin  = totalCost === 0 ? null : totalRevenue === 0 ? -100 : Math.round(totalProfit / totalRevenue * 100);
+    const hasFixprice  = rows.some(r => r.isFixprice);
 
-    return { rows, monthly, totalCost, tmRevenue, tmProfit, totalMargin, fixpriceCost, hasFixprice: fixpriceCost > 0 };
+    return { rows, monthly, totalCost, totalRevenue, totalProfit, totalMargin, hasFixprice };
   }, [entries, projects, member, profitRange, wbs, wbsLocalRates]);
 
   const TABS: { id: Tab; label: string }[] = [
@@ -547,16 +590,24 @@ export default function MemberDetailClient({
               <table className="w-full text-sm">
                 <thead className="bg-slate-50 border-b border-slate-200 text-xs text-slate-500 font-medium">
                   <tr>
-                    <th className="px-4 py-3 text-left">Ticket</th>
-                    <th className="px-4 py-3 text-left">WBS</th>
-                    <th className="px-4 py-3 text-left">Category</th>
-                    <th className="px-4 py-3 text-right">{t('totalHours')}</th>
-                    <th className="px-4 py-3 text-right">%</th>
+                    <SortableTh col="name"     label="Ticket"         sortKey={tkSk} sortDir={tkSd} onSort={onTkSort} className="py-3" />
+                    <SortableTh col="wbs"      label="WBS"            sortKey={tkSk} sortDir={tkSd} onSort={onTkSort} className="py-3" />
+                    <SortableTh col="category" label="Category"       sortKey={tkSk} sortDir={tkSd} onSort={onTkSort} className="py-3" />
+                    <SortableTh col="hours"    label={t('totalHours')} sortKey={tkSk} sortDir={tkSd} onSort={onTkSort} right className="py-3" />
+                    <SortableTh col="pct"      label="%"              sortKey={tkSk} sortDir={tkSd} onSort={onTkSort} right className="py-3" />
                     <th className="px-4 py-3 w-8" />
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-50">
-                  {ticketSummary.map(tk => {
+                  {[...ticketSummary].sort((a, b) => {
+                    let cmp = 0;
+                    if      (tkSk === 'name')     cmp = a.name.localeCompare(b.name);
+                    else if (tkSk === 'wbs')      cmp = (a.wbsCode ?? '').localeCompare(b.wbsCode ?? '');
+                    else if (tkSk === 'category') cmp = (a.billingClass ?? '').localeCompare(b.billingClass ?? '');
+                    else if (tkSk === 'hours')    cmp = a.hours - b.hours;
+                    else if (tkSk === 'pct')      cmp = a.hours - b.hours;
+                    return tkSd === 'desc' ? -cmp : cmp;
+                  }).map(tk => {
                     const isExpanded = expandedTickets.has(tk.id);
                     const monthly = ticketMonthly.get(tk.id);
                     return (
@@ -931,17 +982,27 @@ export default function MemberDetailClient({
                 <table className="w-full text-sm">
                   <thead className="bg-slate-50 border-b border-slate-200 text-xs text-slate-500 font-medium">
                     <tr>
-                      <th className="px-4 py-3 text-left">Month</th>
-                      <th className="px-4 py-3 text-right">Total</th>
-                      <th className="px-4 py-3 text-right">Billable</th>
-                      <th className="px-4 py-3 text-right">Admin</th>
-                      {isIntern && <th className="px-4 py-3 text-right">Vacation</th>}
-                      <th className="px-4 py-3 text-right">Cap. Util.</th>
-                      <th className="px-4 py-3 text-right">Bill. Util.</th>
+                      <SortableTh col="month"    label="Month"     sortKey={utSk} sortDir={utSd} onSort={onUtSort} className="py-3" />
+                      <SortableTh col="total"    label="Total"     sortKey={utSk} sortDir={utSd} onSort={onUtSort} right className="py-3" />
+                      <SortableTh col="billable" label="Billable"  sortKey={utSk} sortDir={utSd} onSort={onUtSort} right className="py-3" />
+                      <SortableTh col="admin"    label="Admin"     sortKey={utSk} sortDir={utSd} onSort={onUtSort} right className="py-3" />
+                      {isIntern && <SortableTh col="vacation"  label="Vacation"  sortKey={utSk} sortDir={utSd} onSort={onUtSort} right className="py-3" />}
+                      <SortableTh col="capUtil"  label="Cap. Util." sortKey={utSk} sortDir={utSd} onSort={onUtSort} right className="py-3" />
+                      <SortableTh col="billUtil" label="Bill. Util." sortKey={utSk} sortDir={utSd} onSort={onUtSort} right className="py-3" />
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-50">
-                    {data.map(row => (
+                    {[...data].sort((a, b) => {
+                      let cmp = 0;
+                      if      (utSk === 'month')    cmp = a.month.localeCompare(b.month);
+                      else if (utSk === 'total')    cmp = a.total - b.total;
+                      else if (utSk === 'billable') cmp = a.billable - b.billable;
+                      else if (utSk === 'admin')    cmp = a.admin - b.admin;
+                      else if (utSk === 'vacation') cmp = a.vacation - b.vacation;
+                      else if (utSk === 'capUtil')  cmp = a.capUtil - b.capUtil;
+                      else if (utSk === 'billUtil') cmp = a.billUtil - b.billUtil;
+                      return utSd === 'desc' ? -cmp : cmp;
+                    }).map(row => (
                       <tr key={row.month} className="hover:bg-slate-50">
                         <td className="px-4 py-2.5 text-slate-600 tabular-nums">{row.month}</td>
                         <td className="px-4 py-2.5 text-right text-slate-700 tabular-nums">{fmtH(row.total, locale)}</td>
@@ -976,10 +1037,10 @@ export default function MemberDetailClient({
           {/* KPI cards */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             {[
-              { label: 'Total Cost',           value: fmtEur(profitability.totalCost,  locale), color: 'text-slate-800',   sub: profitability.hasFixprice ? `incl. ${fmtEur(profitability.fixpriceCost, locale)} fixed price` : undefined },
-              { label: 'T&M Revenue',          value: fmtEur(profitability.tmRevenue,  locale), color: 'text-emerald-700', sub: profitability.hasFixprice ? 'fixed price excluded' : undefined },
-              { label: 'T&M Net Profit',       value: fmtEur(profitability.tmProfit,   locale), color: profitability.tmProfit >= 0 ? 'text-emerald-700' : 'text-red-600', sub: undefined },
-              { label: 'T&M Margin',           value: profitability.totalMargin !== null ? `${profitability.totalMargin}%` : '—', color: (profitability.totalMargin ?? 0) >= 0 ? 'text-emerald-700' : 'text-red-600', sub: undefined },
+              { label: 'Total Cost',    value: fmtEur(profitability.totalCost,    locale), color: 'text-slate-800' },
+              { label: 'Revenue',       value: fmtEur(profitability.totalRevenue, locale), color: 'text-emerald-700', sub: profitability.hasFixprice ? 'FP via implied rate' : undefined },
+              { label: 'Net Profit',    value: fmtEur(profitability.totalProfit,  locale), color: profitability.totalProfit >= 0 ? 'text-emerald-700' : 'text-red-600' },
+              { label: 'Margin',        value: profitability.totalMargin !== null ? `${profitability.totalMargin}%` : '—', color: (profitability.totalMargin ?? 0) >= 0 ? 'text-emerald-700' : 'text-red-600' },
             ].map(k => (
               <div key={k.label} className="bg-white rounded-lg border border-slate-200 px-4 py-3">
                 <p className="text-xs text-slate-400 mb-1">{k.label}</p>
@@ -990,21 +1051,21 @@ export default function MemberDetailClient({
           </div>
 
           {/* Warnings */}
-          {member.costRate === 0 && (
+          {effectiveRate === 0 && (
             <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-sm text-amber-800">
               ⚠ No cost rate set — cost figures are 0. Set a cost rate in the Profile tab.
             </div>
           )}
           {profitability.hasFixprice && (
             <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 text-sm text-blue-800">
-              ℹ This member works on Fixed Price projects. Revenue for those projects is contract-based, not per hour — they are excluded from the T&M revenue and profit/margin calculations. Only their cost is included in the total cost.
+              ℹ This member works on Fixed Price projects. Revenue is estimated via implied rate (contractValue ÷ budgetHours) and distributed proportionally by hours worked. Actual project P&amp;L depends on all team members.
             </div>
           )}
 
           {/* Monthly cost vs revenue chart */}
           {profitability.monthly.length > 0 && (
             <div className="bg-white rounded-lg border border-slate-200 p-4">
-              <h3 className="text-sm font-semibold text-gray-800 mb-1">Monthly Cost vs T&M Revenue</h3>
+              <h3 className="text-sm font-semibold text-gray-800 mb-1">Monthly Cost vs Revenue</h3>
               <p className="text-xs text-gray-400 mb-4">Cost (red) vs billable T&M revenue (green) per month — fixed price revenue not shown</p>
               <ResponsiveContainer width="100%" height={240}>
                 <ComposedChart data={profitability.monthly} margin={{ top: 4, right: 8, left: 0, bottom: 8 }}>
@@ -1033,19 +1094,30 @@ export default function MemberDetailClient({
                 <table className="w-full text-xs">
                   <thead>
                     <tr className="border-b border-slate-100 text-slate-500">
-                      <th className="text-left px-4 py-2 font-medium">Project</th>
-                      <th className="text-right px-4 py-2 font-medium">Total h</th>
-                      <th className="text-right px-4 py-2 font-medium">Billable h</th>
-                      <th className="text-right px-4 py-2 font-medium">Internal h</th>
-                      <th className="text-right px-4 py-2 font-medium">Cost</th>
+                      <SortableTh col="name"          label="Project"      sortKey={tmSk} sortDir={tmSd} onSort={onTmSort} />
+                      <SortableTh col="totalHours"    label="Total h"      sortKey={tmSk} sortDir={tmSd} onSort={onTmSort} right />
+                      <SortableTh col="billableHours" label="Billable h"   sortKey={tmSk} sortDir={tmSd} onSort={onTmSort} right />
+                      <SortableTh col="internalHours" label="Internal h"   sortKey={tmSk} sortDir={tmSd} onSort={onTmSort} right />
+                      <SortableTh col="cost"          label="Cost"         sortKey={tmSk} sortDir={tmSd} onSort={onTmSort} right />
                       <th className="text-right px-4 py-2 font-medium">Rate €/h</th>
-                      <th className="text-right px-4 py-2 font-medium">Revenue</th>
-                      <th className="text-right px-4 py-2 font-medium">Profit / Loss</th>
-                      <th className="text-right px-4 py-2 font-medium">Margin</th>
+                      <SortableTh col="revenue"       label="Revenue"      sortKey={tmSk} sortDir={tmSd} onSort={onTmSort} right />
+                      <SortableTh col="profit"        label="Profit / Loss" sortKey={tmSk} sortDir={tmSd} onSort={onTmSort} right />
+                      <SortableTh col="margin"        label="Margin"       sortKey={tmSk} sortDir={tmSd} onSort={onTmSort} right />
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-50">
-                    {tmRows.map((r, i) => (
+                    {[...tmRows].sort((a, b) => {
+                      let cmp = 0;
+                      if      (tmSk === 'name')          cmp = a.project.name.localeCompare(b.project.name);
+                      else if (tmSk === 'totalHours')    cmp = a.totalHours - b.totalHours;
+                      else if (tmSk === 'billableHours') cmp = a.billableHours - b.billableHours;
+                      else if (tmSk === 'internalHours') cmp = a.internalHours - b.internalHours;
+                      else if (tmSk === 'cost')          cmp = a.cost - b.cost;
+                      else if (tmSk === 'revenue')       cmp = a.revenue - b.revenue;
+                      else if (tmSk === 'profit')        cmp = (a.profit ?? 0) - (b.profit ?? 0);
+                      else if (tmSk === 'margin')        cmp = (a.margin ?? -Infinity) - (b.margin ?? -Infinity);
+                      return tmSd === 'desc' ? -cmp : cmp;
+                    }).map((r, i) => (
                       <tr key={i} className="hover:bg-slate-50/40">
                         <td className="px-4 py-2 font-medium text-slate-700">
                           <div className="flex items-center gap-1.5">
@@ -1097,11 +1169,11 @@ export default function MemberDetailClient({
                       <td className="px-4 py-2 text-right text-slate-600">{fmtH(tmRows.reduce((s, r) => s + r.totalHours, 0), locale)}</td>
                       <td className="px-4 py-2 text-right text-slate-600">{fmtH(tmRows.reduce((s, r) => s + r.billableHours, 0), locale)}</td>
                       <td className="px-4 py-2 text-right text-slate-400">{fmtH(tmRows.reduce((s, r) => s + r.internalHours, 0), locale)}</td>
-                      <td className="px-4 py-2 text-right text-slate-600">{fmtEur(profitability.totalCost - profitability.fixpriceCost, locale)}</td>
+                      <td className="px-4 py-2 text-right text-slate-600">{fmtEur(tmRows.reduce((s, r) => s + r.cost, 0), locale)}</td>
                       <td className="px-4 py-2" />
-                      <td className="px-4 py-2 text-right text-emerald-700">{fmtEur(profitability.tmRevenue, locale)}</td>
-                      <td className={`px-4 py-2 text-right ${profitability.tmProfit >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>
-                        {profitability.tmProfit >= 0 ? '+' : ''}{fmtEur(profitability.tmProfit, locale)}
+                      <td className="px-4 py-2 text-right text-emerald-700">{fmtEur(tmRows.reduce((s, r) => s + r.revenue, 0), locale)}</td>
+                      <td className={`px-4 py-2 text-right ${tmRows.reduce((s,r) => s + r.profit, 0) >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>
+                        {(() => { const p = tmRows.reduce((s,r) => s + r.profit, 0); return `${p >= 0 ? '+' : ''}${fmtEur(p, locale)}`; })()}
                       </td>
                       <td className={`px-4 py-2 text-right ${(profitability.totalMargin ?? 0) >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
                         {profitability.totalMargin !== null ? `${profitability.totalMargin}%` : '—'}
@@ -1116,33 +1188,54 @@ export default function MemberDetailClient({
             );
           })()}
 
-          {/* Fixed Price project breakdown — cost only */}
+          {/* Fixed Price project breakdown — now includes implied-rate revenue & P&L */}
           {profitability.hasFixprice && (() => {
             const fpRows = profitability.rows.filter(r => r.isFixprice);
             return (
               <div className="bg-white rounded-lg border border-blue-100 overflow-hidden">
                 <div className="px-4 py-3 border-b border-blue-100 bg-blue-50/60 flex items-center gap-2">
-                  <h3 className="text-sm font-semibold text-blue-800">Fixed Price Projects — Cost Contribution</h3>
-                  <span className="text-xs text-blue-500">Revenue is contract-based, not per hour — P&amp;L not applicable</span>
+                  <h3 className="text-sm font-semibold text-blue-800">Fixed Price Projects</h3>
+                  <span className="text-xs text-blue-500">Revenue via implied rate (contractValue ÷ budgetHours) — P&amp;L is this member&apos;s share</span>
                 </div>
                 <table className="w-full text-xs">
                   <thead>
                     <tr className="border-b border-blue-50 text-slate-500">
-                      <th className="text-left px-4 py-2 font-medium">Project</th>
-                      <th className="text-right px-4 py-2 font-medium">Total h</th>
-                      <th className="text-right px-4 py-2 font-medium">Billable h</th>
-                      <th className="text-right px-4 py-2 font-medium">Internal h</th>
-                      <th className="text-right px-4 py-2 font-medium">Cost</th>
+                      <SortableTh col="name"          label="Project"      sortKey={fpSk} sortDir={fpSd} onSort={onFpSort} />
+                      <SortableTh col="totalHours"    label="Total h"      sortKey={fpSk} sortDir={fpSd} onSort={onFpSort} right />
+                      <SortableTh col="billableHours" label="Billable h"   sortKey={fpSk} sortDir={fpSd} onSort={onFpSort} right />
+                      <SortableTh col="internalHours" label="Internal h"   sortKey={fpSk} sortDir={fpSd} onSort={onFpSort} right />
+                      <SortableTh col="cost"          label="Cost"         sortKey={fpSk} sortDir={fpSd} onSort={onFpSort} right />
+                      <SortableTh col="revenue"       label="Revenue"      sortKey={fpSk} sortDir={fpSd} onSort={onFpSort} right />
+                      <SortableTh col="profit"        label="Profit / Loss" sortKey={fpSk} sortDir={fpSd} onSort={onFpSort} right />
+                      <SortableTh col="margin"        label="Margin"       sortKey={fpSk} sortDir={fpSd} onSort={onFpSort} right />
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-blue-50">
-                    {fpRows.map((r, i) => (
+                    {[...fpRows].sort((a, b) => {
+                      let cmp = 0;
+                      if      (fpSk === 'name')          cmp = a.project.name.localeCompare(b.project.name);
+                      else if (fpSk === 'totalHours')    cmp = a.totalHours - b.totalHours;
+                      else if (fpSk === 'billableHours') cmp = a.billableHours - b.billableHours;
+                      else if (fpSk === 'internalHours') cmp = a.internalHours - b.internalHours;
+                      else if (fpSk === 'cost')          cmp = a.cost - b.cost;
+                      else if (fpSk === 'revenue')       cmp = a.revenue - b.revenue;
+                      else if (fpSk === 'profit')        cmp = a.profit - b.profit;
+                      else if (fpSk === 'margin')        cmp = (a.margin ?? -Infinity) - (b.margin ?? -Infinity);
+                      return fpSd === 'desc' ? -cmp : cmp;
+                    }).map((r, i) => (
                       <tr key={i} className="hover:bg-blue-50/40">
                         <td className="px-4 py-2 font-medium text-slate-700">{r.project.name}</td>
                         <td className="px-4 py-2 text-right text-slate-600">{fmtH(r.totalHours, locale)}</td>
                         <td className="px-4 py-2 text-right text-slate-600">{fmtH(r.billableHours, locale)}</td>
                         <td className="px-4 py-2 text-right text-slate-400">{fmtH(r.internalHours, locale)}</td>
                         <td className="px-4 py-2 text-right text-slate-600">{fmtEur(r.cost, locale)}</td>
+                        <td className="px-4 py-2 text-right text-emerald-700">{fmtEur(r.revenue, locale)}</td>
+                        <td className={`px-4 py-2 text-right font-semibold ${r.profit >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>
+                          {r.profit >= 0 ? '+' : ''}{fmtEur(r.profit, locale)}
+                        </td>
+                        <td className={`px-4 py-2 text-right ${r.margin === null ? 'text-slate-300' : r.margin >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                          {r.margin !== null ? `${r.margin}%` : '—'}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -1152,7 +1245,12 @@ export default function MemberDetailClient({
                       <td className="px-4 py-2 text-right text-slate-600">{fmtH(fpRows.reduce((s, r) => s + r.totalHours, 0), locale)}</td>
                       <td className="px-4 py-2 text-right text-slate-600">{fmtH(fpRows.reduce((s, r) => s + r.billableHours, 0), locale)}</td>
                       <td className="px-4 py-2 text-right text-slate-400">{fmtH(fpRows.reduce((s, r) => s + r.internalHours, 0), locale)}</td>
-                      <td className="px-4 py-2 text-right text-slate-600">{fmtEur(profitability.fixpriceCost, locale)}</td>
+                      <td className="px-4 py-2 text-right text-slate-600">{fmtEur(fpRows.reduce((s, r) => s + r.cost, 0), locale)}</td>
+                      <td className="px-4 py-2 text-right text-emerald-700">{fmtEur(fpRows.reduce((s, r) => s + r.revenue, 0), locale)}</td>
+                      <td className={`px-4 py-2 text-right ${fpRows.reduce((s,r)=>s+r.profit,0) >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>
+                        {(() => { const p = fpRows.reduce((s,r)=>s+r.profit,0); return `${p>=0?'+':''}${fmtEur(p,locale)}`; })()}
+                      </td>
+                      <td />
                     </tr>
                   </tfoot>
                 </table>
@@ -1186,10 +1284,116 @@ export default function MemberDetailClient({
           )}
           <div>
             <label className="block text-sm text-slate-600 mb-1">{t('costRate')}</label>
-            <input type="number" min="0" step="0.01" value={costRate}
-              onChange={e => setCostRate(e.target.value)}
-              className="border border-slate-300 rounded px-3 py-1.5 text-sm w-32" />
+            {costRateHistory.length > 0 ? (
+              <div className="flex items-baseline gap-2">
+                <span className="text-xl font-semibold text-slate-800">
+                  {effectiveRate > 0 ? `${effectiveRate} €/h` : '—'}
+                </span>
+                <span className="text-xs text-slate-400">current · managed via history below</span>
+              </div>
+            ) : (
+              <input type="number" min="0" step="0.01" value={costRate}
+                onChange={e => setCostRate(e.target.value)}
+                className="border border-slate-300 rounded px-3 py-1.5 text-sm w-32" />
+            )}
           </div>
+
+          {/* Cost Rate History */}
+          <div>
+            <button type="button" onClick={() => setHistoryOpen(o => !o)}
+              className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-700 select-none">
+              <svg className={`w-3.5 h-3.5 transition-transform ${historyOpen ? '' : '-rotate-90'}`}
+                viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round">
+                <path d="m6 9 6 6 6-6" />
+              </svg>
+              Cost Rate History
+              {costRateHistory.length > 0 && (
+                <span className="ml-1 bg-slate-100 text-slate-600 rounded px-1.5 py-0.5 font-mono">
+                  {costRateHistory.length} {costRateHistory.length === 1 ? 'entry' : 'entries'}
+                </span>
+              )}
+            </button>
+            {historyOpen && (
+              <div className="mt-2 border border-slate-200 rounded-lg overflow-hidden">
+                <table className="w-full text-xs">
+                  <thead className="bg-slate-50 text-slate-500">
+                    <tr>
+                      <th className="px-3 py-2 text-left font-medium">From (YYYY-MM)</th>
+                      <th className="px-3 py-2 text-right font-medium">Rate (€/h)</th>
+                      <th className="px-3 py-2 w-8" />
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {(() => {
+                      const sorted = [...costRateHistory].sort((a, b) => a.from.localeCompare(b.from));
+                      const activeFrom = sorted.reduce<string | null>((a, h) => h.from <= currentMonth ? h.from : a, null);
+                      return costRateHistory.map((h, i) => {
+                        const isActive = h.from === activeFrom;
+                        return (
+                      <tr key={i} className={isActive ? 'bg-indigo-50' : 'bg-white'}>
+                        <td className="px-3 py-1.5">
+                          <input type="month" value={h.from}
+                            onChange={e => {
+                              const next = costRateHistory.map((x, j) => j === i ? { ...x, from: e.target.value } : x);
+                              setCostRateHistory(next);
+                            }}
+                            onBlur={async e => {
+                              const next = costRateHistory.map((x, j) => j === i ? { ...x, from: e.target.value } : x);
+                              await saveCostRateHistory(next);
+                            }}
+                            className="border border-slate-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-slate-400 w-36" />
+                        </td>
+                        <td className="px-3 py-1.5 text-right">
+                          <input type="number" min="0" step="0.01" value={h.rate}
+                            onChange={e => {
+                              const next = costRateHistory.map((x, j) => j === i ? { ...x, rate: parseFloat(e.target.value) || 0 } : x);
+                              setCostRateHistory(next);
+                            }}
+                            onBlur={async e => {
+                              const next = costRateHistory.map((x, j) => j === i ? { ...x, rate: parseFloat(e.target.value) || 0 } : x);
+                              await saveCostRateHistory(next);
+                            }}
+                            className="border border-slate-200 rounded px-2 py-1 text-xs text-right focus:outline-none focus:border-slate-400 w-20" />
+                        </td>
+                        <td className="px-3 py-1.5 text-center">
+                          <button type="button"
+                            onClick={async () => {
+                              const next = costRateHistory.filter((_, j) => j !== i);
+                              setCostRateHistory(next);
+                              await saveCostRateHistory(next);
+                            }}
+                            className="text-slate-300 hover:text-red-400 p-1 rounded transition-colors">
+                            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                              <polyline points="3 6 5 6 21 6" />
+                              <path d="M19 6l-1 14H6L5 6" />
+                              <path d="M10 11v6M14 11v6" />
+                              <path d="M9 6V4h6v2" />
+                            </svg>
+                          </button>
+                        </td>
+                      </tr>
+                        );
+                      });
+                    })()}
+                    {costRateHistory.length === 0 && (
+                      <tr>
+                        <td colSpan={3} className="px-3 py-3 text-center text-slate-400 italic">No history entries</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+                <div className="px-3 py-2 bg-slate-50 border-t border-slate-100">
+                  <button type="button"
+                    onClick={() => {
+                      const next = [...costRateHistory, { from: currentMonth, rate: effectiveRate }];
+                      setCostRateHistory(next);
+                    }}
+                    className="text-xs text-indigo-500 hover:text-indigo-700">+ Add entry</button>
+                </div>
+              </div>
+            )}
+          </div>
+
           <div className="border-t border-slate-100 pt-3">
             <p className="text-xs font-medium text-slate-500 mb-3">Utilization targets</p>
             <div className="flex gap-6">

@@ -1,6 +1,6 @@
 import { getFmoProjects } from '@/actions/fmoProjects';
 import { getFmoData } from '@/actions/fmo';
-import { entryBelongsToProject, opsContractActiveInMonth } from '@/lib/utils';
+import { entryBelongsToProject, opsContractActiveInMonth, rateAtMonth, fpImpliedRate } from '@/lib/utils';
 import ProjectsClient from './ProjectsClient';
 
 export type ProjectFinancials = {
@@ -39,8 +39,11 @@ export default async function FmoProjectsPage() {
 
     for (const e of projectEntries) {
       const member      = nameToMember[e.user];
-      const costRate    = member?.costRate ?? 0;
-      const billingRate = member ? ((project.memberRates ?? {})[member.id]?.billingRate ?? 0) : 0;
+      const costRate    = member ? rateAtMonth(member.costRate, member.costRateHistory, e.month) : 0;
+      const _mRate      = member ? (project.memberRates ?? {})[member.id] : undefined;
+      const billingRate = project.projectType === 'fixprice'
+        ? fpImpliedRate(project)
+        : (_mRate ? rateAtMonth(_mRate.billingRate, _mRate.billingRateHistory, e.month) : 0);
       const isOps       = e.ticketId !== null && allOpsSet.has(e.ticketId);
 
       if (isOps) {

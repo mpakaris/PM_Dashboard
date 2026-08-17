@@ -43,9 +43,10 @@ interface Props {
   tickets: FmoTicket[];
   entries: FmoEntry[];
   search: string;
+  onEdit?: (entry: FmoWbsEntry) => void;
 }
 
-export default function WbsTree({ wbsEntries, subCategories, tickets, entries, search }: Props) {
+export default function WbsTree({ wbsEntries, subCategories, tickets, entries, search, onEdit }: Props) {
   const t = useTranslations('wbs');
   const tCommon = useTranslations('common');
   const [expandedCodes, setExpandedCodes] = useState<Set<string>>(new Set());
@@ -142,6 +143,14 @@ export default function WbsTree({ wbsEntries, subCategories, tickets, entries, s
                       {entry.budgetValue != null ? `${entry.budgetValue.toLocaleString('de-DE')} €` : '—'}
                     </span>
                   </>
+                )}
+                {onEdit && (
+                  <button
+                    onClick={e => { e.stopPropagation(); onEdit(entry); }}
+                    className="text-xs text-slate-400 hover:text-slate-700 px-2 py-0.5 rounded border border-slate-200 hover:border-slate-400 transition-colors"
+                  >
+                    Edit
+                  </button>
                 )}
               </div>
             </div>

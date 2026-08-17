@@ -26,6 +26,16 @@ export function deriveSubCategory(
   const override = wbsTable[code]?.subCategoryOverride;
   if (override) return override;
 
+  // Full-code lookup first — more specific than the IWBS prefix shortcut below.
+  // Without this order, I.05921059.00.02 (training) and .00.03 (absence) would
+  // be incorrectly classified as 'admin' because they share the 1059 IWBS digits.
+  const fullMap: Record<string, string> = {
+    'I.05921059.00.01': 'admin',
+    'I.05921059.00.02': 'training',
+    'I.05921059.00.03': 'absence',
+  };
+  if (fullMap[code]) return fullMap[code];
+
   // IWBS auto-derive: characters 6–10 (Excel MID(WBS,7,4))
   const iwbs = code.slice(6, 10);
   const iwbsMap: Record<string, string> = {
@@ -38,14 +48,7 @@ export function deriveSubCategory(
     '1055': 'opm',
     '1056': 'opm',
   };
-  if (iwbsMap[iwbs]) return iwbsMap[iwbs];
-
-  const fullMap: Record<string, string> = {
-    'I.05921059.00.01': 'admin',
-    'I.05921059.00.02': 'training',
-    'I.05921059.00.03': 'absence',
-  };
-  return fullMap[code] ?? null;
+  return iwbsMap[iwbs] ?? null;
 }
 
 export function classifyWbs(

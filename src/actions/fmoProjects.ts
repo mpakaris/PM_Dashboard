@@ -87,12 +87,27 @@ export async function setProjectMemberRate(
   const projects = await readFmoProjects();
   const idx = projects.findIndex(p => p.id === projectId);
   if (idx === -1) return { ok: false };
-  const rates = projects[idx].memberRates ?? {};
-  rates[memberId] = { billingRate };
+  const rates = { ...(projects[idx].memberRates ?? {}) };
+  rates[memberId] = { ...(rates[memberId] ?? {}), billingRate };
   projects[idx] = { ...projects[idx], memberRates: rates };
   await writeFmoProjects(projects);
   revalidatePath(`/fmo/projects/${projectId}`);
   return { ok: true };
+}
+
+export async function setProjectMemberBillingRateHistory(
+  projectId: string,
+  memberId: string,
+  history: Array<{ from: string; rate: number }>
+): Promise<void> {
+  const projects = await readFmoProjects();
+  const idx = projects.findIndex(p => p.id === projectId);
+  if (idx === -1) return;
+  const rates = { ...(projects[idx].memberRates ?? {}) };
+  rates[memberId] = { ...(rates[memberId] ?? { billingRate: 0 }), billingRateHistory: history };
+  projects[idx] = { ...projects[idx], memberRates: rates };
+  await writeFmoProjects(projects);
+  revalidatePath(`/fmo/projects/${projectId}`);
 }
 
 export async function upsertProjectOperationContract(

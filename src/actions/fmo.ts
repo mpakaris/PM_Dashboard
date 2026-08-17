@@ -50,10 +50,28 @@ export async function addFmoWbs(code: string, label: string) {
   return { ok: true };
 }
 
-export async function updateFmoWbs(code: string, label: string) {
+export async function updateFmoWbs(code: string, updates: {
+  label?: string;
+  subCategoryOverride?: string | null;
+  budgetHours?: number | null;
+  budgetValue?: number | null;
+}) {
   const mappings = await readFmoMappings();
   if (!mappings.wbs[code]) return { ok: false, error: 'Not found' };
-  mappings.wbs[code].label = label;
+  const entry = mappings.wbs[code];
+  if (updates.label !== undefined) entry.label = updates.label;
+  if ('subCategoryOverride' in updates) {
+    if (updates.subCategoryOverride === null) delete entry.subCategoryOverride;
+    else if (updates.subCategoryOverride !== undefined) entry.subCategoryOverride = updates.subCategoryOverride;
+  }
+  if ('budgetHours' in updates) {
+    if (updates.budgetHours === null) delete entry.budgetHours;
+    else if (updates.budgetHours !== undefined) entry.budgetHours = updates.budgetHours;
+  }
+  if ('budgetValue' in updates) {
+    if (updates.budgetValue === null) delete entry.budgetValue;
+    else if (updates.budgetValue !== undefined) entry.budgetValue = updates.budgetValue;
+  }
   await writeFmoMappings(mappings);
   revalidatePath('/fmo/wbs');
   return { ok: true };
@@ -117,7 +135,7 @@ export async function setWbsSubCategoryOverride(code: string, override: string |
 
 export async function updateFmoMember(
   id: string,
-  updates: { type?: 'intern' | 'extern'; partnerCompany?: string; costRate?: number; monthlyCapacity?: number; monthlyBillableTarget?: number }
+  updates: { type?: 'intern' | 'extern'; partnerCompany?: string; costRate?: number; monthlyCapacity?: number; monthlyBillableTarget?: number; costRateHistory?: Array<{ from: string; rate: number }> }
 ) {
   const mappings = await readFmoMappings();
   if (!mappings.members[id]) return { ok: false, error: 'Member not found' };

@@ -7,6 +7,7 @@ import { fmtH, type Locale } from '@/lib/i18n';
 import type { FmoTicket, FmoWbsEntry, FmoEntry } from '@/lib/types';
 import { assignTicketWbs, reclassifyAllEntries } from '@/actions/fmo';
 import { useToast } from '@/components/ToastProvider';
+import { SortableTh } from '@/components/SortableTh';
 import { useConfirm } from '@/components/ConfirmDialogProvider';
 import TicketsTree from './TicketsTree';
 
@@ -94,6 +95,13 @@ export default function TicketsClient({
   const toast   = useToast();
   const [search, setSearch]   = useState('');
   const [filter, setFilter]   = useState<Filter>('all');
+  const [ticketSk, setTicketSk] = useState<'id' | 'name' | 'project' | 'hours'>('id');
+  const [ticketSd, setTicketSd] = useState<'asc' | 'desc'>('asc');
+  function onTicketSort(col: string) {
+    const k = col as typeof ticketSk;
+    if (ticketSk === k) setTicketSd(d => d === 'desc' ? 'asc' : 'desc');
+    else { setTicketSk(k); setTicketSd(k === 'hours' ? 'desc' : 'asc'); }
+  }
   const [reclassifying, setReclassifying] = useState(false);
   const [reclassResult, setReclassResult] = useState('');
   const [view, setView]       = useState<'flat' | 'tree'>('flat');
@@ -126,6 +134,17 @@ export default function TicketsClient({
         return a.name.localeCompare(b.name);
       });
   }, [tickets, search, filter]);
+
+  const sortedFiltered = useMemo(() =>
+    [...filtered].sort((a, b) => {
+      let cmp = 0;
+      if      (ticketSk === 'id')      cmp = a.id - b.id;
+      else if (ticketSk === 'name')    cmp = a.name.localeCompare(b.name);
+      else if (ticketSk === 'project') cmp = (a.project ?? '').localeCompare(b.project ?? '');
+      else if (ticketSk === 'hours')   cmp = (hoursMap.get(a.id) ?? 0) - (hoursMap.get(b.id) ?? 0);
+      return ticketSd === 'desc' ? -cmp : cmp;
+    }),
+  [filtered, ticketSk, ticketSd, hoursMap]);
 
   const unassignedCount = tickets.filter((tk) => !tk.wbsCode).length;
 
@@ -212,16 +231,16 @@ export default function TicketsClient({
         <table className="w-full text-sm">
           <thead className="bg-slate-50 border-b border-slate-200">
             <tr>
-              <th className="px-4 py-3 text-left font-semibold text-slate-600">{t('id')}</th>
-              <th className="px-4 py-3 text-left font-semibold text-slate-600">{t('name')}</th>
-              <th className="px-4 py-3 text-left font-semibold text-slate-600">{t('project')}</th>
+              <SortableTh col="id"      label={t('id')}       sortKey={ticketSk} sortDir={ticketSd} onSort={onTicketSort} className="py-3 font-semibold text-slate-600" />
+              <SortableTh col="name"    label={t('name')}     sortKey={ticketSk} sortDir={ticketSd} onSort={onTicketSort} className="py-3 font-semibold text-slate-600" />
+              <SortableTh col="project" label={t('project')}  sortKey={ticketSk} sortDir={ticketSd} onSort={onTicketSort} className="py-3 font-semibold text-slate-600" />
               <th className="px-4 py-3 text-left font-semibold text-slate-600">{t('assignWbs')}</th>
               <th className="px-4 py-3 text-left font-semibold text-slate-600">{t('status')}</th>
-              <th className="px-4 py-3 text-right font-semibold text-slate-600">{t('hours')}</th>
+              <SortableTh col="hours"   label={t('hours')}    sortKey={ticketSk} sortDir={ticketSd} onSort={onTicketSort} right className="py-3 font-semibold text-slate-600" />
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {filtered.map((tk) => (
+            {sortedFiltered.map((tk) => (
               <TicketRow
                 key={tk.id}
                 ticket={tk}

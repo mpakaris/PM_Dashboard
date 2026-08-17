@@ -10,6 +10,7 @@ import {
 import { fmtH, type Locale } from '@/lib/i18n';
 import type { FmoTicket, FmoEntry, FmoMember, FmoWbsEntry } from '@/lib/types';
 import { ChartTimeFilter, initChartRange, type TimeRange } from '@/components/ChartTimeFilter';
+import { SortableTh } from '@/components/SortableTh';
 
 const COLORS = [
   '#4338ca', '#0f766e', '#c2410c', '#1d4ed8',
@@ -34,6 +35,13 @@ export default function TicketDetailClient({
   const locale = useLocale() as Locale;
 
   const [chartRange, setChartRange] = useState<TimeRange>(() => initChartRange(entries));
+  const [memberSk, setMemberSk] = useState<'name' | 'hours' | 'pct'>('hours');
+  const [memberSd, setMemberSd] = useState<'asc' | 'desc'>('desc');
+  function onMemberSort(col: string) {
+    const k = col as typeof memberSk;
+    if (memberSk === k) setMemberSd(d => d === 'desc' ? 'asc' : 'desc');
+    else { setMemberSk(k); setMemberSd(k === 'name' ? 'asc' : 'desc'); }
+  }
 
   const chartEntries = useMemo(
     () => chartRange.from
@@ -52,6 +60,16 @@ export default function TicketDetailClient({
       .map(([name, hours]) => ({ name, hours }))
       .sort((a, b) => b.hours - a.hours);
   }, [entries]);
+
+  const sortedMemberSummary = useMemo(() =>
+    [...memberSummary].sort((a, b) => {
+      let cmp = 0;
+      if      (memberSk === 'name')  cmp = a.name.localeCompare(b.name);
+      else if (memberSk === 'hours') cmp = a.hours - b.hours;
+      else if (memberSk === 'pct')   cmp = a.hours - b.hours;
+      return memberSd === 'desc' ? -cmp : cmp;
+    }),
+  [memberSummary, memberSk, memberSd]);
 
   // Hours per month, stacked by member (top 5 only for chart clarity)
   const topMembers = useMemo(() => memberSummary.slice(0, 5).map(m => m.name), [memberSummary]);
@@ -145,13 +163,13 @@ export default function TicketDetailClient({
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-xs text-slate-500">
               <tr>
-                <th className="px-4 py-2 text-left">Member</th>
-                <th className="px-4 py-2 text-right">Hours</th>
-                <th className="px-4 py-2 text-right">%</th>
+                <SortableTh col="name"  label="Member" sortKey={memberSk} sortDir={memberSd} onSort={onMemberSort} />
+                <SortableTh col="hours" label="Hours"  sortKey={memberSk} sortDir={memberSd} onSort={onMemberSort} right />
+                <SortableTh col="pct"   label="%"      sortKey={memberSk} sortDir={memberSd} onSort={onMemberSort} right />
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
-              {memberSummary.map(({ name, hours }, i) => {
+              {sortedMemberSummary.map(({ name, hours }, i) => {
                 const memberObj = Object.values(members).find(m => m.name === name);
                 return (
                   <tr key={name} className="hover:bg-slate-50">

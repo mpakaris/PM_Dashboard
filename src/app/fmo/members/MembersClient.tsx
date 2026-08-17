@@ -8,6 +8,13 @@ import { fmtH, type Locale } from '@/lib/i18n';
 import type { FmoMember, FmoEntry } from '@/lib/types';
 import { useRole } from '@/components/RoleProvider';
 import { updateFmoMember } from '@/actions/fmo';
+import { SortableTh } from '@/components/SortableTh';
+import { rateAtMonth } from '@/lib/utils';
+
+const TODAY_MONTH = (() => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+})();
 
 type MatchReason =
   | { kind: 'ticket'; label: string; hours: number }
@@ -67,10 +74,12 @@ function CostRateCell({
 }) {
   const router = useRouter();
 
+  const effectiveRate = rateAtMonth(member.costRate, member.costRateHistory, TODAY_MONTH);
+
   if (!isAdmin) {
     return (
-      <span className={member.costRate > 0 ? 'text-slate-700' : 'text-amber-600'}>
-        {member.costRate > 0 ? `${member.costRate} €/h` : '—'}
+      <span className={effectiveRate > 0 ? 'text-slate-700' : 'text-amber-600'}>
+        {effectiveRate > 0 ? `${effectiveRate} €/h` : '—'}
       </span>
     );
   }
@@ -81,13 +90,22 @@ function CostRateCell({
         type="number"
         min="0"
         step="0.5"
-        defaultValue={member.costRate || ''}
+        defaultValue={effectiveRate || ''}
         placeholder="—"
         className="w-16 text-right border-0 border-b border-slate-200 bg-transparent text-sm text-slate-700 focus:outline-none focus:border-indigo-400 placeholder:text-amber-400"
         onBlur={async e => {
           const val = parseFloat(e.target.value) || 0;
-          if (val !== member.costRate) {
-            await updateFmoMember(member.id, { costRate: val });
+          if (val !== effectiveRate) {
+            const history = member.costRateHistory;
+            if (!history || history.length === 0) {
+              await updateFmoMember(member.id, { costRate: val });
+            } else {
+              const existingIdx = history.findIndex(h => h.from === TODAY_MONTH);
+              const next = existingIdx >= 0
+                ? history.map((h, i) => i === existingIdx ? { ...h, rate: val } : h)
+                : [...history, { from: TODAY_MONTH, rate: val }];
+              await updateFmoMember(member.id, { costRateHistory: next });
+            }
             router.refresh();
           }
         }}
@@ -110,6 +128,13 @@ export default function MembersClient({
   const isAdmin = useRole() === 'admin';
 
   const [query, setQuery] = useState('');
+  const [memberSk, setMemberSk] = useState<'name' | 'type' | 'costRate' | 'hours'>('name');
+  const [memberSd, setMemberSd] = useState<'asc' | 'desc'>('asc');
+  function onMemberSort(col: string) {
+    const k = col as typeof memberSk;
+    if (memberSk === k) setMemberSd(d => d === 'desc' ? 'asc' : 'desc');
+    else { setMemberSk(k); setMemberSd(k === 'name' ? 'asc' : 'desc'); }
+  }
 
   const byMember = useMemo(() => {
     const map = new Map<string, FmoEntry[]>();
@@ -174,6 +199,17 @@ export default function MembersClient({
     return result;
   }, [sorted, byMember, query]);
 
+  const sortedFiltered = useMemo(() =>
+    [...filteredWithReason].sort((a, b) => {
+      let cmp = 0;
+      if      (memberSk === 'name')     cmp = a.m.name.localeCompare(b.m.name);
+      else if (memberSk === 'type')     cmp = a.m.type.localeCompare(b.m.type);
+      else if (memberSk === 'costRate') cmp = rateAtMonth(a.m.costRate, a.m.costRateHistory, TODAY_MONTH) - rateAtMonth(b.m.costRate, b.m.costRateHistory, TODAY_MONTH);
+      else if (memberSk === 'hours')    cmp = (hoursMap.get(a.m.name) ?? 0) - (hoursMap.get(b.m.name) ?? 0);
+      return memberSd === 'desc' ? -cmp : cmp;
+    }),
+  [filteredWithReason, memberSk, memberSd, hoursMap]);
+
   const externCount = sorted.filter(m => m.type === 'extern').length;
   const internCount = sorted.filter(m => m.type === 'intern').length;
 
@@ -220,22 +256,16 @@ export default function MembersClient({
         <table className="w-full text-sm">
           <thead className="bg-slate-50 border-b border-slate-200">
             <tr>
-              <th className="px-4 py-3 text-left font-semibold text-slate-600">{t('name')}</th>
-              <th className="px-4 py-3 text-left font-semibold text-slate-600">
-                {t('type')}
-                {isAdmin && <span className="ml-1 font-normal text-slate-400 text-xs">(click to toggle)</span>}
-              </th>
+              <SortableTh col="name"     label={t('name')}     sortKey={memberSk} sortDir={memberSd} onSort={onMemberSort} className="py-3 font-semibold text-slate-600" />
+              <SortableTh col="type"     label={<>{t('type')}{isAdmin && <span className="ml-1 font-normal text-slate-400 text-xs">(click to toggle)</span>}</>} sortKey={memberSk} sortDir={memberSd} onSort={onMemberSort} className="py-3 font-semibold text-slate-600" />
               <th className="px-4 py-3 text-left font-semibold text-slate-600">{t('partnerCompany')}</th>
-              <th className="px-4 py-3 text-right font-semibold text-slate-600">
-                {t('costRate')}
-                {isAdmin && <span className="ml-1 font-normal text-slate-400 text-xs">(editable)</span>}
-              </th>
-              <th className="px-4 py-3 text-right font-semibold text-slate-600">{t('totalHours')}</th>
+              <SortableTh col="costRate" label={<>{t('costRate')}{isAdmin && <span className="ml-1 font-normal text-slate-400 text-xs">(editable)</span>}</>} sortKey={memberSk} sortDir={memberSd} onSort={onMemberSort} right className="py-3 font-semibold text-slate-600" />
+              <SortableTh col="hours"    label={t('totalHours')} sortKey={memberSk} sortDir={memberSd} onSort={onMemberSort} right className="py-3 font-semibold text-slate-600" />
               <th className="px-4 py-3" />
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {filteredWithReason.map(({ m, reason }) => {
+            {sortedFiltered.map(({ m, reason }) => {
               const hours = hoursMap.get(m.name) ?? 0;
               return (
                 <tr
@@ -246,7 +276,7 @@ export default function MembersClient({
                   <td className="px-4 py-3 font-medium text-slate-800">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span>{m.name}</span>
-                      {m.costRate === 0 && (
+                      {rateAtMonth(m.costRate, m.costRateHistory, TODAY_MONTH) === 0 && (
                         <span className="text-amber-500" title={t('missingCost')}>⚠</span>
                       )}
                       {reason && (

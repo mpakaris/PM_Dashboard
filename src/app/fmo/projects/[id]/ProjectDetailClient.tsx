@@ -11,7 +11,8 @@ import {
   PieChart, Pie, Cell,
 } from 'recharts';
 import { fmtH, fmtEur, type Locale } from '@/lib/i18n';
-import { opsContractActiveInMonth } from '@/lib/utils';
+import { opsContractActiveInMonth, rateAtMonth, fpImpliedRate } from '@/lib/utils';
+import { SortableTh } from '@/components/SortableTh';
 import { useToast } from '@/components/ToastProvider';
 import { useConfirm } from '@/components/ConfirmDialogProvider';
 import type {
@@ -24,6 +25,7 @@ import type {
 } from '@/lib/types';
 import {
   updateFmoProject, updateProjectConfig, setProjectMemberRate,
+  setProjectMemberBillingRateHistory,
   upsertProjectOperationContract, removeProjectOperationContract,
   updateProjectFrame, upsertProjectChange, removeProjectChange,
   upsertWorkPackage, removeWorkPackage, addWorkPackageNote,
@@ -1414,6 +1416,26 @@ export default function ProjectDetailClient({
   const [showChangeForm, setShowChangeForm]       = useState(false);
   const [showWpForm, setShowWpForm]               = useState(false);
   const [showMilestoneForm, setShowMilestoneForm] = useState(false);
+  const [billingHistoryOpen, setBillingHistoryOpen] = useState<Record<string, boolean>>({});
+  // Sort state for data tables
+  const [ovSk, setOvSk] = useState<'name' | 'tmHours' | 'opsHours' | 'hours' | 'cost' | 'revenue'>('hours');
+  const [ovSd, setOvSd] = useState<'asc' | 'desc'>('desc');
+  function onOvSort(col: string) { const k = col as typeof ovSk; if (ovSk === k) setOvSd(d => d === 'desc' ? 'asc' : 'desc'); else { setOvSk(k); setOvSd(k === 'name' ? 'asc' : 'desc'); } }
+
+  const [teamSk, setTeamSk] = useState<'name' | 'tmHours' | 'opsHours' | 'cost' | 'revenue' | 'margin'>('tmHours');
+  const [teamSd, setTeamSd] = useState<'asc' | 'desc'>('desc');
+  function onTeamSort(col: string) { const k = col as typeof teamSk; if (teamSk === k) setTeamSd(d => d === 'desc' ? 'asc' : 'desc'); else { setTeamSk(k); setTeamSd(k === 'name' ? 'asc' : 'desc'); } }
+
+  const [tkSk, setTkSk] = useState<'name' | 'wbs' | 'category' | 'hours' | 'pct'>('hours');
+  const [tkSd, setTkSd] = useState<'asc' | 'desc'>('desc');
+  function onTkSort(col: string) { const k = col as typeof tkSk; if (tkSk === k) setTkSd(d => d === 'desc' ? 'asc' : 'desc'); else { setTkSk(k); setTkSd(k === 'name' || k === 'wbs' || k === 'category' ? 'asc' : 'desc'); } }
+  const [localBillingHistories, setLocalBillingHistories] = useState<Record<string, Array<{ from: string; rate: number }>>>(() => {
+    const init: Record<string, Array<{ from: string; rate: number }>> = {};
+    for (const [id, r] of Object.entries(project.memberRates ?? {})) {
+      init[id] = r.billingRateHistory ?? [];
+    }
+    return init;
+  });
   const [wpSectionOpen, setWpSectionOpen]         = useState(false);
   // Dashboard period filter (KPI cards) — default: Jan → today of current year
   const [dashboardRange, setDashboardRange] = useState<{ from: string; to: string }>(() => {
@@ -1427,6 +1449,14 @@ export default function ProjectDetailClient({
 
   const nameToMember = useMemo(() =>
     Object.fromEntries(Object.values(members).map(m => [m.name, m])), [members]);
+
+  // Resolve billing rate for an entry: FP projects use implied rate, TM use per-member rate
+  function billingRateFor(m: { id: string } | undefined, month: string): number {
+    if (!m) return 0;
+    if (project.projectType === 'fixprice') return fpImpliedRate(project);
+    const r = (project.memberRates ?? {})[m.id];
+    return rateAtMonth(r?.billingRate ?? 0, r?.billingRateHistory, month);
+  }
 
   // Tickets in fixprice ops contracts → revenue comes from flat fee, not per-hour billing
   const fixOpsTicketSet = useMemo(() =>
@@ -1461,16 +1491,16 @@ export default function ProjectDetailClient({
       if (!m) continue;
       const ex = map.get(m.id) ?? { member: m, hours: 0, tmHours: 0, opsHours: 0, fixOpsHours: 0, cost: 0, revenue: 0 };
       ex.hours += e.spentTime;
-      ex.cost  += e.spentTime * (m.costRate ?? 0);
+      ex.cost  += e.spentTime * rateAtMonth(m.costRate, m.costRateHistory, e.month);
       const isAnyOps = e.ticketId !== null && allOpsTicketSet.has(e.ticketId);
       const isFixOps = e.ticketId !== null && fixOpsTicketSet.has(e.ticketId);
       if (isAnyOps) {
         ex.opsHours += e.spentTime;
         if (isFixOps) ex.fixOpsHours += e.spentTime;
-        else ex.revenue += e.spentTime * ((project.memberRates ?? {})[m.id]?.billingRate ?? 0); // hourly ops
+        else ex.revenue += e.spentTime * billingRateFor(m, e.month); // hourly ops
       } else {
         ex.tmHours  += e.spentTime;
-        ex.revenue  += e.spentTime * ((project.memberRates ?? {})[m.id]?.billingRate ?? 0);
+        ex.revenue  += e.spentTime * billingRateFor(m, e.month);
       }
       map.set(m.id, ex);
     }
@@ -1523,8 +1553,8 @@ export default function ProjectDetailClient({
     for (const e of dashboardEntries) {
       const m = nameToMember[e.user];
       if (!m) continue;
-      const costRate    = m.costRate ?? 0;
-      const billingRate = (project.memberRates ?? {})[m.id]?.billingRate ?? 0;
+      const costRate    = rateAtMonth(m.costRate, m.costRateHistory, e.month);
+      const billingRate = billingRateFor(m, e.month);
       const isOps       = e.ticketId !== null && allOpsTicketSet.has(e.ticketId);
       const isFixOps    = e.ticketId !== null && fixOpsTicketSet.has(e.ticketId);
       if (isOps) {
@@ -1651,9 +1681,9 @@ export default function ProjectDetailClient({
       const m   = nameToMember[e.user];
       const row = monthTotals.get(e.month) ?? { cost: 0, tmRevenue: 0, opsRevenue: 0 };
       if (m) {
-        row.cost += e.spentTime * (m.costRate ?? 0);
+        row.cost += e.spentTime * rateAtMonth(m.costRate, m.costRateHistory, e.month);
         const isFixOps = e.ticketId !== null && fixOpsTicketSet.has(e.ticketId);
-        if (!isFixOps) row.tmRevenue += e.spentTime * ((project.memberRates ?? {})[m.id]?.billingRate ?? 0);
+        if (!isFixOps) row.tmRevenue += e.spentTime * billingRateFor(m, e.month);
       }
       monthTotals.set(e.month, row);
     }
@@ -1688,7 +1718,7 @@ export default function ProjectDetailClient({
       const ctSet    = new Set(c.ticketIds);
       const ctEntries = dashboardEntries.filter(e => e.ticketId !== null && ctSet.has(e.ticketId));
       const hours    = ctEntries.reduce((s, e) => s + e.spentTime, 0);
-      const cost     = ctEntries.reduce((s, e) => s + e.spentTime * (nameToMember[e.user]?.costRate ?? 0), 0);
+      const cost     = ctEntries.reduce((s, e) => s + e.spentTime * rateAtMonth(nameToMember[e.user]?.costRate ?? 0, nameToMember[e.user]?.costRateHistory, e.month), 0); // ops contract cost: always costRate-based
       const revenue  = months.reduce((s, m) => opsContractActiveInMonth(c, m)
         ? s + ((c.monthlyOverrides ?? {})[m] ?? c.defaultMonthlyAmount)
         : s, 0);
@@ -1700,7 +1730,8 @@ export default function ProjectDetailClient({
   }, [dashboardEntries, nameToMember, project.operationContracts]);
 
   const hasRates     = Object.values(project.memberRates ?? {}).some(r => r.billingRate > 0);
-  const hasCostRates = Object.values(members).some(m => (m.costRate ?? 0) > 0);
+  const todayMonth = new Date().toISOString().slice(0, 7);
+  const hasCostRates = Object.values(members).some(m => rateAtMonth(m.costRate ?? 0, m.costRateHistory, todayMonth) > 0);
   const hasOpsFixed  = (project.operationContracts ?? []).some(c => c.type === 'fixprice');
   const hasOps       = allOpsTicketSet.size > 0;
 
@@ -1712,8 +1743,8 @@ export default function ProjectDetailClient({
 
     for (const e of dashboardEntries) {
       const member      = nameToMember[e.user];
-      const costRate    = member?.costRate ?? 0;
-      const billingRate = member ? ((project.memberRates ?? {})[member.id]?.billingRate ?? 0) : 0;
+      const costRate    = rateAtMonth(member?.costRate ?? 0, member?.costRateHistory, e.month);
+      const billingRate = billingRateFor(member, e.month);
       const isOps       = e.ticketId !== null && allOpsTicketSet.has(e.ticketId);
       const isFixOps    = e.ticketId !== null && fixOpsTicketSet.has(e.ticketId);
 
@@ -1773,8 +1804,8 @@ export default function ProjectDetailClient({
 
     for (const e of dashboardEntries) {
       const member      = nameToMember[e.user];
-      const costRate    = member?.costRate ?? 0;
-      const billingRate = member ? ((project.memberRates ?? {})[member.id]?.billingRate ?? 0) : 0;
+      const costRate    = rateAtMonth(member?.costRate ?? 0, member?.costRateHistory, e.month);
+      const billingRate = billingRateFor(member, e.month);
       const isOps       = e.ticketId !== null && allOpsTicketSet.has(e.ticketId);
       const isFixOps    = e.ticketId !== null && fixOpsTicketSet.has(e.ticketId);
 
@@ -2441,16 +2472,25 @@ export default function ProjectDetailClient({
             <table className="w-full text-sm">
               <thead className="text-xs text-slate-400 font-medium">
                 <tr>
-                  <th className="px-5 py-2 text-left">Member</th>
-                  <th className="px-4 py-2 text-right">Dev h</th>
-                  <th className="px-4 py-2 text-right">Ops h</th>
-                  <th className="px-4 py-2 text-right">Total h</th>
-                  {!isClientProject && hasCostRates && <th className="px-4 py-2 text-right">Cost</th>}
-                  {isClientProject && hasRates && <th className="px-4 py-2 text-right">Revenue</th>}
+                  <SortableTh col="name"    label="Member"  sortKey={ovSk} sortDir={ovSd} onSort={onOvSort} className="py-2 px-5" />
+                  <SortableTh col="tmHours" label="Dev h"   sortKey={ovSk} sortDir={ovSd} onSort={onOvSort} right className="py-2" />
+                  <SortableTh col="opsHours" label="Ops h"  sortKey={ovSk} sortDir={ovSd} onSort={onOvSort} right className="py-2" />
+                  <SortableTh col="hours"   label="Total h" sortKey={ovSk} sortDir={ovSd} onSort={onOvSort} right className="py-2" />
+                  {!isClientProject && hasCostRates && <SortableTh col="cost"    label="Cost"    sortKey={ovSk} sortDir={ovSd} onSort={onOvSort} right className="py-2" />}
+                  {isClientProject && hasRates && <SortableTh col="revenue" label="Revenue" sortKey={ovSk} sortDir={ovSd} onSort={onOvSort} right className="py-2" />}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
-                {memberSummary.map(({ member, tmHours, opsHours, hours, cost, revenue }) => (
+                {[...memberSummary].sort((a, b) => {
+                  let cmp = 0;
+                  if      (ovSk === 'name')     cmp = a.member.name.localeCompare(b.member.name);
+                  else if (ovSk === 'tmHours')  cmp = a.tmHours - b.tmHours;
+                  else if (ovSk === 'opsHours') cmp = a.opsHours - b.opsHours;
+                  else if (ovSk === 'hours')    cmp = a.hours - b.hours;
+                  else if (ovSk === 'cost')     cmp = a.cost - b.cost;
+                  else if (ovSk === 'revenue')  cmp = a.revenue - b.revenue;
+                  return ovSd === 'desc' ? -cmp : cmp;
+                }).map(({ member, tmHours, opsHours, hours, cost, revenue }) => (
                   <tr key={member.id} className="hover:bg-slate-50">
                     <td className="px-5 py-2">
                       <div className="flex items-center gap-2">
@@ -2481,64 +2521,164 @@ export default function ProjectDetailClient({
             <table className="w-full text-sm">
               <thead className="bg-slate-50 border-b border-slate-200 text-xs text-slate-500 font-medium">
                 <tr>
-                  <th className="px-4 py-3 text-left">Member</th>
-                  <th className="px-4 py-3 text-right">Development Hours</th>
-                  <th className="px-4 py-3 text-right">Operations Hours</th>
+                  <SortableTh col="name"    label="Member"            sortKey={teamSk} sortDir={teamSd} onSort={onTeamSort} className="py-3" />
+                  <SortableTh col="tmHours" label="Development Hours" sortKey={teamSk} sortDir={teamSd} onSort={onTeamSort} right className="py-3" />
+                  <SortableTh col="opsHours" label="Operations Hours" sortKey={teamSk} sortDir={teamSd} onSort={onTeamSort} right className="py-3" />
                   <th className="px-4 py-3 text-right">Cost Rate</th>
                   {showBillingCols && <th className="px-4 py-3 text-right">Billing Rate</th>}
-                  <th className="px-4 py-3 text-right">Total Cost (€)</th>
-                  {showBillingCols && <th className="px-4 py-3 text-right">Revenue (€)</th>}
-                  {showBillingCols && <th className="px-4 py-3 text-right">Margin</th>}
+                  <SortableTh col="cost"    label="Total Cost (€)"   sortKey={teamSk} sortDir={teamSd} onSort={onTeamSort} right className="py-3" />
+                  {showBillingCols && <SortableTh col="revenue" label="Revenue (€)" sortKey={teamSk} sortDir={teamSd} onSort={onTeamSort} right className="py-3" />}
+                  {showBillingCols && <SortableTh col="margin"  label="Margin"      sortKey={teamSk} sortDir={teamSd} onSort={onTeamSort} right className="py-3" />}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
-                {memberSummary.map(({ member, tmHours, opsHours, fixOpsHours, cost, revenue }) => {
+                {[...memberSummary].sort((a, b) => {
+                  let cmp = 0;
+                  const aRev = Math.round(a.revenue), bRev = Math.round(b.revenue);
+                  const aMargin = a.cost === 0 ? null : aRev === 0 ? -100 : Math.round((aRev - a.cost) / aRev * 100);
+                  const bMargin = b.cost === 0 ? null : bRev === 0 ? -100 : Math.round((bRev - b.cost) / bRev * 100);
+                  if      (teamSk === 'name')     cmp = a.member.name.localeCompare(b.member.name);
+                  else if (teamSk === 'tmHours')  cmp = a.tmHours - b.tmHours;
+                  else if (teamSk === 'opsHours') cmp = a.opsHours - b.opsHours;
+                  else if (teamSk === 'cost')     cmp = a.cost - b.cost;
+                  else if (teamSk === 'revenue')  cmp = aRev - bRev;
+                  else if (teamSk === 'margin')   cmp = (aMargin ?? -Infinity) - (bMargin ?? -Infinity);
+                  return teamSd === 'desc' ? -cmp : cmp;
+                }).map(({ member, tmHours, opsHours, fixOpsHours, cost, revenue }) => {
                   const revRounded  = Math.round(revenue);
                   const rowMargin   = cost === 0 ? null : revRounded === 0 ? -100 : Math.round((revRounded - cost) / revRounded * 100);
                   const billingRate = (project.memberRates ?? {})[member.id]?.billingRate ?? 0;
+                  const histOpen    = billingHistoryOpen[member.id] ?? false;
+                  const history     = localBillingHistories[member.id] ?? [];
+                  const totalCols   = showBillingCols ? 8 : 5;
+
+                  async function saveBillingHistory(next: Array<{ from: string; rate: number }>) {
+                    setLocalBillingHistories(prev => ({ ...prev, [member.id]: next }));
+                    await setProjectMemberBillingRateHistory(project.id, member.id, next);
+                  }
+
                   return (
-                    <tr key={member.id} className="hover:bg-slate-50">
-                      <td className="px-4 py-2.5">
-                        <div className="flex items-center gap-2">
-                          <Link href={`/fmo/members/${member.id}`} className="text-indigo-600 hover:text-indigo-800 font-medium">{member.name}</Link>
-                          <span className={`text-xs px-1.5 py-0.5 rounded ${member.type === 'intern' ? 'bg-blue-50 text-blue-700' : 'bg-orange-50 text-orange-700'}`}>{member.type}</span>
-                        </div>
-                      </td>
-                      <td className="px-4 py-2.5 text-right text-slate-700">{tmHours > 0 ? fmtH(tmHours, locale) : '—'}</td>
-                      <td className={`px-4 py-2.5 text-right ${opsHours > 0 ? 'text-violet-600 font-medium' : 'text-slate-400'}`}>{opsHours > 0 ? fmtH(opsHours, locale) : '—'}</td>
-                      <td className="px-4 py-2.5 text-right text-slate-500 text-xs">{member.costRate > 0 ? `${member.costRate} €/h` : '—'}</td>
-                      {showBillingCols && (
-                        <td className="px-4 py-2.5 text-right">
-                          {isAdmin ? (
-                            <input type="number" min="0" step="0.5"
-                              defaultValue={billingRate || ''}
-                              placeholder="—"
-                              className="w-20 text-right border-0 border-b border-slate-200 bg-transparent text-sm focus:outline-none focus:border-indigo-400"
-                              onBlur={async e => {
-                                const val = parseFloat(e.target.value) || 0;
-                                await setProjectMemberRate(project.id, member.id, val);
-                                router.refresh();
-                              }}
-                            />
-                          ) : (
-                            <span className="text-slate-700 text-sm">{billingRate > 0 ? `${billingRate} €/h` : '—'}</span>
-                          )}
+                    <Fragment key={member.id}>
+                      <tr className="hover:bg-slate-50">
+                        <td className="px-4 py-2.5">
+                          <div className="flex items-center gap-2">
+                            <Link href={`/fmo/members/${member.id}`} className="text-indigo-600 hover:text-indigo-800 font-medium">{member.name}</Link>
+                            <span className={`text-xs px-1.5 py-0.5 rounded ${member.type === 'intern' ? 'bg-blue-50 text-blue-700' : 'bg-orange-50 text-orange-700'}`}>{member.type}</span>
+                          </div>
                         </td>
+                        <td className="px-4 py-2.5 text-right text-slate-700">{tmHours > 0 ? fmtH(tmHours, locale) : '—'}</td>
+                        <td className={`px-4 py-2.5 text-right ${opsHours > 0 ? 'text-violet-600 font-medium' : 'text-slate-400'}`}>{opsHours > 0 ? fmtH(opsHours, locale) : '—'}</td>
+                        <td className="px-4 py-2.5 text-right text-slate-500 text-xs">{(() => { const r = rateAtMonth(member.costRate, member.costRateHistory, todayMonth); return r > 0 ? `${r} €/h` : '—'; })()}</td>
+                        {showBillingCols && (
+                          <td className="px-4 py-2.5 text-right">
+                            {isAdmin ? (
+                              <div className="flex items-center justify-end gap-1.5">
+                                <input type="number" min="0" step="0.5"
+                                  defaultValue={billingRate || ''}
+                                  placeholder="—"
+                                  className="w-20 text-right border-0 border-b border-slate-200 bg-transparent text-sm focus:outline-none focus:border-indigo-400"
+                                  onBlur={async e => {
+                                    const val = parseFloat(e.target.value) || 0;
+                                    await setProjectMemberRate(project.id, member.id, val);
+                                    router.refresh();
+                                  }}
+                                />
+                                <button
+                                  type="button"
+                                  title="Rate history"
+                                  onClick={() => setBillingHistoryOpen(prev => ({ ...prev, [member.id]: !histOpen }))}
+                                  className={`text-xs px-1 py-0.5 rounded border transition-colors ${
+                                    histOpen ? 'bg-amber-50 border-amber-300 text-amber-700' : 'border-slate-200 text-slate-400 hover:border-slate-400 hover:text-slate-600'
+                                  }`}
+                                >
+                                  {history.length > 0 ? `${history.length}` : '…'}
+                                </button>
+                              </div>
+                            ) : (
+                              <span className="text-slate-700 text-sm">{billingRate > 0 ? `${billingRate} €/h` : '—'}</span>
+                            )}
+                          </td>
+                        )}
+                        <td className="px-4 py-2.5 text-right text-slate-700">{cost > 0 ? fmtEur(cost) : '—'}</td>
+                        {showBillingCols && (
+                          <td className="px-4 py-2.5 text-right">
+                            {revRounded > 0 ? fmtEur(revRounded) : '—'}
+                          </td>
+                        )}
+                        {showBillingCols && (
+                          <td className={`px-4 py-2.5 text-right text-sm font-medium ${
+                            rowMargin !== null ? (rowMargin >= 0 ? 'text-emerald-600' : 'text-red-500') : 'text-slate-400'
+                          }`}>
+                            {rowMargin !== null ? `${rowMargin}%` : '—'}
+                          </td>
+                        )}
+                      </tr>
+                      {histOpen && isAdmin && (
+                        <tr>
+                          <td colSpan={totalCols} className="px-4 pb-3 pt-1 bg-amber-50/50">
+                            <div className="border border-amber-200 rounded-lg overflow-hidden max-w-sm ml-auto">
+                              <table className="w-full text-xs">
+                                <thead className="bg-amber-50 text-slate-500">
+                                  <tr>
+                                    <th className="px-3 py-2 text-left font-medium">From (YYYY-MM)</th>
+                                    <th className="px-3 py-2 text-right font-medium">Rate (€/h)</th>
+                                    <th className="px-3 py-2 w-8" />
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-amber-100 bg-white">
+                                  {history.map((h, i) => (
+                                    <tr key={i}>
+                                      <td className="px-3 py-1.5">
+                                        <input type="month" value={h.from}
+                                          onChange={e => {
+                                            const next = history.map((x, j) => j === i ? { ...x, from: e.target.value } : x);
+                                            setLocalBillingHistories(prev => ({ ...prev, [member.id]: next }));
+                                          }}
+                                          onBlur={async e => {
+                                            const next = history.map((x, j) => j === i ? { ...x, from: e.target.value } : x);
+                                            await saveBillingHistory(next);
+                                          }}
+                                          className="border border-slate-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-amber-400 w-36" />
+                                      </td>
+                                      <td className="px-3 py-1.5 text-right">
+                                        <input type="number" min="0" step="0.01" value={h.rate}
+                                          onChange={e => {
+                                            const next = history.map((x, j) => j === i ? { ...x, rate: parseFloat(e.target.value) || 0 } : x);
+                                            setLocalBillingHistories(prev => ({ ...prev, [member.id]: next }));
+                                          }}
+                                          onBlur={async e => {
+                                            const next = history.map((x, j) => j === i ? { ...x, rate: parseFloat(e.target.value) || 0 } : x);
+                                            await saveBillingHistory(next);
+                                          }}
+                                          className="border border-slate-200 rounded px-2 py-1 text-xs text-right focus:outline-none focus:border-amber-400 w-20" />
+                                      </td>
+                                      <td className="px-3 py-1.5 text-center">
+                                        <button type="button"
+                                          onClick={async () => {
+                                            const next = history.filter((_, j) => j !== i);
+                                            await saveBillingHistory(next);
+                                          }}
+                                          className="text-slate-300 hover:text-red-400 text-base leading-none">×</button>
+                                      </td>
+                                    </tr>
+                                  ))}
+                                  {history.length === 0 && (
+                                    <tr>
+                                      <td colSpan={3} className="px-3 py-3 text-center text-slate-400 italic">No history entries</td>
+                                    </tr>
+                                  )}
+                                </tbody>
+                              </table>
+                              <div className="px-3 py-2 bg-amber-50 border-t border-amber-100">
+                                <button type="button"
+                                  onClick={() => setLocalBillingHistories(prev => ({ ...prev, [member.id]: [...history, { from: '', rate: 0 }] }))}
+                                  className="text-xs text-amber-700 hover:text-amber-900">+ Add entry</button>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
                       )}
-                      <td className="px-4 py-2.5 text-right text-slate-700">{cost > 0 ? fmtEur(cost) : '—'}</td>
-                      {showBillingCols && (
-                        <td className="px-4 py-2.5 text-right">
-                          {revRounded > 0 ? fmtEur(revRounded) : '—'}
-                        </td>
-                      )}
-                      {showBillingCols && (
-                        <td className={`px-4 py-2.5 text-right text-sm font-medium ${
-                          rowMargin !== null ? (rowMargin >= 0 ? 'text-emerald-600' : 'text-red-500') : 'text-slate-400'
-                        }`}>
-                          {rowMargin !== null ? `${rowMargin}%` : '—'}
-                        </td>
-                      )}
-                    </tr>
+                    </Fragment>
                   );
                 })}
               </tbody>
@@ -2601,16 +2741,24 @@ export default function ProjectDetailClient({
             <table className="w-full text-sm">
               <thead className="bg-slate-50 border-b border-slate-200 text-xs text-slate-500 font-medium">
                 <tr>
-                  <th className="px-4 py-3 text-left">Ticket</th>
-                  <th className="px-4 py-3 text-left">WBS</th>
-                  <th className="px-4 py-3 text-left">Category</th>
-                  <th className="px-4 py-3 text-right">Hours</th>
-                  <th className="px-4 py-3 text-right">%</th>
+                  <SortableTh col="name"     label="Ticket"   sortKey={tkSk} sortDir={tkSd} onSort={onTkSort} className="py-3" />
+                  <SortableTh col="wbs"      label="WBS"      sortKey={tkSk} sortDir={tkSd} onSort={onTkSort} className="py-3" />
+                  <SortableTh col="category" label="Category" sortKey={tkSk} sortDir={tkSd} onSort={onTkSort} className="py-3" />
+                  <SortableTh col="hours"    label="Hours"    sortKey={tkSk} sortDir={tkSd} onSort={onTkSort} right className="py-3" />
+                  <SortableTh col="pct"      label="%"        sortKey={tkSk} sortDir={tkSd} onSort={onTkSort} right className="py-3" />
                   <th className="px-4 py-3 w-8" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
-                {ticketSummary.map(tk => {
+                {[...ticketSummary].sort((a, b) => {
+                  let cmp = 0;
+                  if      (tkSk === 'name')     cmp = a.name.localeCompare(b.name);
+                  else if (tkSk === 'wbs')      cmp = (a.wbsCode ?? '').localeCompare(b.wbsCode ?? '');
+                  else if (tkSk === 'category') cmp = (a.billingClass ?? '').localeCompare(b.billingClass ?? '');
+                  else if (tkSk === 'hours')    cmp = a.hours - b.hours;
+                  else if (tkSk === 'pct')      cmp = a.hours - b.hours;
+                  return tkSd === 'desc' ? -cmp : cmp;
+                }).map(tk => {
                   const isFixOps   = typeof tk.id === 'number' && fixOpsTicketSet.has(tk.id as number);
                   const isHrOps    = typeof tk.id === 'number' && !isFixOps && allOpsTicketSet.has(tk.id as number);
                   const isExpanded = expandedTickets.has(tk.id);
@@ -2809,7 +2957,7 @@ export default function ProjectDetailClient({
                   <YAxis tick={{ fontSize: 11 }} tickFormatter={v => `${Math.round(v / 1000)}k`} />
                   <Tooltip {...TOOLTIP_STYLE} formatter={(v, name) => [fmtEur(Number(v)), String(name)]} />
                   <Bar dataKey="revenue" fill="#dde1ff" name="Revenue" radius={[3,3,0,0]} opacity={0.7} />
-                  <Line type="monotone" dataKey="cumPl" stroke="#4338ca" strokeWidth={2} dot={{ r: 3 }} name="Cumulative Profit and Loss" />
+                  <Line type="monotone" dataKey="cumPl" stroke="#d97706" strokeWidth={2} dot={{ r: 3 }} name="Cumulative Profit and Loss" />
                 </ComposedChart>
               </ResponsiveContainer>
             </div>
@@ -3171,7 +3319,7 @@ export default function ProjectDetailClient({
                   <Tooltip {...TOOLTIP_STYLE} formatter={(v, name) => [fmtEur(Number(v)), String(name)]} />
                   <ReferenceLine y={0} stroke="#e2e8f0" />
                   <Bar dataKey="pl" name="Monthly P&L" fill="#dde1ff" radius={[3,3,0,0]} />
-                  <Line type="monotone" dataKey="cumPl" stroke="#4338ca" strokeWidth={2} dot={{ r: 3 }} name="Cumulative Profit and Loss" />
+                  <Line type="monotone" dataKey="cumPl" stroke="#d97706" strokeWidth={2} dot={{ r: 3 }} name="Cumulative Profit and Loss" />
                 </ComposedChart>
               </ResponsiveContainer>
             </div>

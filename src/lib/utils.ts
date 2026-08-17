@@ -49,6 +49,41 @@ export function entryBelongsToProject(
   return byWbs || byTicket;
 }
 
+/**
+ * Implied billing rate for a fixed-price project:
+ * total contract value ÷ total budgeted hours.
+ * Returns 0 when the project is not fixprice or has no budget hours.
+ */
+export function fpImpliedRate(project: {
+  projectType: string;
+  budgetEur?: number;
+  contractValue?: number;
+  budgetHours?: number;
+  contractHours?: number;
+  changes?: Array<{ status: string; budgetEur: number }>;
+}): number {
+  if (project.projectType !== 'fixprice') return 0;
+  const value = (project.budgetEur ?? project.contractValue ?? 0)
+    + (project.changes ?? []).filter(c => c.status === 'approved').reduce((s, c) => s + c.budgetEur, 0);
+  const hours = project.budgetHours ?? project.contractHours ?? 0;
+  return hours > 0 ? value / hours : 0;
+}
+
+export function rateAtMonth(
+  currentRate: number,
+  history: Array<{ from: string; rate: number }> | undefined,
+  month: string
+): number {
+  if (!history || history.length === 0) return currentRate;
+  const sorted = [...history].sort((a, b) => a.from.localeCompare(b.from));
+  let result = sorted[0].rate;
+  for (const h of sorted) {
+    if (h.from <= month) result = h.rate;
+    else break;
+  }
+  return result;
+}
+
 export function formatMonth(month: string): string {
   const [year, monthNum] = month.split('-');
   const date = new Date(Number(year), Number(monthNum) - 1, 1);

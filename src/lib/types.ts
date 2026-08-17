@@ -320,6 +320,7 @@ export interface FmoMember {
   type: 'intern' | 'extern';
   partnerCompany: string;
   costRate: number; // €/h
+  costRateHistory?: Array<{ from: string; rate: number }>; // "YYYY-MM"
   monthlyCapacity?: number;      // total working hours/month — default 160
   monthlyBillableTarget?: number; // target external billing hours/month — default 120
 }
@@ -375,6 +376,7 @@ export type FmoProjectCategory = 'client' | 'internal' | 'presales' | 'training'
 
 export interface FmoProjectMemberRate {
   billingRate: number; // €/h billed to client on this project
+  billingRateHistory?: Array<{ from: string; rate: number }>; // "YYYY-MM"
 }
 
 export interface FmoOperationContract {

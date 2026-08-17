@@ -4,10 +4,11 @@ import { useState, useEffect, useMemo } from 'react';
 import { useTranslations, useLocale } from 'next-intl';
 import type { FmoWbsEntry, FmoTicket, FmoEntry, WbsSubCategory, FmoMember, FmoProject } from '@/lib/types';
 import { fmtH, fmtEur, type Locale } from '@/lib/i18n';
-import { entryBelongsToProject, opsContractActiveInMonth } from '@/lib/utils';
+import { entryBelongsToProject, opsContractActiveInMonth, rateAtMonth } from '@/lib/utils';
 import { useToast } from '@/components/ToastProvider';
 import { useConfirm } from '@/components/ConfirmDialogProvider';
 import { ChartTimeFilter, initChartRange, type TimeRange } from '@/components/ChartTimeFilter';
+import { SortableTh } from '@/components/SortableTh';
 import {
   ComposedChart, BarChart, Bar, Line, LineChart,
   XAxis, YAxis, CartesianGrid,
@@ -21,7 +22,6 @@ import {
   addFmoSubCategory,
   updateFmoSubCategoryLabel,
   deleteFmoSubCategory,
-  setWbsSubCategoryOverride,
 } from '@/actions/fmo';
 
 const TOOLTIP_STYLE = {
@@ -63,31 +63,171 @@ function Type2Badge({ entry, subCategories }: { entry: FmoWbsEntry; subCategorie
   return <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${color}`}>{label}</span>;
 }
 
+// ─── WBS edit modal ───────────────────────────────────────────────────────────
+
+function WbsEditModal({
+  entry,
+  subCategories,
+  onClose,
+}: {
+  entry: FmoWbsEntry;
+  subCategories: Record<string, WbsSubCategory>;
+  onClose: () => void;
+}) {
+  const t    = useTranslations('common');
+  const tWbs = useTranslations('wbs');
+  const [label,       setLabel]       = useState(entry.label);
+  const [subOverride, setSubOverride] = useState(entry.subCategoryOverride ?? '');
+  const [budgetHours, setBudgetHours] = useState(entry.budgetHours != null ? String(entry.budgetHours) : '');
+  const [budgetValue, setBudgetValue] = useState(entry.budgetValue != null ? String(entry.budgetValue) : '');
+  const [saving, setSaving] = useState(false);
+  const [error,  setError]  = useState('');
+
+  const isInternal = entry.billingClass !== 'V';
+  const autoSubCat = entry.subCategory ? (subCategories[entry.subCategory]?.label ?? entry.subCategory) : null;
+
+  async function save(e: React.FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+    const r = await updateFmoWbs(entry.code, {
+      label,
+      ...(isInternal && { subCategoryOverride: subOverride || null }),
+      budgetHours: budgetHours !== '' ? parseFloat(budgetHours) : null,
+      budgetValue: budgetValue !== '' ? parseFloat(budgetValue) : null,
+    });
+    setSaving(false);
+    if (r.ok) onClose();
+    else setError(r.error ?? t('error'));
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 px-4" onClick={onClose}>
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-lg" onClick={e => e.stopPropagation()}>
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+          <div>
+            <h2 className="text-base font-semibold text-slate-800">Edit WBS</h2>
+            <p className="text-xs text-slate-400 mt-0.5 font-mono">{entry.code}</p>
+          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-lg leading-none">✕</button>
+        </div>
+
+        {/* Meta strip */}
+        <div className="flex items-center gap-4 px-6 py-3 bg-slate-50 border-b border-slate-100 text-xs">
+          <span className="text-slate-400">Billing class</span>
+          <Type1Badge code={entry.code} />
+          <span className="text-slate-300">·</span>
+          <span className="text-slate-400">Source: <span className="text-slate-600">{entry.syncSource}</span></span>
+        </div>
+
+        {/* Form */}
+        <form onSubmit={save} className="px-6 py-5 space-y-4">
+          {/* Label */}
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1.5">Label / Name</label>
+            <input
+              value={label}
+              onChange={e => setLabel(e.target.value)}
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300"
+              placeholder="Human-readable name"
+              autoFocus
+            />
+          </div>
+
+          {/* Sub-category — only for internal WBS */}
+          {isInternal && (
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1.5">
+                Sub-category mapping
+                {!subOverride && (
+                  <span className="ml-2 font-normal text-slate-400">
+                    (auto: {autoSubCat
+                      ? <span className="text-slate-600">{autoSubCat}</span>
+                      : <span className="text-rose-500">unmapped</span>
+                    })
+                  </span>
+                )}
+              </label>
+              <select
+                value={subOverride}
+                onChange={e => setSubOverride(e.target.value)}
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300"
+              >
+                <option value="">{tWbs('autoOverride')}</option>
+                {Object.values(subCategories).map(sc => (
+                  <option key={sc.id} value={sc.id}>{sc.label}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {/* Budget */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1.5">Budget Hours</label>
+              <div className="flex items-center gap-1.5">
+                <input
+                  type="number"
+                  min="0"
+                  step="0.5"
+                  value={budgetHours}
+                  onChange={e => setBudgetHours(e.target.value)}
+                  placeholder="—"
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300"
+                />
+                <span className="text-xs text-slate-400 shrink-0">h</span>
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1.5">Budget Value</label>
+              <div className="flex items-center gap-1.5">
+                <input
+                  type="number"
+                  min="0"
+                  step="100"
+                  value={budgetValue}
+                  onChange={e => setBudgetValue(e.target.value)}
+                  placeholder="—"
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300"
+                />
+                <span className="text-xs text-slate-400 shrink-0">€</span>
+              </div>
+            </div>
+          </div>
+
+          {error && <p className="text-xs text-red-600">{error}</p>}
+
+          <div className="flex justify-end gap-2 pt-1">
+            <button type="button" onClick={onClose} className="px-4 py-2 text-sm text-slate-600 hover:text-slate-800">
+              {t('cancel')}
+            </button>
+            <button
+              type="submit"
+              disabled={saving}
+              className="px-4 py-2 text-sm bg-slate-800 text-white rounded-lg hover:bg-slate-700 disabled:opacity-50"
+            >
+              {saving ? t('saving') : 'Save changes'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 // ─── WBS table row ────────────────────────────────────────────────────────────
 
 function WbsRow({
   entry,
   subCategories,
+  onEdit,
 }: {
   entry: FmoWbsEntry;
   subCategories: Record<string, WbsSubCategory>;
+  onEdit: (entry: FmoWbsEntry) => void;
 }) {
-  const t = useTranslations('common');
-  const tWbs = useTranslations('wbs');
   const confirm = useConfirm();
   const toast   = useToast();
-  const [editing, setEditing]   = useState(false);
-  const [label, setLabel]       = useState(entry.label);
-  const [saving, setSaving]     = useState(false);
-  const [error, setError]       = useState('');
-
-  async function save() {
-    setSaving(true);
-    const r = await updateFmoWbs(entry.code, label);
-    setSaving(false);
-    if (r.ok) setEditing(false);
-    else setError(r.error ?? t('error'));
-  }
 
   async function remove() {
     if (!await confirm(`Delete WBS ${entry.code}?`, { destructive: true, confirmLabel: 'Delete' })) return;
@@ -95,67 +235,19 @@ function WbsRow({
     toast.success(`WBS ${entry.code} deleted`);
   }
 
-  async function changeOverride(override: string) {
-    await setWbsSubCategoryOverride(entry.code, override === '' ? null : override);
-  }
-
-  const isInternal = entry.billingClass === 'I';
-
   return (
     <tr className="hover:bg-slate-50">
       <td className="px-4 py-3 font-mono text-xs text-slate-800">{entry.code}</td>
       <td className="px-4 py-3">
-        {editing ? (
-          <input
-            value={label}
-            onChange={(e) => setLabel(e.target.value)}
-            className="border border-slate-300 rounded px-2 py-1 text-sm w-full"
-            autoFocus
-          />
-        ) : (
-          <span className="text-slate-700">{entry.label || <span className="italic text-slate-400">—</span>}</span>
-        )}
-        {error && <p className="text-xs text-red-600 mt-1">{error}</p>}
+        <span className="text-slate-700">{entry.label || <span className="italic text-slate-400">—</span>}</span>
       </td>
       <td className="px-4 py-3"><Type1Badge code={entry.code} /></td>
-      <td className="px-4 py-3">
-        {editing && isInternal ? (
-          <select
-            defaultValue={entry.subCategoryOverride ?? ''}
-            onChange={(e) => changeOverride(e.target.value)}
-            className="border border-slate-300 rounded px-2 py-1 text-sm"
-          >
-            <option value="">{tWbs('autoOverride')}</option>
-            {Object.values(subCategories).map((sc) => (
-              <option key={sc.id} value={sc.id}>{sc.label}</option>
-            ))}
-          </select>
-        ) : (
-          <Type2Badge entry={entry} subCategories={subCategories} />
-        )}
-      </td>
+      <td className="px-4 py-3"><Type2Badge entry={entry} subCategories={subCategories} /></td>
       <td className="px-4 py-3 text-xs text-slate-400">{entry.syncSource}</td>
       <td className="px-4 py-3">
         <div className="flex items-center gap-2">
-          {editing ? (
-            <>
-              <button
-                onClick={save}
-                disabled={saving}
-                className="text-xs px-2 py-1 bg-slate-800 text-white rounded hover:bg-slate-700 disabled:opacity-50"
-              >
-                {saving ? t('saving') : t('save')}
-              </button>
-              <button onClick={() => { setEditing(false); setLabel(entry.label); setError(''); }} className="text-xs text-slate-500 hover:text-slate-700">
-                {t('cancel')}
-              </button>
-            </>
-          ) : (
-            <>
-              <button onClick={() => setEditing(true)} className="text-xs text-slate-500 hover:text-slate-800">Edit</button>
-              <button onClick={remove} className="text-xs text-red-500 hover:text-red-700">Delete</button>
-            </>
-          )}
+          <button onClick={() => onEdit(entry)} className="text-xs text-slate-500 hover:text-slate-800">Edit</button>
+          <button onClick={remove} className="text-xs text-red-500 hover:text-red-700">Delete</button>
         </div>
       </td>
     </tr>
@@ -416,11 +508,30 @@ export default function WbsClient({
   const sorted = [...wbsEntries].sort((a, b) => a.code.localeCompare(b.code));
   const wbsMap = useMemo(() => Object.fromEntries(wbsEntries.map(w => [w.code, w])), [wbsEntries]);
 
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'wbs'>('dashboard');
-  const [adding, setAdding]       = useState(false);
-  const [view, setView]           = useState<'tree' | 'flat'>('tree');
+  const [activeTab, setActiveTab]       = useState<'dashboard' | 'wbs'>('dashboard');
+  const [adding, setAdding]             = useState(false);
+  const [editingEntry, setEditingEntry] = useState<FmoWbsEntry | null>(null);
+  const [view, setView]                 = useState<'tree' | 'flat'>('tree');
   const [search, setSearch]       = useState('');
   const [dashRange, setDashRange] = useState<TimeRange>(() => initChartRange(entries));
+  type WbsSortKey = 'code' | 'label' | 'billingClass' | 'totalHours' | 'billableHours' | 'internalHours' | 'cost' | 'revenue' | 'profit' | 'margin';
+  const [wbsSortKey, setWbsSortKey] = useState<WbsSortKey>('revenue');
+  const [wbsSortDir, setWbsSortDir] = useState<'asc' | 'desc'>('desc');
+  function onWbsSort(key: string) {
+    const k = key as WbsSortKey;
+    if (wbsSortKey === k) setWbsSortDir(d => d === 'desc' ? 'asc' : 'desc');
+    else { setWbsSortKey(k); setWbsSortDir('desc'); }
+  }
+
+  type CatSortKey = 'label' | 'hours' | 'cost' | 'revenue' | 'profit' | 'margin';
+  const [catSortKey, setCatSortKey] = useState<CatSortKey>('hours');
+  const [catSortDir, setCatSortDir] = useState<'asc' | 'desc'>('desc');
+  const [risksOpen, setRisksOpen]   = useState(false);
+  function onCatSort(key: string) {
+    const k = key as CatSortKey;
+    if (catSortKey === k) setCatSortDir(d => d === 'desc' ? 'asc' : 'desc');
+    else { setCatSortKey(k); setCatSortDir('desc'); }
+  }
 
   useEffect(() => {
     const v = localStorage.getItem(LS_KEY);
@@ -453,7 +564,8 @@ export default function WbsClient({
   function billingRateForEntry(e: FmoEntry, project: FmoProject | undefined, member: FmoMember | undefined): number {
     if (!project || !member) return 0;
     if (project.projectType === 'fixprice') return impliedRateByProject.get(project.id) ?? 0;
-    return project.memberRates[member.id]?.billingRate ?? 0;
+    const rate = project.memberRates[member.id];
+    return rateAtMonth(rate?.billingRate ?? 0, rate?.billingRateHistory, e.month);
   }
 
   const wbsStats = useMemo(() => {
@@ -470,7 +582,7 @@ export default function WbsClient({
       });
       const s = byWbs.get(code)!;
       s.totalHours += e.spentTime;
-      s.cost       += e.spentTime * (member?.costRate ?? 0);
+      s.cost       += e.spentTime * rateAtMonth(member?.costRate ?? 0, member?.costRateHistory, e.month);
       if (e.billingClass === 'V') {
         const project = projects.find(p => entryBelongsToProject(e, p));
         const rate    = billingRateForEntry(e, project, member);
@@ -495,7 +607,7 @@ export default function WbsClient({
       if (!monthMap.has(e.month)) monthMap.set(e.month, { cost: 0, revenue: 0 });
       const m      = monthMap.get(e.month)!;
       const member = nameToMember.get(e.user);
-      m.cost += e.spentTime * (member?.costRate ?? 0);
+      m.cost += e.spentTime * rateAtMonth(member?.costRate ?? 0, member?.costRateHistory, e.month);
       if (e.billingClass === 'V') {
         const project = projects.find(p => entryBelongsToProject(e, p));
         const rate    = billingRateForEntry(e, project, member);
@@ -546,7 +658,7 @@ export default function WbsClient({
 
     for (const e of rangedEntries) {
       const member    = nameToMember.get(e.user);
-      const costRate  = member?.costRate ?? 0;
+      const costRate  = rateAtMonth(member?.costRate ?? 0, member?.costRateHistory, e.month);
       const project   = projects.find(p => entryBelongsToProject(e, p));
       const isOps     = e.ticketId !== null && allOpsTickets.all.has(e.ticketId);
       const isFixOps  = e.ticketId !== null && allOpsTickets.fixOps.has(e.ticketId);
@@ -632,7 +744,31 @@ export default function WbsClient({
     });
   }, [monthlyStats]);
 
-  // ── Pass 3: Top revenue contributors (per member) ─────────────────────────
+  // ── Pass 3: Top revenue contributors + highest uncovered cost (per member) ──
+  const highestUncoveredCost = useMemo(() => {
+    const byMember = new Map<string, { cost: number; revenue: number }>();
+    for (const e of rangedEntries) {
+      if (!byMember.has(e.user)) byMember.set(e.user, { cost: 0, revenue: 0 });
+      const s      = byMember.get(e.user)!;
+      const member = nameToMember.get(e.user);
+      s.cost += e.spentTime * rateAtMonth(member?.costRate ?? 0, member?.costRateHistory, e.month);
+      if (e.billingClass === 'V') {
+        const project = projects.find(p => entryBelongsToProject(e, p));
+        s.revenue += e.spentTime * billingRateForEntry(e, project, member);
+      }
+    }
+    return [...byMember.entries()]
+      .map(([name, s]) => ({
+        name: name.length > 20 ? name.slice(0, 20) + '…' : name,
+        cost: Math.round(s.cost),
+        revenue: Math.round(s.revenue),
+        uncovered: Math.round(Math.max(0, s.cost - s.revenue)),
+      }))
+      .filter(r => r.uncovered > 0)
+      .sort((a, b) => b.uncovered - a.uncovered)
+      .slice(0, 5);
+  }, [rangedEntries, nameToMember, projects, impliedRateByProject]);
+
   const topContributors = useMemo(() => {
     const byMember = new Map<string, { revenue: number; cost: number }>();
     for (const e of rangedEntries) {
@@ -643,7 +779,7 @@ export default function WbsClient({
       const project = projects.find(p => entryBelongsToProject(e, p));
       const rate    = billingRateForEntry(e, project, member);
       s.revenue += e.spentTime * rate;
-      s.cost    += e.spentTime * (member?.costRate ?? 0);
+      s.cost    += e.spentTime * rateAtMonth(member?.costRate ?? 0, member?.costRateHistory, e.month);
     }
     return [...byMember.entries()]
       .map(([name, s]) => ({ name: name.length > 20 ? name.slice(0, 20) + '…' : name, revenue: Math.round(s.revenue), cost: Math.round(s.cost) }))
@@ -671,6 +807,34 @@ export default function WbsClient({
     return flags;
   }, [wbsStats, monthlyStats]);
 
+  const sortedWbsStats = useMemo(() => [...wbsStats].sort((a, b) => {
+    let av: number | string = 0, bv: number | string = 0;
+    if      (wbsSortKey === 'code')          { av = a.code;          bv = b.code; }
+    else if (wbsSortKey === 'label')         { av = a.label;         bv = b.label; }
+    else if (wbsSortKey === 'billingClass')  { av = a.billingClass;  bv = b.billingClass; }
+    else if (wbsSortKey === 'totalHours')    { av = a.totalHours;    bv = b.totalHours; }
+    else if (wbsSortKey === 'billableHours') { av = a.billableHours; bv = b.billableHours; }
+    else if (wbsSortKey === 'internalHours') { av = a.internalHours; bv = b.internalHours; }
+    else if (wbsSortKey === 'cost')    { av = a.cost;    bv = b.cost; }
+    else if (wbsSortKey === 'revenue') { av = a.revenue; bv = b.revenue; }
+    else if (wbsSortKey === 'profit')  { av = a.profit;  bv = b.profit; }
+    else if (wbsSortKey === 'margin')  { av = a.margin ?? -Infinity; bv = b.margin ?? -Infinity; }
+    const cmp = typeof av === 'string' ? av.localeCompare(bv as string) : (av as number) - (bv as number);
+    return wbsSortDir === 'desc' ? -cmp : cmp;
+  }), [wbsStats, wbsSortKey, wbsSortDir]);
+
+  const sortedCategoryStats = useMemo(() => [...categoryStats].sort((a, b) => {
+    let av: number | string = 0, bv: number | string = 0;
+    if      (catSortKey === 'label')   { av = a.label;  bv = b.label; }
+    else if (catSortKey === 'hours')   { av = a.hours;  bv = b.hours; }
+    else if (catSortKey === 'cost')    { av = a.cost;   bv = b.cost; }
+    else if (catSortKey === 'revenue') { av = a.revenue; bv = b.revenue; }
+    else if (catSortKey === 'profit')  { av = a.profit;  bv = b.profit; }
+    else if (catSortKey === 'margin')  { av = a.margin ?? -Infinity; bv = b.margin ?? -Infinity; }
+    const cmp = typeof av === 'string' ? av.localeCompare(bv as string) : (av as number) - (bv as number);
+    return catSortDir === 'desc' ? -cmp : cmp;
+  }), [categoryStats, catSortKey, catSortDir]);
+
   const totalRevenue   = wbsStats.reduce((s, r) => s + r.revenue,       0);
   const totalCost      = wbsStats.reduce((s, r) => s + r.cost,          0);
   const totalProfit    = totalRevenue - totalCost;
@@ -681,6 +845,13 @@ export default function WbsClient({
 
   return (
     <div className="p-6 space-y-6">
+      {editingEntry && (
+        <WbsEditModal
+          entry={editingEntry}
+          subCategories={subCategories}
+          onClose={() => setEditingEntry(null)}
+        />
+      )}
       {/* Header */}
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-slate-900">{tWbs('title')}</h1>
@@ -719,7 +890,27 @@ export default function WbsClient({
       {/* ── DASHBOARD ── */}
       {activeTab === 'dashboard' && (
         <div className="space-y-6">
-          <ChartTimeFilter value={dashRange} defaultRange={initChartRange(entries)} onChange={setDashRange} />
+          <div className="flex items-center gap-3">
+            <ChartTimeFilter value={dashRange} defaultRange={initChartRange(entries)} onChange={setDashRange} />
+            {risks.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setRisksOpen(o => !o)}
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-medium transition-colors ${
+                  risksOpen
+                    ? 'bg-amber-400 border-amber-500 text-white'
+                    : 'bg-amber-100 border-amber-300 text-amber-700 hover:bg-amber-200 hover:border-amber-400'
+                }`}
+                title="Toggle warnings"
+              >
+                <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+                  <line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" />
+                </svg>
+                {risks.length} {risks.length === 1 ? 'warning' : 'warnings'}
+              </button>
+            )}
+          </div>
 
           {/* KPI cards */}
           <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
@@ -737,6 +928,23 @@ export default function WbsClient({
             ))}
           </div>
 
+          {/* Collapsible risk/info panel */}
+          {risksOpen && risks.length > 0 && (
+            <div className="space-y-2">
+              {risks.map((r, i) => (
+                <div key={i} className={`flex gap-3 px-4 py-3 rounded-lg border text-sm ${
+                  r.type === 'warning' ? 'bg-amber-50 border-amber-200 text-amber-800' : 'bg-blue-50 border-blue-200 text-blue-800'
+                }`}>
+                  <span className="shrink-0">{r.type === 'warning' ? '⚠' : 'ℹ'}</span>
+                  <div>
+                    <span className="font-medium">{r.title}</span>
+                    <span className="ml-2 text-xs opacity-70">{r.detail}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
           {/* Category breakdown table */}
           {categoryStats.length > 0 && (
             <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
@@ -747,17 +955,17 @@ export default function WbsClient({
               <table className="w-full text-xs">
                 <thead>
                   <tr className="border-b border-slate-100 text-slate-500">
-                    <th className="text-left px-4 py-2.5 font-medium">Category</th>
-                    <th className="text-right px-4 py-2.5 font-medium">Hours</th>
-                    <th className="text-right px-4 py-2.5 font-medium">Cost</th>
-                    <th className="text-right px-4 py-2.5 font-medium">Revenue</th>
-                    <th className="text-right px-4 py-2.5 font-medium">Profit / Loss</th>
-                    <th className="text-right px-4 py-2.5 font-medium">Margin</th>
+                    <SortableTh col="label"   label="Category"     sortKey={catSortKey} sortDir={catSortDir} onSort={onCatSort} className="py-2.5" />
+                    <SortableTh col="hours"   label="Hours"        sortKey={catSortKey} sortDir={catSortDir} onSort={onCatSort} right className="py-2.5" />
+                    <SortableTh col="cost"    label="Cost"         sortKey={catSortKey} sortDir={catSortDir} onSort={onCatSort} right className="py-2.5" />
+                    <SortableTh col="revenue" label="Revenue"      sortKey={catSortKey} sortDir={catSortDir} onSort={onCatSort} right className="py-2.5" />
+                    <SortableTh col="profit"  label="Profit / Loss" sortKey={catSortKey} sortDir={catSortDir} onSort={onCatSort} right className="py-2.5" />
+                    <SortableTh col="margin"  label="Margin"       sortKey={catSortKey} sortDir={catSortDir} onSort={onCatSort} right className="py-2.5" />
                     <th className="px-4 py-2.5 font-medium">Hours share</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-50">
-                  {categoryStats.map(r => (
+                  {sortedCategoryStats.map(r => (
                     <tr key={r.label} className="hover:bg-slate-50/40">
                       <td className="px-4 py-2.5 font-medium text-slate-700">
                         <div className="flex items-center gap-2">
@@ -822,7 +1030,7 @@ export default function WbsClient({
             </div>
           )}
 
-          {/* Monthly P&L chart */}
+          {/* Charts */}
           {monthlyStats.length > 0 && (
             <div className="bg-white rounded-lg border border-slate-200 p-4">
               <h3 className="text-sm font-semibold text-gray-800 mb-1">Monthly Revenue vs Cost</h3>
@@ -836,26 +1044,9 @@ export default function WbsClient({
                   <Legend wrapperStyle={{ fontSize: '12px' }} />
                   <Bar dataKey="cost"    fill="#94a3b8" opacity={0.75} name="Cost"    radius={[3,3,0,0]} />
                   <Bar dataKey="revenue" fill="#4338ca" opacity={0.80} name="Revenue" radius={[3,3,0,0]} />
-                  <Line type="monotone" dataKey="profit" stroke="#0f766e" strokeWidth={2} dot={{ r: 3 }} name="Profit" />
+                  <Line type="monotone" dataKey="profit" stroke="#d97706" strokeWidth={2} dot={{ r: 3 }} name="Profit" />
                 </ComposedChart>
               </ResponsiveContainer>
-            </div>
-          )}
-
-          {/* Pass 3: Risk panel */}
-          {risks.length > 0 && (
-            <div className="space-y-2">
-              {risks.map((r, i) => (
-                <div key={i} className={`flex gap-3 px-4 py-3 rounded-lg border text-sm ${
-                  r.type === 'warning' ? 'bg-amber-50 border-amber-200 text-amber-800' : 'bg-blue-50 border-blue-200 text-blue-800'
-                }`}>
-                  <span className="shrink-0">{r.type === 'warning' ? '⚠' : 'ℹ'}</span>
-                  <div>
-                    <span className="font-medium">{r.title}</span>
-                    <span className="ml-2 text-xs opacity-70">{r.detail}</span>
-                  </div>
-                </div>
-              ))}
             </div>
           )}
 
@@ -913,7 +1104,7 @@ export default function WbsClient({
                   <YAxis tick={{ fontSize: 11 }} tickFormatter={v => `${Math.round(v / 1000)}k`} />
                   <Tooltip {...TOOLTIP_STYLE} formatter={v => [fmtEur(Number(v), locale), 'Cumulative P&L']} />
                   <ReferenceLine y={0} stroke="#94a3b8" strokeDasharray="4 2" />
-                  <Line type="monotone" dataKey="cumulative" stroke="#4338ca" strokeWidth={2.5} dot={{ r: 3 }} name="Cumulative P&L" />
+                  <Line type="monotone" dataKey="cumulative" stroke="#d97706" strokeWidth={2.5} dot={{ r: 3 }} name="Cumulative P&L" />
                 </LineChart>
               </ResponsiveContainer>
             </div>
@@ -925,7 +1116,7 @@ export default function WbsClient({
               <h3 className="text-sm font-semibold text-gray-800 mb-1">Top Revenue Contributors</h3>
               <p className="text-xs text-gray-400 mb-4">Which team members generate the most billable revenue in the period</p>
               <ResponsiveContainer width="100%" height={Math.max(160, topContributors.length * 34)}>
-                <BarChart data={topContributors} layout="vertical" margin={{ top: 4, right: 8, left: 0, bottom: 4 }}>
+                <BarChart data={topContributors} layout="vertical" margin={{ top: 4, right: 8, left: 0, bottom: 4 }} barSize={10}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" horizontal={false} />
                   <XAxis type="number" tick={{ fontSize: 10 }} tickFormatter={v => `${Math.round(v / 1000)}k`} />
                   <YAxis type="category" dataKey="name" tick={{ fontSize: 10 }} width={140} />
@@ -938,31 +1129,62 @@ export default function WbsClient({
             </div>
           )}
 
+          {/* Pass 3b: Highest uncovered cost by member */}
+          {highestUncoveredCost.length > 0 && (
+            <div className="bg-white rounded-lg border border-slate-200 p-4">
+              <h3 className="text-sm font-semibold text-gray-800 mb-1">Highest Uncovered Cost</h3>
+              <p className="text-xs text-gray-400 mb-4">Members whose total cost (incl. admin, presales, internal) exceeds billed revenue — top 5 by gap</p>
+              <ResponsiveContainer width="100%" height={Math.max(160, highestUncoveredCost.length * 34)}>
+                <BarChart data={highestUncoveredCost} layout="vertical" margin={{ top: 4, right: 8, left: 0, bottom: 4 }} barSize={10}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" horizontal={false} />
+                  <XAxis type="number" tick={{ fontSize: 10 }} tickFormatter={v => `${Math.round(v / 1000)}k`} />
+                  <YAxis type="category" dataKey="name" tick={{ fontSize: 10 }} width={140} />
+                  <Tooltip
+                    {...TOOLTIP_STYLE}
+                    content={({ active, payload }) => {
+                      if (!active || !payload?.length) return null;
+                      const d = payload[0].payload;
+                      return (
+                        <div style={{ ...TOOLTIP_STYLE.contentStyle, backgroundColor: '#fff' }} className="text-xs space-y-1 px-3 py-2">
+                          <p className="font-semibold text-slate-700">{d.name}</p>
+                          <p className="text-slate-500">Total Cost: <span className="font-medium text-slate-700">{fmtEur(d.cost, locale)}</span></p>
+                          <p className="text-slate-500">Revenue: <span className="font-medium text-indigo-600">{fmtEur(d.revenue, locale)}</span></p>
+                          <p className="text-slate-500">Uncovered: <span className="font-medium text-red-600">{fmtEur(d.uncovered, locale)}</span></p>
+                        </div>
+                      );
+                    }}
+                  />
+                  <Bar dataKey="uncovered" fill="#b91c1c" opacity={0.80} name="Uncovered Cost" radius={[0,3,3,0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+
           {/* WBS Breakdown table */}
           <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
             <div className="px-4 py-3 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
               <h3 className="text-sm font-semibold text-slate-700">WBS Element Breakdown</h3>
-              <span className="text-xs text-slate-400">{wbsStats.length} elements · sorted by revenue</span>
+              <span className="text-xs text-slate-400">{wbsStats.length} elements</span>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-xs">
                 <thead>
                   <tr className="border-b border-slate-100 text-slate-500">
-                    <th className="text-left px-4 py-2 font-medium">WBS Code</th>
-                    <th className="text-left px-4 py-2 font-medium">Label</th>
-                    <th className="text-left px-4 py-2 font-medium">Type</th>
-                    <th className="text-right px-4 py-2 font-medium">Total h</th>
-                    <th className="text-right px-4 py-2 font-medium">Billable h</th>
-                    <th className="text-right px-4 py-2 font-medium">Internal h</th>
-                    <th className="text-right px-4 py-2 font-medium">Cost</th>
-                    <th className="text-right px-4 py-2 font-medium">Revenue</th>
-                    <th className="text-right px-4 py-2 font-medium">Profit / Loss</th>
-                    <th className="text-right px-4 py-2 font-medium">Margin</th>
+                    <SortableTh col="code"          label="WBS Code"      sortKey={wbsSortKey} sortDir={wbsSortDir} onSort={onWbsSort} />
+                    <SortableTh col="label"         label="Label"         sortKey={wbsSortKey} sortDir={wbsSortDir} onSort={onWbsSort} />
+                    <SortableTh col="billingClass"  label="Type"          sortKey={wbsSortKey} sortDir={wbsSortDir} onSort={onWbsSort} />
+                    <SortableTh col="totalHours"    label="Total h"       sortKey={wbsSortKey} sortDir={wbsSortDir} onSort={onWbsSort} right />
+                    <SortableTh col="billableHours" label="Billable h"    sortKey={wbsSortKey} sortDir={wbsSortDir} onSort={onWbsSort} right />
+                    <SortableTh col="internalHours" label="Internal h"    sortKey={wbsSortKey} sortDir={wbsSortDir} onSort={onWbsSort} right />
+                    <SortableTh col="cost"          label="Cost"          sortKey={wbsSortKey} sortDir={wbsSortDir} onSort={onWbsSort} right />
+                    <SortableTh col="revenue"       label="Revenue"       sortKey={wbsSortKey} sortDir={wbsSortDir} onSort={onWbsSort} right />
+                    <SortableTh col="profit"        label="Profit / Loss" sortKey={wbsSortKey} sortDir={wbsSortDir} onSort={onWbsSort} right />
+                    <SortableTh col="margin"        label="Margin"        sortKey={wbsSortKey} sortDir={wbsSortDir} onSort={onWbsSort} right />
                     <th className="px-4 py-2 font-medium">Status</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-50">
-                  {wbsStats.map((r) => {
+                  {sortedWbsStats.map((r) => {
                     const isProfitable = r.profit > 0;
                     const isInternal   = r.billingClass === 'I';
                     const noRevenue    = !isInternal && r.billableHours > 0 && r.revenue === 0;
@@ -1035,7 +1257,7 @@ export default function WbsClient({
               <input type="text" value={search} onChange={(e) => setSearch(e.target.value)}
                 placeholder={tWbs('searchPlaceholder')}
                 className="border border-slate-300 rounded px-3 py-1.5 text-sm w-72" />
-              <WbsTree wbsEntries={wbsEntries} subCategories={subCategories} tickets={tickets} entries={entries} search={search} />
+              <WbsTree wbsEntries={wbsEntries} subCategories={subCategories} tickets={tickets} entries={entries} search={search} onEdit={setEditingEntry} />
             </>
           )}
 
@@ -1055,7 +1277,7 @@ export default function WbsClient({
                 <tbody className="divide-y divide-slate-100">
                   {adding && <AddWbsForm onClose={() => setAdding(false)} />}
                   {sorted.map((entry) => (
-                    <WbsRow key={entry.code} entry={entry} subCategories={subCategories} />
+                    <WbsRow key={entry.code} entry={entry} subCategories={subCategories} onEdit={setEditingEntry} />
                   ))}
                   {sorted.length === 0 && !adding && (
                     <tr><td colSpan={6} className="px-4 py-8 text-center text-slate-400">{tWbs('noEntries')}</td></tr>
