@@ -255,17 +255,12 @@ export async function writeFmoMappings(mappings: FmoMappingStore): Promise<void>
 
 const FMO_PROJECTS_KEY  = 'app:fmo:projects';
 
-export const readFmoProjects = unstable_cache(
-  async (): Promise<FmoProject[]> => {
-    const raw = await withRetry(() => redis.get<FmoProject[]>(FMO_PROJECTS_KEY));
-    return raw ?? [];
-  },
-  ['fmo-projects'],
-  { tags: ['fmo-projects'], revalidate: 300 }
-);
+export const readFmoProjects = cache(async (): Promise<FmoProject[]> => {
+  const raw = await withRetry(() => redis.get<FmoProject[]>(FMO_PROJECTS_KEY));
+  return (raw ?? []) as FmoProject[];
+});
 
 export async function writeFmoProjects(projects: FmoProject[]): Promise<void> {
   await withRetry(() => redis.set(FMO_PROJECTS_KEY, projects));
-  revalidateTag('fmo-projects', 'default');
 }
 
