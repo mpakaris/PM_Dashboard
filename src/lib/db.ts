@@ -234,25 +234,23 @@ export async function writeFmoStore(store: FmoStore): Promise<void> {
   await withRetry(() => redis.set(FMO_STORE_KEY, store));
 }
 
-export const readFmoMappings = unstable_cache(
-  async (): Promise<FmoMappingStore> => {
-    const raw = await withRetry(() => redis.get<any>(FMO_MAPPING_KEY));
-    if (!raw) return { ...EMPTY_FMO_MAPPINGS };
-    return {
-      wbs: raw.wbs ?? {},
-      tickets: raw.tickets ?? {},
-      members: raw.members ?? {},
-      billingClasses: raw.billingClasses ?? {},
-      subCategories: raw.subCategories ?? {},
-    };
-  },
-  ['fmo-mappings'],
-  { tags: ['fmo-mappings'], revalidate: 300 }
-);
+// readFmoMappings uses React cache() (request-level deduplication only).
+// unstable_cache caused stale Vercel Data Cache to be read by server actions and
+// written back to Redis, silently overwriting real data with old cached data.
+export const readFmoMappings = cache(async (): Promise<FmoMappingStore> => {
+  const raw = await withRetry(() => redis.get<any>(FMO_MAPPING_KEY));
+  if (!raw) return { ...EMPTY_FMO_MAPPINGS };
+  return {
+    wbs: raw.wbs ?? {},
+    tickets: raw.tickets ?? {},
+    members: raw.members ?? {},
+    billingClasses: raw.billingClasses ?? {},
+    subCategories: raw.subCategories ?? {},
+  };
+});
 
 export async function writeFmoMappings(mappings: FmoMappingStore): Promise<void> {
   await withRetry(() => redis.set(FMO_MAPPING_KEY, mappings));
-  revalidateTag('fmo-mappings', 'default');
 }
 
 const FMO_PROJECTS_KEY  = 'app:fmo:projects';
