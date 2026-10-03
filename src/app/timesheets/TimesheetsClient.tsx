@@ -613,7 +613,7 @@ function TicketRatesPanel({ user, entries, billingRates, costRate, isEmployee, t
                   <td className={`text-right px-4 py-3 tabular-nums ${hasRevenue ? 'text-emerald-600' : 'text-gray-300'}`}>
                     {hasRevenue ? fmtEur(summary.totalRevenue) : '—'}
                   </td>
-                  <td className={`text-right px-4 py-3 tabular-nums text-lg ${summary.trueDelta >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                  <td className={`text-right px-4 py-3 tabular-nums ${summary.trueDelta >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
                     {fmtNet(summary.trueDelta)}
                   </td>
                   <td className="px-5 py-3" />
@@ -1329,9 +1329,29 @@ export default function TimesheetsClient({ store }: { store: TimesheetStore }) {
         {store.sources.length > 0 && (
           <div className="mt-3 flex flex-wrap gap-2 items-center">
             <span className="text-xs text-gray-400">Loaded:</span>
-            {store.sources.map(s => (
-              <span key={s} className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">{s}</span>
-            ))}
+            {store.sources.map(s => {
+              const userForSource = store.entries.find(e => e.source === s)?.user;
+              return (
+                <span key={s} className="inline-flex items-center gap-1 text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full group">
+                  {s}
+                  {isAdmin && userForSource && (
+                    <button
+                      type="button"
+                      title={`Delete ${userForSource}'s data`}
+                      onClick={async () => {
+                        if (!await confirm(`Delete data for ${userForSource}?`, { body: `All entries from "${s}" will be permanently removed.`, destructive: true, confirmLabel: 'Delete' })) return;
+                        await deleteTimesheetPerson(userForSource);
+                        startTransition(() => router.refresh());
+                        toast.success(`${userForSource}'s data deleted`);
+                      }}
+                      className="text-gray-300 hover:text-red-500 transition-colors leading-none"
+                    >
+                      ×
+                    </button>
+                  )}
+                </span>
+              );
+            })}
             <span className="text-xs text-gray-400 ml-2">·</span>
             <span className="text-xs text-gray-500">
               {users.length} {users.length === 1 ? 'person' : 'people'} · {ticketCount} tickets · {store.entries.length} entries · {fmtH(overallTotal)} total
