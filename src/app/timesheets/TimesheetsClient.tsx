@@ -935,8 +935,8 @@ function IndividualMemberView({ user, entries, baselines, costRates, billingRate
       try {
         const { default: html2canvas } = await import('html2canvas');
         const { default: jsPDF } = await import('jspdf');
-        const canvas = await html2canvas(el, { scale: 2, backgroundColor: '#ffffff', useCORS: true });
-        const imgData = canvas.toDataURL('image/png');
+        const canvas = await html2canvas(el, { scale: 1.5, backgroundColor: '#ffffff', useCORS: true });
+        const imgData = canvas.toDataURL('image/jpeg', 0.85);
         const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
         const pageW = pdf.internal.pageSize.getWidth();
         const pageH = pdf.internal.pageSize.getHeight();
@@ -947,7 +947,7 @@ function IndividualMemberView({ user, entries, baselines, costRates, billingRate
         const pages = Math.ceil(imgH / usableH);
         for (let i = 0; i < pages; i++) {
           if (i > 0) pdf.addPage();
-          pdf.addImage(imgData, 'PNG', margin, margin - i * usableH, printW, imgH);
+          pdf.addImage(imgData, 'JPEG', margin, margin - i * usableH, printW, imgH);
         }
         pdf.save(`${user.replace(/\s+/g, '_')}_timesheet.pdf`);
       } finally {
