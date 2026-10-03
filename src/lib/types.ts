@@ -103,9 +103,10 @@ export interface TimesheetStore {
   entries: TimesheetEntry[];
   lastUpload: string;
   sources: string[];
-  baselines: Record<string, number>;        // user name → monthly hour baseline (default 160)
-  billingRates: Record<string, TicketRate>; // "project:::task" → billing config
+  baselines: Record<string, number>;        // user name → monthly hour baseline (default 140)
+  billingRates: Record<string, TicketRate>; // "user:::project:::task" → billing config
   costRates: Record<string, number>;        // user name → internal cost €/h
+  memberTypes: Record<string, 'employee' | 'freelancer'>; // default: employee
 }
 
 export interface ElsapRow {

@@ -11,6 +11,7 @@ import {
   updateTimesheetBaseline,
   updateTicketRate,
   updateMemberCostRate,
+  updateMemberType,
 } from '@/actions/timesheets';
 import { useToast } from '@/components/ToastProvider';
 import { useConfirm } from '@/components/ConfirmDialogProvider';
@@ -49,16 +50,18 @@ function round1(v: number): number {
   return Math.round(v * 10) / 10;
 }
 
+type MemberType = 'employee' | 'freelancer';
+
 type ChartPoint = {
-  month: string;        // display label e.g. "Jan '26"
-  rawMonth: string;     // "YYYY-MM" for sorting
+  month: string;
+  rawMonth: string;
   billable: number;
   internal: number;
   unaccounted: number;
-  avg3m: number;        // 3-month rolling average of total hours
+  avg3m: number;
   revenue: number;
-  cost: number;
-  capacityCost: number;
+  cost: number;         // effective cost: capacity-based for employee, logged-based for freelancer
+  capacityCost: number; // always baseline × costRate (shown as reference)
   utilizationPct: number;
   billablePct: number;
 };
@@ -349,7 +352,7 @@ function PersonTable({ entries, baseline, onBaselineChange, staticMode = false }
 
 type TooltipProps = {
   active?: boolean;
-  payload?: Array<{ name: string; value: number; fill?: string; color?: string }>;
+  payload?: Array<{ name: string; value: number }>;
   label?: string;
 };
 
@@ -377,21 +380,19 @@ function CapacityTooltip({ active, payload, label }: TooltipProps) {
 
 // ─── Charts ───────────────────────────────────────────────────────────────────
 
-function MemberCharts({ chartData, baseline, costRate }: {
+function MemberCharts({ chartData, baseline, costRate, isEmployee }: {
   chartData: ChartPoint[];
   baseline: number;
   costRate: number;
+  isEmployee: boolean;
 }) {
   const showFinancial = costRate > 0 || chartData.some(d => d.revenue > 0);
   const eurFmt = (v: number) => v >= 1000 ? `${Math.round(v / 1000)}k €` : `${v} €`;
-  const pctFmt = (v: number) => `${v}%`;
 
   return (
     <div className="space-y-4">
-      {/* Row 1: Capacity Breakdown + Efficiency Trend */}
       <div className="grid grid-cols-2 gap-4">
-
-        {/* Capacity Breakdown — stacked bars + 3M avg line */}
+        {/* Capacity Breakdown */}
         <div className="bg-white rounded-lg border border-gray-200 p-4">
           <p className="text-xs font-semibold text-gray-600 mb-0.5">Monthly Time Allocation</p>
           <p className="text-xs text-gray-400 mb-3">
@@ -416,11 +417,10 @@ function MemberCharts({ chartData, baseline, costRate }: {
             <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-slate-300 inline-block" />Internal</span>
             <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-amber-100 border border-amber-200 inline-block" />Unaccounted</span>
             <span className="flex items-center gap-1"><span className="border-t-2 border-dashed border-slate-400 w-4 inline-block" />3M avg</span>
-            <span className="flex items-center gap-1"><span className="border-t-2 border-dashed border-amber-400 w-4 inline-block" />{baseline}h</span>
           </div>
         </div>
 
-        {/* Efficiency Trend — billable % + utilization % */}
+        {/* Efficiency Trend */}
         <div className="bg-white rounded-lg border border-gray-200 p-4">
           <p className="text-xs font-semibold text-gray-600 mb-0.5">Efficiency Trend</p>
           <p className="text-xs text-gray-400 mb-3">Billable rate & FTE utilization per month — 70% target line</p>
@@ -429,7 +429,7 @@ function MemberCharts({ chartData, baseline, costRate }: {
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
               <XAxis dataKey="month" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
               <YAxis tick={{ fontSize: 10 }} axisLine={false} tickLine={false} width={34}
-                domain={[0, 100]} tickFormatter={pctFmt} />
+                domain={[0, 100]} tickFormatter={v => `${v}%`} />
               <Tooltip formatter={(v) => `${v}%`} />
               <Legend wrapperStyle={{ fontSize: 10, paddingTop: 4 }} />
               <ReferenceLine y={70} stroke="#f59e0b" strokeDasharray="3 3" strokeWidth={1}
@@ -444,12 +444,14 @@ function MemberCharts({ chartData, baseline, costRate }: {
         </div>
       </div>
 
-      {/* Row 2: Revenue vs Cost (full width, only when financial data exists) */}
+      {/* Revenue vs Cost (full width) */}
       {showFinancial && (
         <div className="bg-white rounded-lg border border-gray-200 p-4">
           <p className="text-xs font-semibold text-gray-600 mb-0.5">Revenue vs. Cost — Monthly</p>
           <p className="text-xs text-gray-400 mb-3">
-            Revenue earned · Logged cost · Full FTE capacity cost ({baseline}h × {costRate} €/h)
+            {isEmployee
+              ? `Revenue · Employee cost (${baseline}h × ${costRate} €/h — always on) · FTE capacity cost`
+              : `Revenue · Logged cost (actual hours × ${costRate} €/h)`}
           </p>
           <ResponsiveContainer width="100%" height={190}>
             <BarChart data={chartData} margin={{ top: 5, right: 24, bottom: 0, left: 10 }} barCategoryGap="30%" barGap={3}>
@@ -459,8 +461,8 @@ function MemberCharts({ chartData, baseline, costRate }: {
               <Tooltip formatter={(v) => fmtEur(Number(v))} />
               <Legend wrapperStyle={{ fontSize: 10, paddingTop: 4 }} />
               <Bar dataKey="revenue" name="Revenue" fill="#10b981" radius={[3, 3, 0, 0]} />
-              <Bar dataKey="cost" name="Logged Cost" fill="#f87171" radius={[3, 3, 0, 0]} />
-              {costRate > 0 && (
+              <Bar dataKey="cost" name={isEmployee ? 'Employee Cost' : 'Logged Cost'} fill="#f87171" radius={[3, 3, 0, 0]} />
+              {isEmployee && costRate > 0 && (
                 <Bar dataKey="capacityCost" name="FTE Capacity Cost" fill="#e2e8f0" radius={[3, 3, 0, 0]} />
               )}
             </BarChart>
@@ -473,11 +475,13 @@ function MemberCharts({ chartData, baseline, costRate }: {
 
 // ─── Ticket Rates Panel ───────────────────────────────────────────────────────
 
-function TicketRatesPanel({ user, entries, billingRates, costRate, onRateChange }: {
+function TicketRatesPanel({ user, entries, billingRates, costRate, isEmployee, totalCapacityHours, onRateChange }: {
   user: string;
   entries: TimesheetEntry[];
   billingRates: Record<string, TicketRate>;
   costRate: number;
+  isEmployee: boolean;
+  totalCapacityHours: number;
   onRateChange: (key: string, billable: boolean, rate: number) => void;
 }) {
   const tickets = useMemo(() => {
@@ -497,12 +501,21 @@ function TicketRatesPanel({ user, entries, billingRates, costRate, onRateChange 
       totalHours += hours;
       if (rate?.billable && rate.rate > 0) totalRevenue += hours * rate.rate;
     }
-    const totalCost = totalHours * costRate;
-    return { totalHours, totalRevenue, totalCost, delta: totalRevenue - totalCost };
-  }, [tickets, billingRates, costRate]);
+    const loggedCost = totalHours * costRate;
+    const unaccountedHours = isEmployee ? Math.max(0, totalCapacityHours - totalHours) : 0;
+    const idleCost = unaccountedHours * costRate;
+    const trueCost = isEmployee ? totalCapacityHours * costRate : loggedCost;
+    return {
+      totalHours, totalRevenue, loggedCost,
+      unaccountedHours, idleCost, trueCost,
+      ticketDelta: totalRevenue - loggedCost,
+      trueDelta: totalRevenue - trueCost,
+    };
+  }, [tickets, billingRates, costRate, isEmployee, totalCapacityHours]);
 
   const hasCost = costRate > 0;
   const hasRevenue = summary.totalRevenue > 0;
+  const showIdleRow = isEmployee && summary.unaccountedHours > 0.1 && hasCost;
 
   return (
     <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
@@ -558,22 +571,54 @@ function TicketRatesPanel({ user, entries, billingRates, costRate, onRateChange 
           </tbody>
           {(hasCost || hasRevenue) && (
             <tfoot>
-              <tr className="border-t-2 border-gray-300 bg-gray-50 font-semibold">
-                <td className="px-5 py-3 text-gray-600">Total</td>
-                <td className="text-right px-4 py-3 text-gray-500 tabular-nums">{fmtH(summary.totalHours)}</td>
-                {hasCost && (
-                  <td className="text-right px-4 py-3 text-red-500 font-bold tabular-nums">{fmtEur(summary.totalCost)}</td>
-                )}
-                <td className={`text-right px-4 py-3 font-bold tabular-nums ${hasRevenue ? 'text-emerald-600' : 'text-gray-300'}`}>
+              {/* Ticket subtotal */}
+              <tr className="border-t-2 border-gray-200 bg-gray-50 font-semibold">
+                <td className="px-5 py-2.5 text-gray-600">
+                  {showIdleRow ? 'Ticket subtotal' : 'Total'}
+                </td>
+                <td className="text-right px-4 py-2.5 text-gray-500 tabular-nums">{fmtH(summary.totalHours)}</td>
+                {hasCost && <td className="text-right px-4 py-2.5 text-red-400 tabular-nums">{fmtEur(summary.loggedCost)}</td>}
+                <td className={`text-right px-4 py-2.5 tabular-nums ${hasRevenue ? 'text-emerald-600' : 'text-gray-300'}`}>
                   {hasRevenue ? fmtEur(summary.totalRevenue) : '—'}
                 </td>
                 {hasCost && (
-                  <td className={`text-right px-4 py-3 font-bold tabular-nums ${summary.delta >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
-                    {fmtNet(summary.delta)}
+                  <td className={`text-right px-4 py-2.5 tabular-nums font-bold ${summary.ticketDelta >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                    {fmtNet(summary.ticketDelta)}
                   </td>
                 )}
-                <td className="px-5 py-3" />
+                <td className="px-5 py-2.5" />
               </tr>
+
+              {/* Idle cost row — employee only */}
+              {showIdleRow && (
+                <tr className="bg-amber-50 border-t border-amber-100">
+                  <td className="px-5 py-2 text-amber-700 italic">
+                    Idle time
+                    <span className="ml-1 text-amber-500 font-normal not-italic">— employee cost regardless of activity</span>
+                  </td>
+                  <td className="text-right px-4 py-2 text-amber-500 tabular-nums italic">{fmtH(summary.unaccountedHours)}</td>
+                  <td className="text-right px-4 py-2 text-amber-600 font-medium tabular-nums italic">{fmtEur(summary.idleCost)}</td>
+                  <td className="text-right px-4 py-2 text-gray-300 tabular-nums">—</td>
+                  <td className="text-right px-4 py-2 text-red-400 font-semibold tabular-nums italic">{fmtNet(-summary.idleCost)}</td>
+                  <td className="px-5 py-2" />
+                </tr>
+              )}
+
+              {/* True employee total */}
+              {showIdleRow && (
+                <tr className="border-t-2 border-gray-300 bg-slate-50 font-bold">
+                  <td className="px-5 py-3 text-gray-700">True employee cost</td>
+                  <td className="text-right px-4 py-3 text-gray-600 tabular-nums">{fmtH(totalCapacityHours)}</td>
+                  <td className="text-right px-4 py-3 text-red-600 tabular-nums">{fmtEur(summary.trueCost)}</td>
+                  <td className={`text-right px-4 py-3 tabular-nums ${hasRevenue ? 'text-emerald-600' : 'text-gray-300'}`}>
+                    {hasRevenue ? fmtEur(summary.totalRevenue) : '—'}
+                  </td>
+                  <td className={`text-right px-4 py-3 tabular-nums text-lg ${summary.trueDelta >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                    {fmtNet(summary.trueDelta)}
+                  </td>
+                  <td className="px-5 py-3" />
+                </tr>
+              )}
             </tfoot>
           )}
         </table>
@@ -584,15 +629,17 @@ function TicketRatesPanel({ user, entries, billingRates, costRate, onRateChange 
 
 // ─── Print View ───────────────────────────────────────────────────────────────
 
-function PrintView({ user, entries, billingRates, costRates, baselines }: {
+function PrintView({ user, entries, billingRates, costRates, baselines, memberTypes }: {
   user: string;
   entries: TimesheetEntry[];
   billingRates: Record<string, TicketRate>;
   costRates: Record<string, number>;
   baselines: Record<string, number>;
+  memberTypes: Record<string, MemberType>;
 }) {
   const baseline = baselines[user] ?? DEFAULT_BASELINE;
   const costRate = costRates[user] ?? 0;
+  const isEmployee = (memberTypes[user] ?? 'employee') === 'employee';
 
   const months = useMemo(() => [...new Set(entries.map(e => e.month))].sort(), [entries]);
 
@@ -609,7 +656,7 @@ function PrintView({ user, entries, billingRates, costRates, baselines }: {
 
   const { totalHours, billableHours, revenue, chartData, ticketList } = useMemo(() => {
     let totalHours = 0, billableHours = 0, revenue = 0;
-    const mMap = new Map<string, { b: number; i: number; rev: number }>();
+    const mMap = new Map<string, { b: number; i: number; rev: number; logged: number }>();
     const tickMap = new Map<string, { project: string; task: string; hours: number; revenue: number }>();
     for (const e of entries) {
       const rKey = `${user}:::${e.project}:::${e.task}`;
@@ -617,41 +664,42 @@ function PrintView({ user, entries, billingRates, costRates, baselines }: {
       const isBill = !!(r?.billable && r.rate > 0);
       const rev = isBill ? e.spentTime * r.rate : 0;
       totalHours += e.spentTime; if (isBill) { billableHours += e.spentTime; revenue += rev; }
-      if (!mMap.has(e.month)) mMap.set(e.month, { b: 0, i: 0, rev: 0 });
+      if (!mMap.has(e.month)) mMap.set(e.month, { b: 0, i: 0, rev: 0, logged: 0 });
       const md = mMap.get(e.month)!;
       if (isBill) md.b += e.spentTime; else md.i += e.spentTime;
-      md.rev += rev;
+      md.rev += rev; md.logged += e.spentTime;
       if (!tickMap.has(rKey)) tickMap.set(rKey, { project: e.project, task: e.task, hours: 0, revenue: 0 });
       const td = tickMap.get(rKey)!; td.hours += e.spentTime; td.revenue += rev;
     }
-    const monthTotals = new Map(months.map(m => [m, (mMap.get(m)?.b ?? 0) + (mMap.get(m)?.i ?? 0)]));
+    const monthTotals = new Map(months.map(m => [m, mMap.get(m)?.logged ?? 0]));
     const chartData = months.map((m, i) => {
-      const d = mMap.get(m) ?? { b: 0, i: 0, rev: 0 };
-      const logged = d.b + d.i;
+      const d = mMap.get(m) ?? { b: 0, i: 0, rev: 0, logged: 0 };
       const slice = months.slice(Math.max(0, i - 2), i + 1);
       const avg3m = round1(slice.reduce((s, mo) => s + (monthTotals.get(mo) ?? 0), 0) / slice.length);
+      const effectiveCost = isEmployee ? Math.round(baseline * costRate) : Math.round(d.logged * costRate);
       return {
-        month: fmtMonth(m),
+        month: fmtMonth(m), rawMonth: m,
         billable: round1(d.b), internal: round1(d.i),
-        unaccounted: round1(Math.max(0, baseline - logged)),
-        avg3m,
-        revenue: Math.round(d.rev),
-        cost: Math.round(logged * costRate),
+        unaccounted: round1(Math.max(0, baseline - d.logged)),
+        avg3m, revenue: Math.round(d.rev),
+        cost: effectiveCost,
         capacityCost: Math.round(baseline * costRate),
-        utilizationPct: baseline > 0 ? Math.round((logged / baseline) * 100) : 0,
-        billablePct: logged > 0 ? Math.round((d.b / logged) * 100) : 0,
+        utilizationPct: baseline > 0 ? Math.round((d.logged / baseline) * 100) : 0,
+        billablePct: d.logged > 0 ? Math.round((d.b / d.logged) * 100) : 0,
       };
     });
     return { totalHours, billableHours, revenue, chartData, ticketList: [...tickMap.entries()].sort(([, a], [, b]) => a.task.localeCompare(b.task)) };
-  }, [entries, billingRates, costRate, user, months, baseline]);
+  }, [entries, billingRates, costRate, user, months, baseline, isEmployee]);
 
-  const cost = totalHours * costRate;
   const totalCapacity = baseline * months.length;
   const unaccountedHours = Math.max(0, totalCapacity - totalHours);
-  const avgBillingRate = billableHours > 0 ? revenue / billableHours : 0;
-  const untappedRevenue = unaccountedHours * avgBillingRate;
+  const effectiveCost = isEmployee ? totalCapacity * costRate : totalHours * costRate;
+  const idleCost = isEmployee ? unaccountedHours * costRate : 0;
+  const net = revenue - effectiveCost;
   const billablePct = totalHours > 0 ? Math.round((billableHours / totalHours) * 100) : 0;
   const utilizationPct = totalCapacity > 0 ? Math.round((totalHours / totalCapacity) * 100) : 0;
+  const avgBillingRate = billableHours > 0 ? revenue / billableHours : 0;
+  const untappedRevenue = unaccountedHours * avgBillingRate;
   const period = months.length > 0 ? `${fmtMonth(months[0])} – ${fmtMonth(months[months.length - 1])}` : '';
   const kpiBillColor = billablePct >= 70 ? '#10b981' : billablePct >= 50 ? '#f59e0b' : '#ef4444';
   const kpiUtilColor = utilizationPct >= 90 ? '#10b981' : utilizationPct >= 70 ? '#f59e0b' : '#ef4444';
@@ -660,10 +708,14 @@ function PrintView({ user, entries, billingRates, costRates, baselines }: {
 
   return (
     <div style={{ ...s, width: 1100, padding: 36, background: '#ffffff', color: '#1e293b' }}>
+      {/* Header */}
       <div style={{ marginBottom: 24, paddingBottom: 16, borderBottom: '2px solid #e2e8f0' }}>
         <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0, color: '#0f172a' }}>{user}</h1>
         <p style={{ fontSize: 12, color: '#94a3b8', margin: '4px 0 0' }}>{period}</p>
-        <div style={{ display: 'flex', gap: 16, marginTop: 10 }}>
+        <div style={{ display: 'flex', gap: 10, marginTop: 10 }}>
+          <span style={{ fontSize: 11, background: isEmployee ? '#f1f5f9' : '#f0fdf4', borderRadius: 6, padding: '4px 10px', color: isEmployee ? '#475569' : '#16a34a', fontWeight: 600 }}>
+            {isEmployee ? 'Employee' : 'Freelancer'}
+          </span>
           <span style={{ fontSize: 11, background: '#f1f5f9', borderRadius: 6, padding: '4px 10px', color: '#475569', fontWeight: 500 }}>
             Baseline: {baseline}h / month
           </span>
@@ -672,7 +724,7 @@ function PrintView({ user, entries, billingRates, costRates, baselines }: {
           </span>
           {costRate > 0 && (
             <span style={{ fontSize: 11, background: '#f1f5f9', borderRadius: 6, padding: '4px 10px', color: '#475569', fontWeight: 500 }}>
-              Full FTE cost: {fmtEur(baseline * costRate)} / month
+              {isEmployee ? `Full FTE cost: ${fmtEur(baseline * costRate)} / month` : `Cost on hours worked only`}
             </span>
           )}
         </div>
@@ -697,36 +749,45 @@ function PrintView({ user, entries, billingRates, costRates, baselines }: {
       <div style={{ display: 'flex', gap: 10, marginBottom: 28 }}>
         {[
           { label: 'Revenue', value: revenue > 0 ? fmtEur(revenue) : '—', color: revenue > 0 ? '#10b981' : '#94a3b8' },
-          { label: 'Cost', value: cost > 0 ? fmtEur(cost) : '—', color: cost > 0 ? '#ef4444' : '#94a3b8' },
-          { label: 'Net P&L', value: revenue === 0 && cost === 0 ? '—' : fmtNet(revenue - cost), color: revenue === 0 && cost === 0 ? '#94a3b8' : (revenue - cost) >= 0 ? '#10b981' : '#ef4444' },
-          { label: 'Untapped Potential', value: untappedRevenue > 0 ? fmtEur(untappedRevenue) : '—', color: untappedRevenue > 0 ? '#f59e0b' : '#94a3b8' },
+          {
+            label: isEmployee ? 'Employee Cost' : 'Cost',
+            value: effectiveCost > 0 ? fmtEur(effectiveCost) : '—',
+            color: effectiveCost > 0 ? '#ef4444' : '#94a3b8',
+          },
+          { label: 'Net P&L', value: revenue === 0 && effectiveCost === 0 ? '—' : fmtNet(net), color: revenue === 0 && effectiveCost === 0 ? '#94a3b8' : net >= 0 ? '#10b981' : '#ef4444' },
+          {
+            label: isEmployee ? 'Untapped (costs money)' : 'Untapped Potential',
+            value: untappedRevenue > 0 ? fmtEur(untappedRevenue) : '—',
+            color: untappedRevenue > 0 ? (isEmployee ? '#ef4444' : '#f59e0b') : '#94a3b8',
+          },
         ].map(({ label, value, color }) => (
           <div key={label} style={{ flex: 1, border: '1px solid #e2e8f0', borderRadius: 8, padding: '12px 14px' }}>
             <p style={{ fontSize: 9, color: '#94a3b8', margin: '0 0 5px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{label}</p>
             <p style={{ fontSize: 18, fontWeight: 700, margin: 0, color }}>{value}</p>
+            {isEmployee && idleCost > 0 && label === (isEmployee ? 'Employee Cost' : 'Cost') && (
+              <p style={{ fontSize: 9, color: '#f87171', margin: '4px 0 0' }}>incl. {fmtEur(idleCost)} idle cost</p>
+            )}
           </div>
         ))}
       </div>
 
       {/* Charts */}
-      <div style={{ display: 'flex', gap: 16, marginBottom: 28 }}>
+      <div style={{ display: 'flex', gap: 16, marginBottom: showFinancial ? 16 : 28 }}>
         <div style={{ flex: 1, border: '1px solid #e2e8f0', borderRadius: 8, padding: 16 }}>
-          <p style={{ fontSize: 11, fontWeight: 600, color: '#475569', margin: '0 0 4px' }}>Time Allocation + 3M Trend</p>
-          <p style={{ fontSize: 9, color: '#94a3b8', margin: '0 0 12px' }}>Billable · Internal · Unaccounted · 3M avg line · {baseline}h baseline</p>
+          <p style={{ fontSize: 11, fontWeight: 600, color: '#475569', margin: '0 0 12px' }}>Time Allocation + 3M Trend</p>
           <ComposedChart width={490} height={160} data={chartData} margin={{ top: 4, right: 10, bottom: 0, left: 0 }}>
             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
             <XAxis dataKey="month" tick={{ fontSize: 9 }} axisLine={false} tickLine={false} />
             <YAxis tick={{ fontSize: 9 }} axisLine={false} tickLine={false} width={28} />
             <ReferenceLine y={baseline} stroke="#f59e0b" strokeDasharray="4 4" strokeWidth={1.5} />
-            <Bar dataKey="billable" name="Billable" fill="#10b981" stackId="a" />
-            <Bar dataKey="internal" name="Internal" fill="#94a3b8" stackId="a" />
-            <Bar dataKey="unaccounted" name="Unaccounted" fill="#fef3c7" stackId="a" radius={[2, 2, 0, 0]} />
+            <Bar dataKey="billable" fill="#10b981" stackId="a" />
+            <Bar dataKey="internal" fill="#94a3b8" stackId="a" />
+            <Bar dataKey="unaccounted" fill="#fef3c7" stackId="a" radius={[2, 2, 0, 0]} />
             <Line type="monotone" dataKey="avg3m" stroke="#475569" strokeWidth={2} dot={false} strokeDasharray="5 3" connectNulls />
           </ComposedChart>
         </div>
         <div style={{ flex: 1, border: '1px solid #e2e8f0', borderRadius: 8, padding: 16 }}>
-          <p style={{ fontSize: 11, fontWeight: 600, color: '#475569', margin: '0 0 4px' }}>Efficiency Trend</p>
-          <p style={{ fontSize: 9, color: '#94a3b8', margin: '0 0 12px' }}>Billable rate & FTE utilization — 70% target</p>
+          <p style={{ fontSize: 11, fontWeight: 600, color: '#475569', margin: '0 0 12px' }}>Efficiency Trend</p>
           <LineChart width={490} height={160} data={chartData} margin={{ top: 4, right: 10, bottom: 0, left: 0 }}>
             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
             <XAxis dataKey="month" tick={{ fontSize: 9 }} axisLine={false} tickLine={false} />
@@ -740,15 +801,16 @@ function PrintView({ user, entries, billingRates, costRates, baselines }: {
 
       {showFinancial && (
         <div style={{ border: '1px solid #e2e8f0', borderRadius: 8, padding: 16, marginBottom: 28 }}>
-          <p style={{ fontSize: 11, fontWeight: 600, color: '#475569', margin: '0 0 4px' }}>Revenue vs. Cost</p>
-          <p style={{ fontSize: 9, color: '#94a3b8', margin: '0 0 12px' }}>Revenue · Logged cost · FTE capacity cost</p>
+          <p style={{ fontSize: 11, fontWeight: 600, color: '#475569', margin: '0 0 12px' }}>
+            Revenue vs. {isEmployee ? 'Employee Cost' : 'Cost'}
+          </p>
           <BarChart width={1028} height={140} data={chartData} margin={{ top: 4, right: 10, bottom: 0, left: 10 }} barCategoryGap="30%" barGap={3}>
             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
             <XAxis dataKey="month" tick={{ fontSize: 9 }} axisLine={false} tickLine={false} />
             <YAxis tick={{ fontSize: 9 }} axisLine={false} tickLine={false} width={36} tickFormatter={v => v >= 1000 ? `${Math.round(v / 1000)}k` : String(v)} />
             <Bar dataKey="revenue" fill="#10b981" radius={[2, 2, 0, 0]} />
             <Bar dataKey="cost" fill="#f87171" radius={[2, 2, 0, 0]} />
-            {costRate > 0 && <Bar dataKey="capacityCost" fill="#e2e8f0" radius={[2, 2, 0, 0]} />}
+            {isEmployee && costRate > 0 && <Bar dataKey="capacityCost" fill="#e2e8f0" radius={[2, 2, 0, 0]} />}
           </BarChart>
         </div>
       )}
@@ -808,19 +870,17 @@ function PrintView({ user, entries, billingRates, costRates, baselines }: {
             <thead>
               <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
                 <th style={{ textAlign: 'left', padding: '7px 10px', color: '#64748b', fontWeight: 600 }}>Ticket</th>
-                <th style={{ textAlign: 'left', padding: '7px 10px', color: '#64748b', fontWeight: 600 }}>Project</th>
                 <th style={{ textAlign: 'right', padding: '7px 10px', color: '#64748b', fontWeight: 600 }}>Hours</th>
                 <th style={{ textAlign: 'right', padding: '7px 10px', color: '#64748b', fontWeight: 600 }}>Type</th>
                 <th style={{ textAlign: 'right', padding: '7px 10px', color: '#64748b', fontWeight: 600 }}>Revenue</th>
               </tr>
             </thead>
             <tbody>
-              {ticketList.map(([key, { project, task, hours, revenue: tRev }]) => {
+              {ticketList.map(([key, { task, hours, revenue: tRev }]) => {
                 const r = billingRates[key]; const isBill = !!(r?.billable && r.rate > 0);
                 return (
                   <tr key={key} style={{ borderBottom: '1px solid #f1f5f9' }}>
                     <td style={{ padding: '6px 10px', color: '#334155' }}>{task}</td>
-                    <td style={{ padding: '6px 10px', color: '#94a3b8' }}>{project}</td>
                     <td style={{ textAlign: 'right', padding: '6px 10px', color: '#475569' }}>{fmtH(hours)}</td>
                     <td style={{ textAlign: 'right', padding: '6px 10px', color: isBill ? '#10b981' : '#94a3b8', fontWeight: isBill ? 600 : 400 }}>
                       {isBill ? `Billable · ${r.rate} €/h` : 'Internal'}
@@ -841,15 +901,17 @@ function PrintView({ user, entries, billingRates, costRates, baselines }: {
 
 // ─── Individual Member View ───────────────────────────────────────────────────
 
-function IndividualMemberView({ user, entries, baselines, costRates, billingRates, onDeletePerson, onBaselineChange, onCostRateChange, onTicketRateChange }: {
+function IndividualMemberView({ user, entries, baselines, costRates, billingRates, memberTypes, onDeletePerson, onBaselineChange, onCostRateChange, onMemberTypeChange, onTicketRateChange }: {
   user: string;
   entries: TimesheetEntry[];
   baselines: Record<string, number>;
   costRates: Record<string, number>;
   billingRates: Record<string, TicketRate>;
+  memberTypes: Record<string, MemberType>;
   onDeletePerson: () => void;
   onBaselineChange: (h: number) => void;
   onCostRateChange: (rate: number) => void;
+  onMemberTypeChange: (type: MemberType) => void;
   onTicketRateChange: (key: string, billable: boolean, rate: number) => void;
 }) {
   const isAdmin = useRole() === 'admin';
@@ -857,6 +919,8 @@ function IndividualMemberView({ user, entries, baselines, costRates, billingRate
   const toast = useToast();
   const baseline = baselines[user] ?? DEFAULT_BASELINE;
   const costRate = costRates[user] ?? 0;
+  const memberType: MemberType = memberTypes[user] ?? 'employee';
+  const isEmployee = memberType === 'employee';
 
   const [costInput, setCostInput] = useState(costRate ? String(costRate) : '');
   const [isPrinting, setIsPrinting] = useState(false);
@@ -894,6 +958,7 @@ function IndividualMemberView({ user, entries, baselines, costRates, billingRate
   }, [isPrinting, user]);
 
   const months = useMemo(() => [...new Set(entries.map(e => e.month))].sort(), [entries]);
+  const totalCapacityHours = baseline * months.length;
 
   const stats = useMemo(() => {
     let totalHours = 0, billableHours = 0, revenue = 0;
@@ -903,61 +968,62 @@ function IndividualMemberView({ user, entries, baselines, costRates, billingRate
       totalHours += e.spentTime;
       if (isBill) { billableHours += e.spentTime; revenue += e.spentTime * r.rate; }
     }
-    const cost = totalHours * costRate;
-    const totalCapacity = baseline * months.length;
-    const unaccountedHours = Math.max(0, totalCapacity - totalHours);
+    const unaccountedHours = Math.max(0, totalCapacityHours - totalHours);
     const avgBillingRate = billableHours > 0 ? revenue / billableHours : 0;
     const untappedRevenue = unaccountedHours * avgBillingRate;
-    const capacityCost = totalCapacity * costRate;
+    // Employee: cost = full capacity; Freelancer: cost = logged hours only
+    const effectiveCost = isEmployee ? totalCapacityHours * costRate : totalHours * costRate;
+    const idleCost = isEmployee ? unaccountedHours * costRate : 0;
     return {
       totalHours, billableHours, unaccountedHours,
-      revenue, cost, net: revenue - cost,
+      revenue, effectiveCost, idleCost,
+      net: revenue - effectiveCost,
       billablePct: totalHours > 0 ? Math.round((billableHours / totalHours) * 100) : 0,
-      utilizationPct: totalCapacity > 0 ? Math.round((totalHours / totalCapacity) * 100) : 0,
-      totalCapacity, capacityCost, untappedRevenue, avgBillingRate,
+      utilizationPct: totalCapacityHours > 0 ? Math.round((totalHours / totalCapacityHours) * 100) : 0,
+      totalCapacityHours, untappedRevenue, avgBillingRate,
     };
-  }, [entries, billingRates, costRate, user, baseline, months]);
+  }, [entries, billingRates, costRate, user, totalCapacityHours, isEmployee]);
 
   const chartData: ChartPoint[] = useMemo(() => {
-    const map = new Map<string, { b: number; i: number; rev: number; loggedCost: number }>();
+    const map = new Map<string, { b: number; i: number; rev: number; logged: number }>();
     for (const e of entries) {
       const r = billingRates[`${user}:::${e.project}:::${e.task}`];
       const isBill = !!(r?.billable && r.rate > 0);
-      if (!map.has(e.month)) map.set(e.month, { b: 0, i: 0, rev: 0, loggedCost: 0 });
+      if (!map.has(e.month)) map.set(e.month, { b: 0, i: 0, rev: 0, logged: 0 });
       const d = map.get(e.month)!;
       if (isBill) { d.b += e.spentTime; d.rev += e.spentTime * r.rate; }
       else d.i += e.spentTime;
-      d.loggedCost += e.spentTime * costRate;
+      d.logged += e.spentTime;
     }
-    const monthTotals = new Map(months.map(m => [m, (map.get(m)?.b ?? 0) + (map.get(m)?.i ?? 0)]));
+    const monthTotals = new Map(months.map(m => [m, map.get(m)?.logged ?? 0]));
     return months.map((m, i) => {
-      const d = map.get(m) ?? { b: 0, i: 0, rev: 0, loggedCost: 0 };
-      const logged = d.b + d.i;
+      const d = map.get(m) ?? { b: 0, i: 0, rev: 0, logged: 0 };
       const slice = months.slice(Math.max(0, i - 2), i + 1);
       const avg3m = round1(slice.reduce((s, mo) => s + (monthTotals.get(mo) ?? 0), 0) / slice.length);
+      // Employee: flat monthly cost = baseline × rate; Freelancer: variable = logged × rate
+      const effectiveMonthlyCost = isEmployee
+        ? Math.round(baseline * costRate)
+        : Math.round(d.logged * costRate);
       return {
         month: fmtMonth(m), rawMonth: m,
         billable: round1(d.b), internal: round1(d.i),
-        unaccounted: round1(Math.max(0, baseline - logged)),
+        unaccounted: round1(Math.max(0, baseline - d.logged)),
         avg3m,
         revenue: Math.round(d.rev),
-        cost: Math.round(d.loggedCost),
+        cost: effectiveMonthlyCost,
         capacityCost: Math.round(baseline * costRate),
-        utilizationPct: baseline > 0 ? Math.round((logged / baseline) * 100) : 0,
-        billablePct: logged > 0 ? Math.round((d.b / logged) * 100) : 0,
+        utilizationPct: baseline > 0 ? Math.round((d.logged / baseline) * 100) : 0,
+        billablePct: d.logged > 0 ? Math.round((d.b / d.logged) * 100) : 0,
       };
     });
-  }, [entries, billingRates, costRate, user, baseline, months]);
+  }, [entries, billingRates, costRate, user, baseline, months, isEmployee]);
 
-  // Month-over-month trend deltas for KPI cards
   const lastTwo = chartData.slice(-2);
   const billableDelta = lastTwo.length === 2 ? lastTwo[1].billablePct - lastTwo[0].billablePct : null;
   const utilizationDelta = lastTwo.length === 2 ? lastTwo[1].utilizationPct - lastTwo[0].utilizationPct : null;
   const revenueDelta = lastTwo.length === 2 ? lastTwo[1].revenue - lastTwo[0].revenue : null;
 
-  const period = months.length > 0
-    ? `${fmtMonth(months[0])} – ${fmtMonth(months[months.length - 1])}`
-    : '';
+  const period = months.length > 0 ? `${fmtMonth(months[0])} – ${fmtMonth(months[months.length - 1])}` : '';
 
   return (
     <div className="space-y-5">
@@ -967,7 +1033,31 @@ function IndividualMemberView({ user, entries, baselines, costRates, billingRate
           <h2 className="text-xl font-bold text-gray-900">{user}</h2>
           {period && <p className="text-sm text-gray-400 mt-0.5">{period}</p>}
         </div>
-        <div className="flex items-center gap-2 flex-shrink-0">
+        <div className="flex items-center gap-2 flex-shrink-0 flex-wrap justify-end">
+          {/* Employee / Freelancer toggle */}
+          {isAdmin && (
+            <div className="flex rounded-full border border-gray-200 overflow-hidden text-xs">
+              <button
+                type="button"
+                onClick={() => onMemberTypeChange('employee')}
+                className={`px-3 py-1.5 transition-colors ${memberType === 'employee' ? 'bg-slate-800 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}
+              >
+                Employee
+              </button>
+              <button
+                type="button"
+                onClick={() => onMemberTypeChange('freelancer')}
+                className={`px-3 py-1.5 border-l border-gray-200 transition-colors ${memberType === 'freelancer' ? 'bg-emerald-600 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}
+              >
+                Freelancer
+              </button>
+            </div>
+          )}
+          {!isAdmin && (
+            <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${isEmployee ? 'bg-slate-100 text-slate-600' : 'bg-emerald-50 text-emerald-700'}`}>
+              {isEmployee ? 'Employee' : 'Freelancer'}
+            </span>
+          )}
           {isAdmin && (
             <div className="flex items-center gap-2 bg-white border border-gray-200 rounded-lg px-3 py-2">
               <span className="text-xs text-gray-400">Cost rate:</span>
@@ -1006,12 +1096,12 @@ function IndividualMemberView({ user, entries, baselines, costRates, billingRate
         </div>
       </div>
 
-      {/* KPI Row 1 — Time allocation */}
+      {/* KPI Row 1 — Time */}
       <div className="grid grid-cols-4 gap-3">
         <div className="bg-white rounded-lg border border-gray-200 p-4">
           <p className="text-xs text-gray-400 mb-1.5 uppercase tracking-wide">Total Hours</p>
           <p className="text-xl font-bold text-slate-700">{fmtH(stats.totalHours)}</p>
-          <p className="text-xs text-gray-400 mt-1">{stats.totalCapacity}h FTE capacity</p>
+          <p className="text-xs text-gray-400 mt-1">{stats.totalCapacityHours}h FTE capacity</p>
         </div>
         <div className="bg-white rounded-lg border border-gray-200 p-4">
           <p className="text-xs text-gray-400 mb-1 uppercase tracking-wide">FTE Utilization</p>
@@ -1069,28 +1159,48 @@ function IndividualMemberView({ user, entries, baselines, costRates, billingRate
           <p className="text-xs text-gray-400 mt-1">{stats.avgBillingRate > 0 ? `Ø ${Math.round(stats.avgBillingRate)} €/h` : 'no billable tickets'}</p>
         </div>
         <div className="bg-white rounded-lg border border-gray-200 p-4">
-          <p className="text-xs text-gray-400 mb-1.5 uppercase tracking-wide">Cost</p>
-          <p className={`text-xl font-bold ${stats.cost > 0 ? 'text-red-500' : 'text-gray-300'}`}>
-            {stats.cost > 0 ? fmtEur(stats.cost) : '—'}
+          <p className="text-xs text-gray-400 mb-1.5 uppercase tracking-wide">
+            {isEmployee ? 'Employee Cost' : 'Cost'}
+          </p>
+          <p className={`text-xl font-bold ${stats.effectiveCost > 0 ? 'text-red-500' : 'text-gray-300'}`}>
+            {stats.effectiveCost > 0 ? fmtEur(stats.effectiveCost) : '—'}
           </p>
           <p className="text-xs text-gray-400 mt-1">
-            {stats.capacityCost > 0 ? `${fmtEur(stats.capacityCost)} full FTE cost` : 'no cost rate set'}
+            {isEmployee && stats.idleCost > 0
+              ? <span className="text-red-400">incl. {fmtEur(stats.idleCost)} idle cost</span>
+              : isEmployee
+                ? `${baseline}h/mo FTE basis`
+                : 'logged hours only'}
           </p>
         </div>
         <div className={`rounded-lg border p-4 ${
-          stats.revenue === 0 && stats.cost === 0 ? 'bg-white border-gray-200'
+          stats.revenue === 0 && stats.effectiveCost === 0 ? 'bg-white border-gray-200'
           : stats.net >= 0 ? 'bg-emerald-50 border-emerald-200'
           : 'bg-red-50 border-red-200'
         }`}>
           <p className="text-xs text-gray-400 mb-1.5 uppercase tracking-wide">Net P&amp;L</p>
-          <p className={`text-xl font-bold ${stats.revenue === 0 && stats.cost === 0 ? 'text-gray-300' : netColor(stats.net)}`}>
-            {stats.revenue === 0 && stats.cost === 0 ? '—' : fmtNet(stats.net)}
+          <p className={`text-xl font-bold ${stats.revenue === 0 && stats.effectiveCost === 0 ? 'text-gray-300' : netColor(stats.net)}`}>
+            {stats.revenue === 0 && stats.effectiveCost === 0 ? '—' : fmtNet(stats.net)}
           </p>
-          <p className="text-xs text-gray-400 mt-1">logged hours basis</p>
+          <p className="text-xs text-gray-400 mt-1">
+            {isEmployee ? 'vs. full FTE cost' : 'vs. logged cost'}
+          </p>
         </div>
-        <div className={`rounded-lg border p-4 ${stats.untappedRevenue > 0 ? 'bg-amber-50 border-amber-200' : 'bg-white border-gray-200'}`}>
-          <p className="text-xs text-gray-400 mb-1.5 uppercase tracking-wide">Untapped Potential</p>
-          <p className={`text-xl font-bold ${stats.untappedRevenue > 0 ? 'text-amber-600' : 'text-gray-300'}`}>
+        <div className={`rounded-lg border p-4 ${
+          stats.untappedRevenue > 0
+            ? isEmployee ? 'bg-red-50 border-red-200' : 'bg-amber-50 border-amber-200'
+            : 'bg-white border-gray-200'
+        }`}>
+          <p className={`text-xs mb-1.5 uppercase tracking-wide ${
+            stats.untappedRevenue > 0 && isEmployee ? 'text-red-400' : 'text-gray-400'
+          }`}>
+            {isEmployee ? 'Untapped — costs you' : 'Untapped Potential'}
+          </p>
+          <p className={`text-xl font-bold ${
+            stats.untappedRevenue > 0
+              ? isEmployee ? 'text-red-500' : 'text-amber-600'
+              : 'text-gray-300'
+          }`}>
             {stats.untappedRevenue > 0 ? fmtEur(stats.untappedRevenue) : '—'}
           </p>
           <p className="text-xs text-gray-400 mt-1">
@@ -1103,7 +1213,7 @@ function IndividualMemberView({ user, entries, baselines, costRates, billingRate
       </div>
 
       {/* Charts */}
-      <MemberCharts chartData={chartData} baseline={baseline} costRate={costRate} />
+      <MemberCharts chartData={chartData} baseline={baseline} costRate={costRate} isEmployee={isEmployee} />
 
       {/* Hours breakdown */}
       <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
@@ -1115,14 +1225,17 @@ function IndividualMemberView({ user, entries, baselines, costRates, billingRate
 
       {/* Billing configuration */}
       <TicketRatesPanel
-        user={user} entries={entries} billingRates={billingRates} costRate={costRate} onRateChange={onTicketRateChange}
+        user={user} entries={entries} billingRates={billingRates}
+        costRate={costRate} isEmployee={isEmployee} totalCapacityHours={totalCapacityHours}
+        onRateChange={onTicketRateChange}
       />
 
       {/* Off-screen print capture */}
       {isPrinting && (
         <div style={{ position: 'fixed', top: -99999, left: -99999, pointerEvents: 'none', zIndex: -1 }}>
           <div ref={printRef}>
-            <PrintView user={user} entries={entries} billingRates={billingRates} costRates={costRates} baselines={baselines} />
+            <PrintView user={user} entries={entries} billingRates={billingRates}
+              costRates={costRates} baselines={baselines} memberTypes={memberTypes} />
           </div>
         </div>
       )}
@@ -1250,9 +1363,11 @@ export default function TimesheetsClient({ store }: { store: TimesheetStore }) {
               baselines={store.baselines}
               costRates={store.costRates}
               billingRates={store.billingRates}
+              memberTypes={store.memberTypes ?? {}}
               onDeletePerson={async () => { await deleteTimesheetPerson(selectedUser); startTransition(() => router.refresh()); }}
               onBaselineChange={async (h) => { await updateTimesheetBaseline(selectedUser, h); startTransition(() => router.refresh()); }}
               onCostRateChange={async (rate) => { await updateMemberCostRate(selectedUser, rate); startTransition(() => router.refresh()); }}
+              onMemberTypeChange={async (type) => { await updateMemberType(selectedUser, type); startTransition(() => router.refresh()); }}
               onTicketRateChange={async (key, billable, rate) => { await updateTicketRate(key, billable, rate); startTransition(() => router.refresh()); }}
             />
           )}

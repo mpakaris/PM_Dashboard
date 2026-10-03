@@ -102,7 +102,7 @@ export async function writeElsap(mirror: ElsapMirror): Promise<void> {
 export const readTimesheets = unstable_cache(
   async (): Promise<TimesheetStore> => {
     const raw = await withRetry(() => redis.get<any>(TIMESHEETS_KEY));
-    if (!raw) return { entries: [], lastUpload: '', sources: [], baselines: {}, billingRates: {}, costRates: {} };
+    if (!raw) return { entries: [], lastUpload: '', sources: [], baselines: {}, billingRates: {}, costRates: {}, memberTypes: {} };
     return {
       entries: raw.entries ?? [],
       lastUpload: raw.lastUpload ?? '',
@@ -110,6 +110,7 @@ export const readTimesheets = unstable_cache(
       baselines: raw.baselines ?? {},
       billingRates: raw.billingRates ?? {},
       costRates: raw.costRates ?? {},
+      memberTypes: raw.memberTypes ?? {},
     };
   },
   ['app-timesheets'],

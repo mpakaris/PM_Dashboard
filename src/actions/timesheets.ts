@@ -87,7 +87,7 @@ export async function uploadTimesheetFiles(formData: FormData): Promise<{
   const allEntries = [...kept, ...newEntries];
   const allSources = [...new Set(allEntries.map(e => e.source))].sort();
 
-  await writeTimesheets({ entries: allEntries, lastUpload: new Date().toISOString(), sources: allSources, baselines: store.baselines, billingRates: store.billingRates, costRates: store.costRates });
+  await writeTimesheets({ entries: allEntries, lastUpload: new Date().toISOString(), sources: allSources, baselines: store.baselines, billingRates: store.billingRates, costRates: store.costRates, memberTypes: store.memberTypes });
   revalidatePath('/timesheets');
 
   return { added: newEntries.length, total: allEntries.length, sources: allSources };
@@ -129,7 +129,14 @@ export async function updateMemberCostRate(user: string, rate: number): Promise<
   revalidatePath('/timesheets');
 }
 
+export async function updateMemberType(user: string, type: 'employee' | 'freelancer'): Promise<void> {
+  const store = await readTimesheets();
+  store.memberTypes = { ...store.memberTypes, [user]: type };
+  await writeTimesheets(store);
+  revalidatePath('/timesheets');
+}
+
 export async function clearTimesheets(): Promise<void> {
-  await writeTimesheets({ entries: [], lastUpload: '', sources: [], baselines: {}, billingRates: {}, costRates: {} });
+  await writeTimesheets({ entries: [], lastUpload: '', sources: [], baselines: {}, billingRates: {}, costRates: {}, memberTypes: {} });
   revalidatePath('/timesheets');
 }
