@@ -937,12 +937,17 @@ function IndividualMemberView({ user, entries, baselines, costRates, billingRate
         const { default: jsPDF } = await import('jspdf');
         const canvas = await html2canvas(el, { scale: 1.5, backgroundColor: '#ffffff', useCORS: true });
         const imgData = canvas.toDataURL('image/jpeg', 0.85);
+        const canvasW = canvas.width;
+        const canvasH = canvas.height;
+        // Release canvas GPU/CPU buffers immediately — don't wait for GC
+        canvas.width = 0;
+        canvas.height = 0;
         const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
         const pageW = pdf.internal.pageSize.getWidth();
         const pageH = pdf.internal.pageSize.getHeight();
         const margin = 10;
         const printW = pageW - 2 * margin;
-        const imgH = (canvas.height * printW) / canvas.width;
+        const imgH = (canvasH * printW) / canvasW;
         const usableH = pageH - 2 * margin;
         const pages = Math.ceil(imgH / usableH);
         for (let i = 0; i < pages; i++) {
