@@ -108,9 +108,16 @@ export async function updateTimesheetBaseline(user: string, hours: number): Prom
   revalidatePath('/timesheets');
 }
 
+// key format: "user:::project:::task"
 export async function updateTicketRate(key: string, billable: boolean, rate: number): Promise<void> {
   const store = await readTimesheets();
-  store.billingRates = { ...store.billingRates, [key]: { billable, rate: Math.max(0, rate) } };
+  // Migrate: drop old-format keys that used "project:::task" (2 parts) instead of "user:::project:::task" (3 parts)
+  const migrated: Record<string, { billable: boolean; rate: number }> = {};
+  for (const [k, v] of Object.entries(store.billingRates)) {
+    if (k.split(':::').length === 3) migrated[k] = v;
+  }
+  migrated[key] = { billable, rate: Math.max(0, rate) };
+  store.billingRates = migrated;
   await writeTimesheets(store);
   revalidatePath('/timesheets');
 }
