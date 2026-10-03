@@ -901,6 +901,18 @@ function PrintView({ user, entries, billingRates, costRates, baselines, memberTy
 
 // ─── Individual Member View ───────────────────────────────────────────────────
 
+type TimePeriod = '3m' | '6m' | 'ytd';
+
+function getPeriodStartMonth(period: TimePeriod): string {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = now.getMonth(); // 0-indexed
+  if (period === 'ytd') return `${y}-01`;
+  const back = period === '3m' ? 2 : 5;
+  const d = new Date(y, m - back, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
 function IndividualMemberView({ user, entries, baselines, costRates, billingRates, memberTypes, onDeletePerson, onBaselineChange, onCostRateChange, onMemberTypeChange, onTicketRateChange }: {
   user: string;
   entries: TimesheetEntry[];
@@ -927,6 +939,12 @@ function IndividualMemberView({ user, entries, baselines, costRates, billingRate
   const printRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => { setCostInput(costRate ? String(costRate) : ''); }, [costRate]);
+
+  const [timePeriod, setTimePeriod] = useState<TimePeriod>('ytd');
+  const filteredEntries = useMemo(() => {
+    const start = getPeriodStartMonth(timePeriod);
+    return entries.filter(e => e.month >= start);
+  }, [entries, timePeriod]);
 
   useEffect(() => {
     if (!isPrinting || !printRef.current) return;
@@ -962,12 +980,12 @@ function IndividualMemberView({ user, entries, baselines, costRates, billingRate
     return () => clearTimeout(tid);
   }, [isPrinting, user]);
 
-  const months = useMemo(() => [...new Set(entries.map(e => e.month))].sort(), [entries]);
+  const months = useMemo(() => [...new Set(filteredEntries.map(e => e.month))].sort(), [filteredEntries]);
   const totalCapacityHours = baseline * months.length;
 
   const stats = useMemo(() => {
     let totalHours = 0, billableHours = 0, revenue = 0;
-    for (const e of entries) {
+    for (const e of filteredEntries) {
       const r = billingRates[`${user}:::${e.project}:::${e.task}`];
       const isBill = !!(r?.billable && r.rate > 0);
       totalHours += e.spentTime;
@@ -987,11 +1005,11 @@ function IndividualMemberView({ user, entries, baselines, costRates, billingRate
       utilizationPct: totalCapacityHours > 0 ? Math.round((totalHours / totalCapacityHours) * 100) : 0,
       totalCapacityHours, untappedRevenue, avgBillingRate,
     };
-  }, [entries, billingRates, costRate, user, totalCapacityHours, isEmployee]);
+  }, [filteredEntries, billingRates, costRate, user, totalCapacityHours, isEmployee]);
 
   const chartData: ChartPoint[] = useMemo(() => {
     const map = new Map<string, { b: number; i: number; rev: number; logged: number }>();
-    for (const e of entries) {
+    for (const e of filteredEntries) {
       const r = billingRates[`${user}:::${e.project}:::${e.task}`];
       const isBill = !!(r?.billable && r.rate > 0);
       if (!map.has(e.month)) map.set(e.month, { b: 0, i: 0, rev: 0, logged: 0 });
@@ -1021,7 +1039,7 @@ function IndividualMemberView({ user, entries, baselines, costRates, billingRate
         billablePct: d.logged > 0 ? Math.round((d.b / d.logged) * 100) : 0,
       };
     });
-  }, [entries, billingRates, costRate, user, baseline, months, isEmployee]);
+  }, [filteredEntries, billingRates, costRate, user, baseline, months, isEmployee]);
 
   const lastTwo = chartData.slice(-2);
   const billableDelta = lastTwo.length === 2 ? lastTwo[1].billablePct - lastTwo[0].billablePct : null;
@@ -1037,6 +1055,23 @@ function IndividualMemberView({ user, entries, baselines, costRates, billingRate
         <div>
           <h2 className="text-xl font-bold text-gray-900">{user}</h2>
           {period && <p className="text-sm text-gray-400 mt-0.5">{period}</p>}
+        </div>
+        <div className="flex items-center gap-2 flex-shrink-0">
+          {/* Period selector — visible to all roles */}
+          <div className="flex rounded-full border border-gray-200 overflow-hidden text-xs">
+            {([['3m', 'Last 3M'], ['6m', 'Last 6M'], ['ytd', 'This Year']] as [TimePeriod, string][]).map(([p, label], i) => (
+              <button
+                key={p}
+                type="button"
+                onClick={() => setTimePeriod(p)}
+                className={`px-3 py-1.5 ${i > 0 ? 'border-l border-gray-200' : ''} transition-colors ${
+                  timePeriod === p ? 'bg-slate-800 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0 flex-wrap justify-end">
           {/* Employee / Freelancer toggle */}
@@ -1225,12 +1260,12 @@ function IndividualMemberView({ user, entries, baselines, costRates, billingRate
         <div className="px-5 py-3.5 border-b border-gray-100 bg-slate-50">
           <p className="font-semibold text-sm text-slate-800">Hours Breakdown</p>
         </div>
-        <PersonTable entries={entries} baseline={baseline} onBaselineChange={onBaselineChange} />
+        <PersonTable entries={filteredEntries} baseline={baseline} onBaselineChange={onBaselineChange} />
       </div>
 
       {/* Billing configuration */}
       <TicketRatesPanel
-        user={user} entries={entries} billingRates={billingRates}
+        user={user} entries={filteredEntries} billingRates={billingRates}
         costRate={costRate} isEmployee={isEmployee} totalCapacityHours={totalCapacityHours}
         onRateChange={onTicketRateChange}
       />
@@ -1239,7 +1274,7 @@ function IndividualMemberView({ user, entries, baselines, costRates, billingRate
       {isPrinting && (
         <div style={{ position: 'fixed', top: -99999, left: -99999, pointerEvents: 'none', zIndex: -1 }}>
           <div ref={printRef}>
-            <PrintView user={user} entries={entries} billingRates={billingRates}
+            <PrintView user={user} entries={filteredEntries} billingRates={billingRates}
               costRates={costRates} baselines={baselines} memberTypes={memberTypes} />
           </div>
         </div>
