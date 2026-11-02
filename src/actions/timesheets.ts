@@ -35,7 +35,7 @@ function datToMonth(dateStr: string): string {
 }
 
 async function parseFile(file: File, sourceName: string): Promise<TimesheetEntry[]> {
-  const text = await file.text();
+  const text = (await file.text()).replace(/^﻿/, '');
   const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
   if (lines.length < 2) return [];
   const headerRaw = parseLine(lines[0]);
