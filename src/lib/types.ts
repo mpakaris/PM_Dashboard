@@ -94,9 +94,11 @@ export interface TimesheetEntry {
   source: string; // original filename — used for merge-by-file on re-upload
 }
 
+export type TicketCategory = 'billable' | 'internal' | 'sales' | 'portfolio';
+
 export interface TicketRate {
-  billable: boolean;
-  rate: number; // €/h billed to client
+  category: TicketCategory;
+  rate: number; // €/h billed to client — only relevant for 'billable'
 }
 
 export interface TimesheetStore {

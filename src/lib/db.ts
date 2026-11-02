@@ -1,7 +1,7 @@
 import { Redis } from '@upstash/redis';
 import { unstable_cache, revalidateTag } from 'next/cache';
 import { cache } from 'react';
-import { AppData, Assignment, Project, Forecast, ElsapMirror, TimesheetStore, InvoicingStore, SubContractorStore, ProjektAnalysisProject, FmoStore, FmoMappingStore, FmoProject } from './types';
+import { AppData, Assignment, Project, Forecast, ElsapMirror, TimesheetStore, TicketRate, InvoicingStore, SubContractorStore, ProjektAnalysisProject, FmoStore, FmoMappingStore, FmoProject } from './types';
 import { getMonthsBetween } from './utils';
 
 const redis = new Redis({
@@ -103,12 +103,21 @@ export const readTimesheets = unstable_cache(
   async (): Promise<TimesheetStore> => {
     const raw = await withRetry(() => redis.get<any>(TIMESHEETS_KEY));
     if (!raw) return { entries: [], lastUpload: '', sources: [], baselines: {}, billingRates: {}, costRates: {}, memberTypes: {} };
+    // Migrate old billingRates from { billable: boolean } to { category: TicketCategory }
+    const rawRates: Record<string, any> = raw.billingRates ?? {};
+    const billingRates: Record<string, TicketRate> = {};
+    for (const [k, v] of Object.entries(rawRates)) {
+      billingRates[k] = {
+        category: v.category ?? (v.billable ? 'billable' : 'internal'),
+        rate: v.rate ?? 0,
+      };
+    }
     return {
       entries: raw.entries ?? [],
       lastUpload: raw.lastUpload ?? '',
       sources: raw.sources ?? [],
       baselines: raw.baselines ?? {},
-      billingRates: raw.billingRates ?? {},
+      billingRates,
       costRates: raw.costRates ?? {},
       memberTypes: raw.memberTypes ?? {},
     };

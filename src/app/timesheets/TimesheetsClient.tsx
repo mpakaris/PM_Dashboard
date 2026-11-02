@@ -3,7 +3,7 @@
 import { useState, useRef, useMemo, useEffect, useTransition, Fragment } from 'react';
 import { useRouter } from 'next/navigation';
 import { useRole } from '@/components/RoleProvider';
-import { TimesheetEntry, TimesheetStore, TicketRate } from '@/lib/types';
+import { TimesheetEntry, TimesheetStore, TicketRate, TicketCategory } from '@/lib/types';
 import {
   uploadTimesheetFiles,
   clearTimesheets,
@@ -22,7 +22,7 @@ import {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-const DEFAULT_BASELINE = 140; // 1 FTE = 1680h/year = 140h/month
+const DEFAULT_BASELINE = 148; // 1 FTE ≈ 1776h/year — 260 working days − 25 PTO − 13 public holidays = 222 days × 8h / 12
 
 function fmtMonth(ym: string): string {
   const [y, m] = ym.split('-');
@@ -56,12 +56,17 @@ type ChartPoint = {
   month: string;
   rawMonth: string;
   billable: number;
+  sales: number;
+  portfolio: number;
   internal: number;
   unaccounted: number;
   avg3m: number;
   revenue: number;
-  cost: number;         // effective cost: capacity-based for employee, logged-based for freelancer
-  capacityCost: number; // always baseline × costRate (shown as reference)
+  billableCost: number;
+  salesCost: number;
+  portfolioCost: number;
+  internalCost: number;
+  unaccountedCost: number; // > 0 for employees only (paid regardless)
   utilizationPct: number;
   billablePct: number;
 };
@@ -105,34 +110,48 @@ function HideBtn({ isHidden, onToggle }: { isHidden: boolean; onToggle: () => vo
 
 // ─── Rate Editor ──────────────────────────────────────────────────────────────
 
+const CATEGORY_META: Record<TicketCategory, { label: string; dot: string; pill: string; active: string }> = {
+  billable:  { label: 'Billable',  dot: 'bg-emerald-500', pill: 'text-gray-400', active: 'bg-emerald-50 border-emerald-300 text-emerald-700' },
+  sales:     { label: 'Sales',     dot: 'bg-blue-500',    pill: 'text-gray-400', active: 'bg-blue-50 border-blue-300 text-blue-700' },
+  portfolio: { label: 'Portfolio', dot: 'bg-violet-500',  pill: 'text-gray-400', active: 'bg-violet-50 border-violet-300 text-violet-700' },
+  internal:  { label: 'Internal',  dot: 'bg-gray-300',    pill: 'text-gray-400', active: 'bg-gray-100 border-gray-300 text-gray-500' },
+};
+
 function RateEditor({ value, onChange }: {
   value: TicketRate;
-  onChange: (billable: boolean, rate: number) => void;
+  onChange: (category: TicketCategory, rate: number) => void;
 }) {
   const isAdmin = useRole() === 'admin';
+  const cat = value.category ?? 'internal';
   const [rateInput, setRateInput] = useState(value.rate ? String(value.rate) : '');
   useEffect(() => { setRateInput(value.rate ? String(value.rate) : ''); }, [value.rate]);
+  const meta = CATEGORY_META[cat];
 
-  if (!isAdmin) return (
-    <span className={`text-xs px-2 py-0.5 rounded-full ${value.billable ? 'bg-emerald-50 text-emerald-700' : 'text-gray-400'}`}>
-      {value.billable ? `Billable${value.rate ? ` · ${value.rate} €/h` : ''}` : 'Internal'}
-    </span>
-  );
+  if (!isAdmin) {
+    const isBillable = cat === 'billable';
+    return (
+      <span className={`text-xs px-2 py-0.5 rounded-full ${
+        cat === 'billable'  ? 'bg-emerald-50 text-emerald-700' :
+        cat === 'sales'     ? 'bg-blue-50 text-blue-700' :
+        cat === 'portfolio' ? 'bg-violet-50 text-violet-700' :
+        'text-gray-400'
+      }`}>
+        {meta.label}{isBillable && value.rate ? ` · ${value.rate} €/h` : ''}
+      </span>
+    );
+  }
 
   return (
     <div className="flex items-center gap-2 shrink-0">
-      {value.billable && (
+      {cat === 'billable' && (
         <div className="flex items-center gap-1">
           <input
-            type="number"
-            min={0}
-            step={1}
-            value={rateInput}
+            type="number" min={0} step={1} value={rateInput}
             onChange={e => setRateInput(e.target.value)}
             onBlur={() => {
               const r = Math.max(0, Number(rateInput) || 0);
               setRateInput(r ? String(r) : '');
-              onChange(value.billable, r);
+              onChange('billable', r);
             }}
             onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
             className="w-16 text-right border-0 border-b border-emerald-300 bg-transparent text-emerald-700 font-semibold focus:outline-none focus:border-emerald-500 text-xs"
@@ -141,18 +160,25 @@ function RateEditor({ value, onChange }: {
           <span className="text-xs text-gray-400">€/h</span>
         </div>
       )}
-      <button
-        type="button"
-        onClick={() => onChange(!value.billable, value.rate)}
-        className={`flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border transition-colors ${
-          value.billable
-            ? 'bg-emerald-50 border-emerald-300 text-emerald-700 hover:bg-emerald-100'
-            : 'bg-gray-100 border-gray-200 text-gray-400 hover:border-gray-300 hover:text-gray-500'
-        }`}
-      >
-        <span className={`w-1.5 h-1.5 rounded-full ${value.billable ? 'bg-emerald-500' : 'bg-gray-300'}`} />
-        {value.billable ? 'Billable' : 'Internal'}
-      </button>
+      <div className="flex rounded-full border border-gray-200 overflow-hidden text-xs">
+        {(Object.keys(CATEGORY_META) as TicketCategory[]).map((c, i) => {
+          const m = CATEGORY_META[c];
+          const isActive = cat === c;
+          return (
+            <button
+              key={c}
+              type="button"
+              onClick={() => onChange(c, c === 'billable' ? value.rate : 0)}
+              className={`flex items-center gap-1 px-2.5 py-1 transition-colors ${i > 0 ? 'border-l border-gray-200' : ''} ${
+                isActive ? m.active : 'bg-white text-gray-400 hover:bg-gray-50'
+              }`}
+            >
+              <span className={`w-1.5 h-1.5 rounded-full ${isActive ? m.dot : 'bg-gray-200'}`} />
+              {m.label}
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -306,7 +332,7 @@ function PersonTable({ entries, baseline, onBaselineChange, staticMode = false }
                     className="w-12 text-center border-0 border-b border-gray-300 bg-transparent text-gray-600 font-semibold focus:outline-none focus:border-slate-500 text-xs"
                   />
                 ) : <span className="font-semibold text-gray-600">{baseline}</span>}
-                <span>h baseline</span>
+                <span>h / mo baseline</span>
               </td>
               {months.map(m => {
                 const total = totalPerMonth[m] ?? 0;
@@ -360,18 +386,58 @@ function CapacityTooltip({ active, payload, label }: TooltipProps) {
   if (!active || !payload || payload.length === 0) return null;
   const get = (name: string) => payload.find(p => p.name === name)?.value ?? 0;
   const billable = get('Billable');
+  const sales = get('Sales');
+  const portfolio = get('Portfolio');
   const internal = get('Internal');
   const unaccounted = get('Unaccounted');
   const avg3m = payload.find(p => p.name === '3M avg')?.value;
   return (
-    <div className="bg-white border border-gray-200 rounded-lg shadow-sm px-3 py-2.5 text-xs min-w-[140px]">
+    <div className="bg-white border border-gray-200 rounded-lg shadow-sm px-3 py-2.5 text-xs min-w-[150px]">
       <p className="font-semibold text-gray-700 mb-2">{label}</p>
       {billable > 0 && <p className="text-emerald-600 flex justify-between gap-3"><span>Billable</span><span className="font-medium">{fmtH(billable)}</span></p>}
+      {sales > 0 && <p className="text-blue-600 flex justify-between gap-3"><span>Sales</span><span className="font-medium">{fmtH(sales)}</span></p>}
+      {portfolio > 0 && <p className="text-violet-600 flex justify-between gap-3"><span>Portfolio</span><span className="font-medium">{fmtH(portfolio)}</span></p>}
       {internal > 0 && <p className="text-slate-500 flex justify-between gap-3"><span>Internal</span><span className="font-medium">{fmtH(internal)}</span></p>}
       {unaccounted > 0 && <p className="text-amber-500 flex justify-between gap-3"><span>Unaccounted</span><span className="font-medium">{fmtH(unaccounted)}</span></p>}
       {avg3m !== undefined && (
         <p className="text-gray-400 flex justify-between gap-3 mt-1 pt-1 border-t border-gray-100">
           <span>3M avg</span><span className="font-medium">{fmtH(avg3m)}</span>
+        </p>
+      )}
+    </div>
+  );
+}
+
+// ─── Financial Tooltip ────────────────────────────────────────────────────────
+
+function FinancialTooltip({ active, payload, label, monthlyCost }: TooltipProps & { monthlyCost: number }) {
+  if (!active || !payload || payload.length === 0) return null;
+  const get = (key: string) => payload.find(p => p.name === key)?.value ?? 0;
+  const revenue = get('Revenue');
+  const billPct = get('Billable %');
+  const utilPct = get('Utilization %');
+  return (
+    <div className="bg-white border border-gray-200 rounded-lg shadow-sm px-3 py-2.5 text-xs min-w-[160px]">
+      <p className="font-semibold text-gray-700 mb-2">{label}</p>
+      {revenue > 0 && (
+        <p className="text-emerald-600 flex justify-between gap-3">
+          <span>Revenue</span><span className="font-medium">{revenue.toLocaleString('de-DE')} €</span>
+        </p>
+      )}
+      {monthlyCost > 0 && (
+        <p className="text-red-400 flex justify-between gap-3">
+          <span>FTE cost</span><span className="font-medium">{monthlyCost.toLocaleString('de-DE')} €</span>
+        </p>
+      )}
+      {(revenue > 0 || monthlyCost > 0) && <div className="border-t border-gray-100 my-1.5" />}
+      {billPct > 0 && (
+        <p className="text-emerald-600 flex justify-between gap-3">
+          <span>Billable %</span><span className="font-medium">{billPct}%</span>
+        </p>
+      )}
+      {utilPct > 0 && (
+        <p className="text-slate-500 flex justify-between gap-3">
+          <span>Utilization %</span><span className="font-medium">{utilPct}%</span>
         </p>
       )}
     </div>
@@ -387,88 +453,94 @@ function MemberCharts({ chartData, baseline, costRate, isEmployee }: {
   isEmployee: boolean;
 }) {
   const showFinancial = costRate > 0 || chartData.some(d => d.revenue > 0);
+  const monthlyCost = isEmployee ? baseline * costRate : 0;
   const eurFmt = (v: number) => v >= 1000 ? `${Math.round(v / 1000)}k €` : `${v} €`;
 
   return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-4">
-        {/* Capacity Breakdown */}
-        <div className="bg-white rounded-lg border border-gray-200 p-4">
-          <p className="text-xs font-semibold text-gray-600 mb-0.5">Monthly Time Allocation</p>
-          <p className="text-xs text-gray-400 mb-3">
-            Billable · Internal · Unaccounted — {baseline}h FTE capacity · 3M avg trend
-          </p>
-          <ResponsiveContainer width="100%" height={190}>
-            <ComposedChart data={chartData} margin={{ top: 5, right: 24, bottom: 0, left: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
-              <XAxis dataKey="month" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fontSize: 10 }} axisLine={false} tickLine={false} width={30} />
-              <Tooltip content={<CapacityTooltip />} />
-              <ReferenceLine y={baseline} stroke="#f59e0b" strokeDasharray="4 4" strokeWidth={1.5} />
-              <Bar dataKey="billable" name="Billable" fill="#10b981" stackId="a" />
-              <Bar dataKey="internal" name="Internal" fill="#94a3b8" stackId="a" />
-              <Bar dataKey="unaccounted" name="Unaccounted" fill="#fef3c7" stackId="a" radius={[3, 3, 0, 0]} />
-              <Line type="monotone" dataKey="avg3m" name="3M avg" stroke="#475569" strokeWidth={2}
-                dot={{ r: 2.5, fill: '#475569', strokeWidth: 0 }} strokeDasharray="5 3" connectNulls />
-            </ComposedChart>
-          </ResponsiveContainer>
-          <div className="flex items-center gap-4 mt-2 text-xs text-gray-400 justify-center">
-            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-emerald-400 inline-block" />Billable</span>
-            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-slate-300 inline-block" />Internal</span>
-            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-amber-100 border border-amber-200 inline-block" />Unaccounted</span>
-            <span className="flex items-center gap-1"><span className="border-t-2 border-dashed border-slate-400 w-4 inline-block" />3M avg</span>
-          </div>
-        </div>
-
-        {/* Efficiency Trend */}
-        <div className="bg-white rounded-lg border border-gray-200 p-4">
-          <p className="text-xs font-semibold text-gray-600 mb-0.5">Efficiency Trend</p>
-          <p className="text-xs text-gray-400 mb-3">Billable rate & FTE utilization per month — 70% target line</p>
-          <ResponsiveContainer width="100%" height={190}>
-            <LineChart data={chartData} margin={{ top: 5, right: 24, bottom: 0, left: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
-              <XAxis dataKey="month" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fontSize: 10 }} axisLine={false} tickLine={false} width={34}
-                domain={[0, 100]} tickFormatter={v => `${v}%`} />
-              <Tooltip formatter={(v) => `${v}%`} />
-              <Legend wrapperStyle={{ fontSize: 10, paddingTop: 4 }} />
-              <ReferenceLine y={70} stroke="#f59e0b" strokeDasharray="3 3" strokeWidth={1}
-                label={{ value: '70%', position: 'right', fontSize: 9, fill: '#f59e0b' }} />
-              <Line type="monotone" dataKey="billablePct" name="Billable %" stroke="#10b981"
-                strokeWidth={2.5} dot={{ r: 3.5, fill: '#10b981', strokeWidth: 0 }} connectNulls />
-              <Line type="monotone" dataKey="utilizationPct" name="Utilization %" stroke="#475569"
-                strokeWidth={2} dot={{ r: 3, fill: '#475569', strokeWidth: 0 }}
-                strokeDasharray="5 3" connectNulls />
-            </LineChart>
-          </ResponsiveContainer>
+    <div className="grid grid-cols-3 gap-4">
+      {/* Chart 1 — Where does time go */}
+      <div className="bg-white rounded-lg border border-gray-200 p-4">
+        <p className="text-xs font-semibold text-gray-600 mb-0.5">Time Allocation</p>
+        <p className="text-xs text-gray-400 mb-3">Hours by category · {baseline}h/mo basis · 3M avg</p>
+        <ResponsiveContainer width="100%" height={180}>
+          <ComposedChart data={chartData} margin={{ top: 5, right: 16, bottom: 0, left: 0 }}>
+            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
+            <XAxis dataKey="month" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
+            <YAxis tick={{ fontSize: 10 }} axisLine={false} tickLine={false} width={28} />
+            <Tooltip content={<CapacityTooltip />} />
+            <ReferenceLine y={baseline} stroke="#f59e0b" strokeDasharray="4 4" strokeWidth={1.5} />
+            <Bar dataKey="billable"    name="Billable"    fill="#10b981" stackId="a" />
+            <Bar dataKey="sales"       name="Sales"       fill="#3b82f6" stackId="a" />
+            <Bar dataKey="portfolio"   name="Portfolio"   fill="#8b5cf6" stackId="a" />
+            <Bar dataKey="internal"    name="Internal"    fill="#94a3b8" stackId="a" />
+            <Bar dataKey="unaccounted" name="Unaccounted" fill="#fef3c7" stackId="a" radius={[3, 3, 0, 0]} />
+            <Line type="monotone" dataKey="avg3m" name="3M avg" stroke="#475569" strokeWidth={2}
+              dot={{ r: 2.5, fill: '#475569', strokeWidth: 0 }} strokeDasharray="5 3" connectNulls />
+          </ComposedChart>
+        </ResponsiveContainer>
+        <div className="flex items-center gap-2 mt-2 text-xs text-gray-400 justify-center flex-wrap">
+          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-emerald-400 inline-block" />Billable</span>
+          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-blue-400 inline-block" />Sales</span>
+          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-violet-400 inline-block" />Portfolio</span>
+          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-slate-300 inline-block" />Internal</span>
+          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-amber-100 border border-amber-200 inline-block" />Unaccounted</span>
         </div>
       </div>
 
-      {/* Revenue vs Cost (full width) */}
-      {showFinancial && (
-        <div className="bg-white rounded-lg border border-gray-200 p-4">
-          <p className="text-xs font-semibold text-gray-600 mb-0.5">Revenue vs. Cost — Monthly</p>
-          <p className="text-xs text-gray-400 mb-3">
-            {isEmployee
-              ? `Revenue · Employee cost (${baseline}h × ${costRate} €/h — always on) · FTE capacity cost`
-              : `Revenue · Logged cost (actual hours × ${costRate} €/h)`}
-          </p>
-          <ResponsiveContainer width="100%" height={190}>
-            <BarChart data={chartData} margin={{ top: 5, right: 24, bottom: 0, left: 10 }} barCategoryGap="30%" barGap={3}>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
-              <XAxis dataKey="month" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fontSize: 10 }} axisLine={false} tickLine={false} width={44} tickFormatter={eurFmt} />
-              <Tooltip formatter={(v) => fmtEur(Number(v))} />
-              <Legend wrapperStyle={{ fontSize: 10, paddingTop: 4 }} />
-              <Bar dataKey="revenue" name="Revenue" fill="#10b981" radius={[3, 3, 0, 0]} />
-              <Bar dataKey="cost" name={isEmployee ? 'Employee Cost' : 'Logged Cost'} fill="#f87171" radius={[3, 3, 0, 0]} />
-              {isEmployee && costRate > 0 && (
-                <Bar dataKey="capacityCost" name="FTE Capacity Cost" fill="#e2e8f0" radius={[3, 3, 0, 0]} />
-              )}
-            </BarChart>
-          </ResponsiveContainer>
+      {/* Chart 2 — Revenue vs FTE cost */}
+      <div className="bg-white rounded-lg border border-gray-200 p-4">
+        <p className="text-xs font-semibold text-gray-600 mb-0.5">Revenue vs. Cost</p>
+        <p className="text-xs text-gray-400 mb-3">
+          {monthlyCost > 0
+            ? `Revenue earned vs. fixed FTE cost of ${eurFmt(monthlyCost)}/mo`
+            : 'Set a cost rate and billing rates to see profitability'}
+        </p>
+        <ResponsiveContainer width="100%" height={180}>
+          <ComposedChart data={chartData} margin={{ top: 5, right: 16, bottom: 0, left: 10 }} barCategoryGap="40%">
+            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
+            <XAxis dataKey="month" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
+            <YAxis tick={{ fontSize: 10 }} axisLine={false} tickLine={false} width={44}
+              tickFormatter={eurFmt}
+              domain={[0, (dataMax: number) => Math.max(dataMax, monthlyCost) * 1.15]} />
+            <Tooltip content={<FinancialTooltip monthlyCost={monthlyCost} />} />
+            <Bar dataKey="revenue" name="Revenue" fill="#10b981" radius={[3, 3, 0, 0]} />
+            {monthlyCost > 0 && (
+              <ReferenceLine y={monthlyCost} stroke="#f87171" strokeDasharray="4 4" strokeWidth={2}
+                label={{ value: eurFmt(monthlyCost), position: 'right', fontSize: 9, fill: '#f87171' }} />
+            )}
+          </ComposedChart>
+        </ResponsiveContainer>
+        <div className="flex items-center gap-3 mt-2 text-xs text-gray-400 justify-center">
+          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-emerald-400 inline-block" />Revenue</span>
+          {monthlyCost > 0 && <span className="flex items-center gap-1"><span className="border-t-2 border-dashed border-red-300 w-3.5 inline-block" />FTE cost</span>}
         </div>
-      )}
+      </div>
+
+      {/* Chart 3 — Efficiency: billable % and utilization % */}
+      <div className="bg-white rounded-lg border border-gray-200 p-4">
+        <p className="text-xs font-semibold text-gray-600 mb-0.5">Efficiency</p>
+        <p className="text-xs text-gray-400 mb-3">Billable % of logged time · FTE utilization · 70% target</p>
+        <ResponsiveContainer width="100%" height={180}>
+          <LineChart data={chartData} margin={{ top: 5, right: 16, bottom: 0, left: 0 }}>
+            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
+            <XAxis dataKey="month" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
+            <YAxis tick={{ fontSize: 10 }} axisLine={false} tickLine={false} width={34}
+              domain={[0, 100]} tickFormatter={v => `${v}%`} />
+            <Tooltip formatter={(v) => `${v}%`} />
+            <ReferenceLine y={70} stroke="#f59e0b" strokeDasharray="3 3" strokeWidth={1}
+              label={{ value: '70%', position: 'right', fontSize: 9, fill: '#f59e0b' }} />
+            <Line type="monotone" dataKey="billablePct" name="Billable %"
+              stroke="#10b981" strokeWidth={2.5} dot={{ r: 3.5, fill: '#10b981', strokeWidth: 0 }} connectNulls />
+            <Line type="monotone" dataKey="utilizationPct" name="Utilization %"
+              stroke="#475569" strokeWidth={2} dot={{ r: 3, fill: '#475569', strokeWidth: 0 }}
+              strokeDasharray="5 3" connectNulls />
+          </LineChart>
+        </ResponsiveContainer>
+        <div className="flex items-center gap-3 mt-2 text-xs text-gray-400 justify-center">
+          <span className="flex items-center gap-1"><span className="border-t-2 border-emerald-400 w-3.5 inline-block" />Billable %</span>
+          <span className="flex items-center gap-1"><span className="border-t-2 border-dashed border-slate-400 w-3.5 inline-block" />Utilization %</span>
+        </div>
+      </div>
     </div>
   );
 }
@@ -482,7 +554,7 @@ function TicketRatesPanel({ user, entries, billingRates, costRate, isEmployee, t
   costRate: number;
   isEmployee: boolean;
   totalCapacityHours: number;
-  onRateChange: (key: string, billable: boolean, rate: number) => void;
+  onRateChange: (key: string, category: TicketCategory, rate: number) => void;
 }) {
   const tickets = useMemo(() => {
     const map = new Map<string, { project: string; task: string; hours: number }>();
@@ -499,7 +571,7 @@ function TicketRatesPanel({ user, entries, billingRates, costRate, isEmployee, t
     for (const [key, { hours }] of tickets) {
       const rate = billingRates[key];
       totalHours += hours;
-      if (rate?.billable && rate.rate > 0) totalRevenue += hours * rate.rate;
+      if (rate?.category === 'billable' && rate.rate > 0) totalRevenue += hours * rate.rate;
     }
     const loggedCost = totalHours * costRate;
     const unaccountedHours = isEmployee ? Math.max(0, totalCapacityHours - totalHours) : 0;
@@ -537,8 +609,8 @@ function TicketRatesPanel({ user, entries, billingRates, costRate, isEmployee, t
           </thead>
           <tbody>
             {tickets.map(([key, { project, task, hours }]) => {
-              const rate = billingRates[key] ?? { billable: false, rate: 0 };
-              const revenue = rate.billable && rate.rate > 0 ? hours * rate.rate : 0;
+              const rate = billingRates[key] ?? { category: 'internal' as TicketCategory, rate: 0 };
+              const revenue = rate.category === 'billable' && rate.rate > 0 ? hours * rate.rate : 0;
               const ticketCost = hours * costRate;
               const delta = revenue - ticketCost;
               const deltaColor = delta > 0 ? 'text-emerald-600' : delta < 0 ? 'text-red-500' : 'text-gray-400';
@@ -562,7 +634,7 @@ function TicketRatesPanel({ user, entries, billingRates, costRate, isEmployee, t
                   )}
                   <td className="px-5 py-2.5">
                     <div className="flex justify-end">
-                      <RateEditor value={rate} onChange={(b, r) => onRateChange(key, b, r)} />
+                      <RateEditor value={rate} onChange={(c, r) => onRateChange(key, c, r)} />
                     </div>
                   </td>
                 </tr>
@@ -656,34 +728,41 @@ function PrintView({ user, entries, billingRates, costRates, baselines, memberTy
 
   const { totalHours, billableHours, revenue, chartData, ticketList } = useMemo(() => {
     let totalHours = 0, billableHours = 0, revenue = 0;
-    const mMap = new Map<string, { b: number; i: number; rev: number; logged: number }>();
+    const mMap = new Map<string, { b: number; s: number; p: number; i: number; rev: number; logged: number }>();
     const tickMap = new Map<string, { project: string; task: string; hours: number; revenue: number }>();
     for (const e of entries) {
       const rKey = `${user}:::${e.project}:::${e.task}`;
       const r = billingRates[rKey];
-      const isBill = !!(r?.billable && r.rate > 0);
-      const rev = isBill ? e.spentTime * r.rate : 0;
+      const cat = r?.category ?? 'internal';
+      const isBill = cat === 'billable' && !!(r?.rate && r.rate > 0);
+      const rev = isBill ? e.spentTime * r!.rate : 0;
       totalHours += e.spentTime; if (isBill) { billableHours += e.spentTime; revenue += rev; }
-      if (!mMap.has(e.month)) mMap.set(e.month, { b: 0, i: 0, rev: 0, logged: 0 });
+      if (!mMap.has(e.month)) mMap.set(e.month, { b: 0, s: 0, p: 0, i: 0, rev: 0, logged: 0 });
       const md = mMap.get(e.month)!;
-      if (isBill) md.b += e.spentTime; else md.i += e.spentTime;
+      if (isBill) md.b += e.spentTime;
+      else if (cat === 'sales') md.s += e.spentTime;
+      else if (cat === 'portfolio') md.p += e.spentTime;
+      else md.i += e.spentTime;
       md.rev += rev; md.logged += e.spentTime;
       if (!tickMap.has(rKey)) tickMap.set(rKey, { project: e.project, task: e.task, hours: 0, revenue: 0 });
       const td = tickMap.get(rKey)!; td.hours += e.spentTime; td.revenue += rev;
     }
     const monthTotals = new Map(months.map(m => [m, mMap.get(m)?.logged ?? 0]));
     const chartData = months.map((m, i) => {
-      const d = mMap.get(m) ?? { b: 0, i: 0, rev: 0, logged: 0 };
+      const d = mMap.get(m) ?? { b: 0, s: 0, p: 0, i: 0, rev: 0, logged: 0 };
       const slice = months.slice(Math.max(0, i - 2), i + 1);
       const avg3m = round1(slice.reduce((s, mo) => s + (monthTotals.get(mo) ?? 0), 0) / slice.length);
-      const effectiveCost = isEmployee ? Math.round(baseline * costRate) : Math.round(d.logged * costRate);
+      const unaccHours = round1(Math.max(0, baseline - d.logged));
       return {
         month: fmtMonth(m), rawMonth: m,
-        billable: round1(d.b), internal: round1(d.i),
-        unaccounted: round1(Math.max(0, baseline - d.logged)),
+        billable: round1(d.b), sales: round1(d.s), portfolio: round1(d.p), internal: round1(d.i),
+        unaccounted: unaccHours,
         avg3m, revenue: Math.round(d.rev),
-        cost: effectiveCost,
-        capacityCost: Math.round(baseline * costRate),
+        billableCost: Math.round(d.b * costRate),
+        salesCost: Math.round(d.s * costRate),
+        portfolioCost: Math.round(d.p * costRate),
+        internalCost: Math.round(d.i * costRate),
+        unaccountedCost: isEmployee ? Math.round(unaccHours * costRate) : 0,
         utilizationPct: baseline > 0 ? Math.round((d.logged / baseline) * 100) : 0,
         billablePct: d.logged > 0 ? Math.round((d.b / d.logged) * 100) : 0,
       };
@@ -717,7 +796,7 @@ function PrintView({ user, entries, billingRates, costRates, baselines, memberTy
             {isEmployee ? 'Employee' : 'Freelancer'}
           </span>
           <span style={{ fontSize: 11, background: '#f1f5f9', borderRadius: 6, padding: '4px 10px', color: '#475569', fontWeight: 500 }}>
-            Baseline: {baseline}h / month
+            Baseline: {baseline}h / mo
           </span>
           <span style={{ fontSize: 11, background: costRate > 0 ? '#fef2f2' : '#f1f5f9', borderRadius: 6, padding: '4px 10px', color: costRate > 0 ? '#ef4444' : '#94a3b8', fontWeight: 500 }}>
             Cost rate: {costRate > 0 ? `${costRate} €/h` : 'not set'}
@@ -781,6 +860,8 @@ function PrintView({ user, entries, billingRates, costRates, baselines, memberTy
             <YAxis tick={{ fontSize: 9 }} axisLine={false} tickLine={false} width={28} />
             <ReferenceLine y={baseline} stroke="#f59e0b" strokeDasharray="4 4" strokeWidth={1.5} />
             <Bar dataKey="billable" fill="#10b981" stackId="a" />
+            <Bar dataKey="sales" fill="#3b82f6" stackId="a" />
+            <Bar dataKey="portfolio" fill="#8b5cf6" stackId="a" />
             <Bar dataKey="internal" fill="#94a3b8" stackId="a" />
             <Bar dataKey="unaccounted" fill="#fef3c7" stackId="a" radius={[2, 2, 0, 0]} />
             <Line type="monotone" dataKey="avg3m" stroke="#475569" strokeWidth={2} dot={false} strokeDasharray="5 3" connectNulls />
@@ -802,16 +883,19 @@ function PrintView({ user, entries, billingRates, costRates, baselines, memberTy
       {showFinancial && (
         <div style={{ border: '1px solid #e2e8f0', borderRadius: 8, padding: 16, marginBottom: 28 }}>
           <p style={{ fontSize: 11, fontWeight: 600, color: '#475569', margin: '0 0 12px' }}>
-            Revenue vs. {isEmployee ? 'Employee Cost' : 'Cost'}
+            Cost Breakdown vs. Revenue — {baseline}h × {costRate} €/h
           </p>
-          <BarChart width={1028} height={140} data={chartData} margin={{ top: 4, right: 10, bottom: 0, left: 10 }} barCategoryGap="30%" barGap={3}>
+          <ComposedChart width={1028} height={140} data={chartData} margin={{ top: 4, right: 10, bottom: 0, left: 10 }} barCategoryGap="35%">
             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
             <XAxis dataKey="month" tick={{ fontSize: 9 }} axisLine={false} tickLine={false} />
             <YAxis tick={{ fontSize: 9 }} axisLine={false} tickLine={false} width={36} tickFormatter={v => v >= 1000 ? `${Math.round(v / 1000)}k` : String(v)} />
-            <Bar dataKey="revenue" fill="#10b981" radius={[2, 2, 0, 0]} />
-            <Bar dataKey="cost" fill="#f87171" radius={[2, 2, 0, 0]} />
-            {isEmployee && costRate > 0 && <Bar dataKey="capacityCost" fill="#e2e8f0" radius={[2, 2, 0, 0]} />}
-          </BarChart>
+            <Bar dataKey="billableCost"    fill="#10b981" stackId="cost" />
+            <Bar dataKey="salesCost"       fill="#3b82f6" stackId="cost" />
+            <Bar dataKey="portfolioCost"   fill="#8b5cf6" stackId="cost" />
+            <Bar dataKey="internalCost"    fill="#94a3b8" stackId="cost" />
+            <Bar dataKey="unaccountedCost" fill="#fcd34d" stackId="cost" radius={[2, 2, 0, 0]} />
+            <Line type="monotone" dataKey="revenue" stroke="#059669" strokeWidth={2} dot={{ r: 2.5, fill: '#059669', strokeWidth: 0 }} connectNulls />
+          </ComposedChart>
         </div>
       )}
 
@@ -877,13 +961,17 @@ function PrintView({ user, entries, billingRates, costRates, baselines, memberTy
             </thead>
             <tbody>
               {ticketList.map(([key, { task, hours, revenue: tRev }]) => {
-                const r = billingRates[key]; const isBill = !!(r?.billable && r.rate > 0);
+                const r = billingRates[key];
+                const cat = r?.category ?? 'internal';
+                const isBill = cat === 'billable' && !!(r?.rate && r.rate > 0);
+                const catColor = cat === 'billable' ? '#10b981' : cat === 'sales' ? '#3b82f6' : cat === 'portfolio' ? '#8b5cf6' : '#94a3b8';
+                const catLabel = cat === 'billable' ? `Billable · ${r!.rate} €/h` : cat === 'sales' ? 'Sales' : cat === 'portfolio' ? 'Portfolio' : 'Internal';
                 return (
                   <tr key={key} style={{ borderBottom: '1px solid #f1f5f9' }}>
                     <td style={{ padding: '6px 10px', color: '#334155' }}>{task}</td>
                     <td style={{ textAlign: 'right', padding: '6px 10px', color: '#475569' }}>{fmtH(hours)}</td>
-                    <td style={{ textAlign: 'right', padding: '6px 10px', color: isBill ? '#10b981' : '#94a3b8', fontWeight: isBill ? 600 : 400 }}>
-                      {isBill ? `Billable · ${r.rate} €/h` : 'Internal'}
+                    <td style={{ textAlign: 'right', padding: '6px 10px', color: catColor, fontWeight: isBill ? 600 : 400 }}>
+                      {catLabel}
                     </td>
                     <td style={{ textAlign: 'right', padding: '6px 10px', color: tRev > 0 ? '#10b981' : '#e2e8f0', fontWeight: tRev > 0 ? 600 : 400 }}>
                       {tRev > 0 ? fmtEur(tRev) : '—'}
@@ -924,7 +1012,7 @@ function IndividualMemberView({ user, entries, baselines, costRates, billingRate
   onBaselineChange: (h: number) => void;
   onCostRateChange: (rate: number) => void;
   onMemberTypeChange: (type: MemberType) => void;
-  onTicketRateChange: (key: string, billable: boolean, rate: number) => void;
+  onTicketRateChange: (key: string, category: TicketCategory, rate: number) => void;
 }) {
   const isAdmin = useRole() === 'admin';
   const confirm = useConfirm();
@@ -984,21 +1072,22 @@ function IndividualMemberView({ user, entries, baselines, costRates, billingRate
   const totalCapacityHours = baseline * months.length;
 
   const stats = useMemo(() => {
-    let totalHours = 0, billableHours = 0, revenue = 0;
+    let totalHours = 0, billableHours = 0, salesHours = 0, portfolioHours = 0, revenue = 0;
     for (const e of filteredEntries) {
       const r = billingRates[`${user}:::${e.project}:::${e.task}`];
-      const isBill = !!(r?.billable && r.rate > 0);
+      const cat = r?.category ?? 'internal';
       totalHours += e.spentTime;
-      if (isBill) { billableHours += e.spentTime; revenue += e.spentTime * r.rate; }
+      if (cat === 'billable' && r!.rate > 0) { billableHours += e.spentTime; revenue += e.spentTime * r!.rate; }
+      else if (cat === 'sales') salesHours += e.spentTime;
+      else if (cat === 'portfolio') portfolioHours += e.spentTime;
     }
     const unaccountedHours = Math.max(0, totalCapacityHours - totalHours);
     const avgBillingRate = billableHours > 0 ? revenue / billableHours : 0;
     const untappedRevenue = unaccountedHours * avgBillingRate;
-    // Employee: cost = full capacity; Freelancer: cost = logged hours only
     const effectiveCost = isEmployee ? totalCapacityHours * costRate : totalHours * costRate;
     const idleCost = isEmployee ? unaccountedHours * costRate : 0;
     return {
-      totalHours, billableHours, unaccountedHours,
+      totalHours, billableHours, salesHours, portfolioHours, unaccountedHours,
       revenue, effectiveCost, idleCost,
       net: revenue - effectiveCost,
       billablePct: totalHours > 0 ? Math.round((billableHours / totalHours) * 100) : 0,
@@ -1008,33 +1097,35 @@ function IndividualMemberView({ user, entries, baselines, costRates, billingRate
   }, [filteredEntries, billingRates, costRate, user, totalCapacityHours, isEmployee]);
 
   const chartData: ChartPoint[] = useMemo(() => {
-    const map = new Map<string, { b: number; i: number; rev: number; logged: number }>();
+    const map = new Map<string, { b: number; s: number; p: number; i: number; rev: number; logged: number }>();
     for (const e of filteredEntries) {
       const r = billingRates[`${user}:::${e.project}:::${e.task}`];
-      const isBill = !!(r?.billable && r.rate > 0);
-      if (!map.has(e.month)) map.set(e.month, { b: 0, i: 0, rev: 0, logged: 0 });
+      const cat = r?.category ?? 'internal';
+      if (!map.has(e.month)) map.set(e.month, { b: 0, s: 0, p: 0, i: 0, rev: 0, logged: 0 });
       const d = map.get(e.month)!;
-      if (isBill) { d.b += e.spentTime; d.rev += e.spentTime * r.rate; }
+      if (cat === 'billable' && r!.rate > 0) { d.b += e.spentTime; d.rev += e.spentTime * r!.rate; }
+      else if (cat === 'sales') d.s += e.spentTime;
+      else if (cat === 'portfolio') d.p += e.spentTime;
       else d.i += e.spentTime;
       d.logged += e.spentTime;
     }
     const monthTotals = new Map(months.map(m => [m, map.get(m)?.logged ?? 0]));
     return months.map((m, i) => {
-      const d = map.get(m) ?? { b: 0, i: 0, rev: 0, logged: 0 };
+      const d = map.get(m) ?? { b: 0, s: 0, p: 0, i: 0, rev: 0, logged: 0 };
       const slice = months.slice(Math.max(0, i - 2), i + 1);
       const avg3m = round1(slice.reduce((s, mo) => s + (monthTotals.get(mo) ?? 0), 0) / slice.length);
-      // Employee: flat monthly cost = baseline × rate; Freelancer: variable = logged × rate
-      const effectiveMonthlyCost = isEmployee
-        ? Math.round(baseline * costRate)
-        : Math.round(d.logged * costRate);
+      const unaccHours = round1(Math.max(0, baseline - d.logged));
       return {
         month: fmtMonth(m), rawMonth: m,
-        billable: round1(d.b), internal: round1(d.i),
-        unaccounted: round1(Math.max(0, baseline - d.logged)),
+        billable: round1(d.b), sales: round1(d.s), portfolio: round1(d.p), internal: round1(d.i),
+        unaccounted: unaccHours,
         avg3m,
         revenue: Math.round(d.rev),
-        cost: effectiveMonthlyCost,
-        capacityCost: Math.round(baseline * costRate),
+        billableCost: Math.round(d.b * costRate),
+        salesCost: Math.round(d.s * costRate),
+        portfolioCost: Math.round(d.p * costRate),
+        internalCost: Math.round(d.i * costRate),
+        unaccountedCost: isEmployee ? Math.round(unaccHours * costRate) : 0,
         utilizationPct: baseline > 0 ? Math.round((d.logged / baseline) * 100) : 0,
         billablePct: d.logged > 0 ? Math.round((d.b / d.logged) * 100) : 0,
       };
@@ -1428,7 +1519,7 @@ export default function TimesheetsClient({ store }: { store: TimesheetStore }) {
               onBaselineChange={async (h) => { await updateTimesheetBaseline(selectedUser, h); startTransition(() => router.refresh()); }}
               onCostRateChange={async (rate) => { await updateMemberCostRate(selectedUser, rate); startTransition(() => router.refresh()); }}
               onMemberTypeChange={async (type) => { await updateMemberType(selectedUser, type); startTransition(() => router.refresh()); }}
-              onTicketRateChange={async (key, billable, rate) => { await updateTicketRate(key, billable, rate); startTransition(() => router.refresh()); }}
+              onTicketRateChange={async (key, category, rate) => { await updateTicketRate(key, category, rate); startTransition(() => router.refresh()); }}
             />
           )}
         </>

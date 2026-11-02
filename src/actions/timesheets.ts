@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { readTimesheets, writeTimesheets } from '@/lib/db';
-import { TimesheetEntry } from '@/lib/types';
+import { TimesheetEntry, TicketCategory, TicketRate } from '@/lib/types';
 
 // ─── CSV Parser ───────────────────────────────────────────────────────────────
 
@@ -109,14 +109,14 @@ export async function updateTimesheetBaseline(user: string, hours: number): Prom
 }
 
 // key format: "user:::project:::task"
-export async function updateTicketRate(key: string, billable: boolean, rate: number): Promise<void> {
+export async function updateTicketRate(key: string, category: TicketCategory, rate: number): Promise<void> {
   const store = await readTimesheets();
-  // Migrate: drop old-format keys that used "project:::task" (2 parts) instead of "user:::project:::task" (3 parts)
-  const migrated: Record<string, { billable: boolean; rate: number }> = {};
+  // Drop old-format keys that used "project:::task" (2 parts) instead of "user:::project:::task" (3 parts)
+  const migrated: Record<string, TicketRate> = {};
   for (const [k, v] of Object.entries(store.billingRates)) {
-    if (k.split(':::').length === 3) migrated[k] = v;
+    if (k.split(':::').length === 3) migrated[k] = v as TicketRate;
   }
-  migrated[key] = { billable, rate: Math.max(0, rate) };
+  migrated[key] = { category, rate: Math.max(0, rate) };
   store.billingRates = migrated;
   await writeTimesheets(store);
   revalidatePath('/timesheets');
