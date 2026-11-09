@@ -3,7 +3,7 @@
 import { useState, useRef, useMemo, useEffect, useTransition, Fragment } from 'react';
 import { useRouter } from 'next/navigation';
 import { useRole } from '@/components/RoleProvider';
-import { TimesheetEntry, TimesheetStore, TicketRate, TicketCategory } from '@/lib/types';
+import { TimesheetEntry, TimesheetStore, TicketRate, TicketCategory, PlanEntry, PlanningStore } from '@/lib/types';
 import {
   uploadTimesheetFiles,
   clearTimesheets,
@@ -13,6 +13,7 @@ import {
   updateMemberCostRate,
   updateMemberType,
 } from '@/actions/timesheets';
+import { uploadPlanningExcel } from '@/actions/planning';
 import { useToast } from '@/components/ToastProvider';
 import { useConfirm } from '@/components/ConfirmDialogProvider';
 import {
@@ -987,6 +988,175 @@ function PrintView({ user, entries, billingRates, costRates, baselines, memberTy
   );
 }
 
+// ─── Planning constants ───────────────────────────────────────────────────────
+
+// Jan 2027 – Jun 2028 (18 months)
+const PLAN_MONTHS: string[] = (() => {
+  const months: string[] = [];
+  for (let i = 0; i < 18; i++) {
+    const year = 2027 + Math.floor(i / 12);
+    const month = (i % 12) + 1;
+    months.push(`${year}-${String(month).padStart(2, '0')}`);
+  }
+  return months;
+})();
+
+// ─── Planung View ─────────────────────────────────────────────────────────────
+
+function PlanungView({ entries, plans, baseline }: {
+  entries: TimesheetEntry[];
+  plans: PlanEntry[];
+  baseline: number;
+}) {
+  const tickets = useMemo(() => {
+    const set = new Set<string>();
+    for (const e of entries) set.add(`${e.project}|||${e.task}`);
+    return [...set].sort().map(t => {
+      const sep = t.indexOf('|||');
+      return { project: t.slice(0, sep), task: t.slice(sep + 3) };
+    });
+  }, [entries]);
+
+  const planMap = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const p of plans) m.set(`${p.project}|||${p.task}|||${p.month}`, p.plannedPercent);
+    return m;
+  }, [plans]);
+
+  if (tickets.length === 0) {
+    return (
+      <div className="bg-white rounded-lg border border-gray-200 px-6 py-16 text-center text-gray-400 text-sm">
+        Keine Tickets vorhanden — lade zunächst Zeiterfassungsdaten hoch.
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+      <div className="px-5 py-3.5 border-b border-gray-100 bg-slate-50">
+        <p className="font-semibold text-sm text-slate-800">Kapazitätsplanung</p>
+        <p className="text-xs text-gray-400 mt-0.5">Geplante Auslastung in % der Baseline ({baseline}h/Mo) · Jan 2027 – Jun 2028</p>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs min-w-max">
+          <thead>
+            <tr className="bg-gray-50 border-b border-gray-200">
+              <th className="text-left px-3 py-2 font-medium text-gray-600 min-w-[220px] sticky left-0 bg-gray-50">Project</th>
+              <th className="text-left px-3 py-2 font-medium text-gray-600 min-w-[200px] sticky left-[220px] bg-gray-50">Task</th>
+              {PLAN_MONTHS.map(m => (
+                <th key={m} className="text-right px-2 py-2 font-medium text-gray-600 min-w-[64px] whitespace-nowrap">
+                  {fmtMonth(m)}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {tickets.map(({ project, task }) => (
+              <tr key={`${project}|||${task}`} className="border-b border-gray-100 hover:bg-gray-50">
+                <td className="px-3 py-2 text-gray-700 sticky left-0 bg-white font-medium truncate max-w-[220px]">{project}</td>
+                <td className="px-3 py-2 text-gray-500 sticky left-[220px] bg-white truncate max-w-[200px]">{task}</td>
+                {PLAN_MONTHS.map(m => {
+                  const pct = planMap.get(`${project}|||${task}|||${m}`);
+                  return (
+                    <td key={m} className={`text-right px-2 py-2 tabular-nums ${pct !== undefined ? 'text-slate-700 font-medium' : 'text-gray-200'}`}>
+                      {pct !== undefined ? `${pct}%` : '—'}
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// ─── Planungsgenauigkeit View ─────────────────────────────────────────────────
+
+function PlanungsgenauigkeitView({ entries, plans, baseline }: {
+  entries: TimesheetEntry[];
+  plans: PlanEntry[];
+  baseline: number;
+}) {
+  const currentMonth = new Date().toISOString().slice(0, 7);
+  const pastPlanMonths = PLAN_MONTHS.filter(m => m < currentMonth);
+
+  const rows = useMemo(() => {
+    return pastPlanMonths
+      .map(month => {
+        const monthPlans = plans.filter(p => p.month === month);
+        if (monthPlans.length === 0) return null;
+        const totalPlannedPct = monthPlans.reduce((s, p) => s + p.plannedPercent, 0);
+        const actualHours = entries.filter(e => e.month === month).reduce((s, e) => s + e.spentTime, 0);
+        const actualPct = baseline > 0 ? (actualHours / baseline) * 100 : 0;
+        const delta = actualPct - totalPlannedPct;
+        return { month, totalPlannedPct, actualPct, actualHours, delta };
+      })
+      .filter(Boolean) as { month: string; totalPlannedPct: number; actualPct: number; actualHours: number; delta: number }[];
+  }, [pastPlanMonths, plans, entries, baseline]);
+
+  if (rows.length === 0) {
+    return (
+      <div className="bg-white rounded-lg border border-gray-200 px-6 py-16 text-center text-gray-400 text-sm">
+        <p className="font-medium text-gray-500 mb-1">Keine Vergangenheitsdaten</p>
+        <p>Genauigkeitswerte erscheinen hier sobald geplante Monate vergangen sind und Zeitbuchungen vorliegen.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+      <div className="px-5 py-3.5 border-b border-gray-100 bg-slate-50">
+        <p className="font-semibold text-sm text-slate-800">Planungsgenauigkeit</p>
+        <p className="text-xs text-gray-400 mt-0.5">Aggregierter Vergleich: geplante vs. tatsächliche Auslastung pro Monat</p>
+      </div>
+      <table className="w-full text-xs">
+        <thead>
+          <tr className="bg-gray-50 border-b border-gray-200">
+            <th className="text-left px-5 py-2 font-medium text-gray-600">Monat</th>
+            <th className="text-right px-4 py-2 font-medium text-gray-600">Geplant %</th>
+            <th className="text-right px-4 py-2 font-medium text-gray-600">Ist %</th>
+            <th className="text-right px-4 py-2 font-medium text-gray-600">Delta</th>
+            <th className="text-right px-5 py-2 font-medium text-gray-600">Score</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map(r => {
+            const score = Math.max(0, 100 - Math.abs(r.delta));
+            return (
+              <tr key={r.month} className="border-b border-gray-100 hover:bg-gray-50">
+                <td className="px-5 py-2.5 font-medium text-gray-700">{fmtMonth(r.month)}</td>
+                <td className="text-right px-4 py-2.5 tabular-nums text-gray-500">{Math.round(r.totalPlannedPct)}%</td>
+                <td className="text-right px-4 py-2.5 tabular-nums text-gray-700 font-medium">
+                  {Math.round(r.actualPct)}%
+                  <span className="text-gray-400 font-normal ml-1">({fmtH(r.actualHours)})</span>
+                </td>
+                <td className={`text-right px-4 py-2.5 tabular-nums font-medium ${
+                  Math.abs(r.delta) <= 5 ? 'text-emerald-600'
+                  : Math.abs(r.delta) <= 15 ? 'text-amber-500'
+                  : 'text-red-500'
+                }`}>
+                  {r.delta > 0 ? '+' : ''}{Math.round(r.delta)}pp
+                </td>
+                <td className="text-right px-5 py-2.5 tabular-nums">
+                  <span className={`inline-flex items-center justify-center rounded-full px-2 py-0.5 text-xs font-semibold ${
+                    score >= 90 ? 'bg-emerald-50 text-emerald-700'
+                    : score >= 75 ? 'bg-amber-50 text-amber-700'
+                    : 'bg-red-50 text-red-700'
+                  }`}>
+                    {Math.round(score)}%
+                  </span>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 // ─── Individual Member View ───────────────────────────────────────────────────
 
 type TimePeriod = '3m' | '6m' | 'ytd';
@@ -1001,13 +1171,14 @@ function getPeriodStartMonth(period: TimePeriod): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 }
 
-function IndividualMemberView({ user, entries, baselines, costRates, billingRates, memberTypes, onDeletePerson, onBaselineChange, onCostRateChange, onMemberTypeChange, onTicketRateChange }: {
+function IndividualMemberView({ user, entries, baselines, costRates, billingRates, memberTypes, plans, onDeletePerson, onBaselineChange, onCostRateChange, onMemberTypeChange, onTicketRateChange }: {
   user: string;
   entries: TimesheetEntry[];
   baselines: Record<string, number>;
   costRates: Record<string, number>;
   billingRates: Record<string, TicketRate>;
   memberTypes: Record<string, MemberType>;
+  plans: PlanEntry[];
   onDeletePerson: () => void;
   onBaselineChange: (h: number) => void;
   onCostRateChange: (rate: number) => void;
@@ -1024,6 +1195,7 @@ function IndividualMemberView({ user, entries, baselines, costRates, billingRate
 
   const [costInput, setCostInput] = useState(costRate ? String(costRate) : '');
   const [isPrinting, setIsPrinting] = useState(false);
+  const [activeView, setActiveView] = useState<'ist' | 'planung' | 'accuracy'>('ist');
   const printRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => { setCostInput(costRate ? String(costRate) : ''); }, [costRate]);
@@ -1147,23 +1319,25 @@ function IndividualMemberView({ user, entries, baselines, costRates, billingRate
           <h2 className="text-xl font-bold text-gray-900">{user}</h2>
           {period && <p className="text-sm text-gray-400 mt-0.5">{period}</p>}
         </div>
-        <div className="flex items-center gap-2 flex-shrink-0">
-          {/* Period selector — visible to all roles */}
-          <div className="flex rounded-full border border-gray-200 overflow-hidden text-xs">
-            {([['3m', 'Last 3M'], ['6m', 'Last 6M'], ['ytd', 'This Year']] as [TimePeriod, string][]).map(([p, label], i) => (
-              <button
-                key={p}
-                type="button"
-                onClick={() => setTimePeriod(p)}
-                className={`px-3 py-1.5 ${i > 0 ? 'border-l border-gray-200' : ''} transition-colors ${
-                  timePeriod === p ? 'bg-slate-800 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'
-                }`}
-              >
-                {label}
-              </button>
-            ))}
+        {activeView === 'ist' && (
+          <div className="flex items-center gap-2 flex-shrink-0">
+            {/* Period selector — visible to all roles */}
+            <div className="flex rounded-full border border-gray-200 overflow-hidden text-xs">
+              {([['3m', 'Last 3M'], ['6m', 'Last 6M'], ['ytd', 'This Year']] as [TimePeriod, string][]).map(([p, label], i) => (
+                <button
+                  key={p}
+                  type="button"
+                  onClick={() => setTimePeriod(p)}
+                  className={`px-3 py-1.5 ${i > 0 ? 'border-l border-gray-200' : ''} transition-colors ${
+                    timePeriod === p ? 'bg-slate-800 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
+        )}
         <div className="flex items-center gap-2 flex-shrink-0 flex-wrap justify-end">
           {/* Employee / Freelancer toggle */}
           {isAdmin && (
@@ -1227,6 +1401,25 @@ function IndividualMemberView({ user, entries, baselines, costRates, billingRate
         </div>
       </div>
 
+      {/* Sub-tab navigation */}
+      <div className="flex border-b border-gray-200">
+        {(['ist', 'planung', 'accuracy'] as const).map((v) => (
+          <button
+            key={v}
+            type="button"
+            onClick={() => setActiveView(v)}
+            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+              activeView === v
+                ? 'border-slate-800 text-slate-800'
+                : 'border-transparent text-gray-400 hover:text-gray-600 hover:border-gray-300'
+            }`}
+          >
+            {v === 'ist' ? 'Zeiterfassung' : v === 'planung' ? 'Planung' : 'Planungsgenauigkeit'}
+          </button>
+        ))}
+      </div>
+
+      {activeView === 'ist' && (<>
       {/* KPI Row 1 — Time */}
       <div className="grid grid-cols-4 gap-3">
         <div className="bg-white rounded-lg border border-gray-200 p-4">
@@ -1360,6 +1553,15 @@ function IndividualMemberView({ user, entries, baselines, costRates, billingRate
         costRate={costRate} isEmployee={isEmployee} totalCapacityHours={totalCapacityHours}
         onRateChange={onTicketRateChange}
       />
+      </>)}
+
+      {activeView === 'planung' && (
+        <PlanungView entries={entries} plans={plans} baseline={baseline} />
+      )}
+
+      {activeView === 'accuracy' && (
+        <PlanungsgenauigkeitView entries={entries} plans={plans} baseline={baseline} />
+      )}
 
       {/* Off-screen print capture */}
       {isPrinting && (
@@ -1376,7 +1578,7 @@ function IndividualMemberView({ user, entries, baselines, costRates, billingRate
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
-export default function TimesheetsClient({ store }: { store: TimesheetStore }) {
+export default function TimesheetsClient({ store, planning }: { store: TimesheetStore; planning: PlanningStore }) {
   const router = useRouter();
   const isAdmin = useRole() === 'admin';
   const confirm = useConfirm();
@@ -1385,6 +1587,9 @@ export default function TimesheetsClient({ store }: { store: TimesheetStore }) {
   const [uploading, setUploading] = useState(false);
   const [uploadMsg, setUploadMsg] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const [planUploading, setPlanUploading] = useState(false);
+  const [planUploadMsg, setPlanUploadMsg] = useState<string | null>(null);
+  const planFileRef = useRef<HTMLInputElement>(null);
 
   const users = useMemo(() => [...new Set(store.entries.map(e => e.user))].sort(), [store.entries]);
   const [selectedUser, setSelectedUser] = useState<string>(() => users[0] ?? '');
@@ -1419,7 +1624,26 @@ export default function TimesheetsClient({ store }: { store: TimesheetStore }) {
     toast.success('All timesheet data cleared');
   }
 
+  async function handlePlanningUpload(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const file = planFileRef.current?.files?.[0];
+    if (!file) return;
+    setPlanUploading(true); setPlanUploadMsg(null);
+    const fd = new FormData();
+    fd.append('file', file);
+    const res = await uploadPlanningExcel(fd);
+    if (!res.ok) {
+      setPlanUploadMsg(`Fehler: ${res.error}`);
+    } else {
+      setPlanUploadMsg(`${res.count} Planungseinträge importiert.`);
+      if (planFileRef.current) planFileRef.current.value = '';
+      startTransition(() => router.refresh());
+    }
+    setPlanUploading(false);
+  }
+
   const memberEntries = useMemo(() => store.entries.filter(e => e.user === selectedUser), [store.entries, selectedUser]);
+  const memberPlans = useMemo(() => planning.plans.filter(p => p.user === selectedUser), [planning.plans, selectedUser]);
   const overallTotal = store.entries.reduce((s, e) => s + e.spentTime, 0);
   const ticketCount = useMemo(() => new Set(store.entries.map(e => `${e.project}:::${e.task}`)).size, [store.entries]);
 
@@ -1489,6 +1713,39 @@ export default function TimesheetsClient({ store }: { store: TimesheetStore }) {
             </span>
           </div>
         )}
+
+        {isAdmin && (
+          <div className="mt-4 pt-4 border-t border-gray-100">
+            <p className="text-xs font-medium text-gray-500 mb-3">Kapazitätsplanung (Excel)</p>
+            <div className="flex flex-wrap items-end gap-4">
+              <a
+                href="/api/planning/export"
+                className="inline-flex items-center gap-1.5 bg-white border border-gray-300 text-gray-700 px-4 py-1.5 rounded text-sm font-medium hover:bg-gray-50 transition-colors"
+              >
+                ↓ Download Planning Excel
+              </a>
+              <form onSubmit={handlePlanningUpload} className="flex items-center gap-3">
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Planning Excel (.xlsx)</label>
+                  <input ref={planFileRef} type="file" accept=".xlsx"
+                    className="text-sm text-gray-600 file:mr-3 file:py-1.5 file:px-3 file:rounded file:border file:border-gray-300 file:text-sm file:font-medium file:bg-white file:text-gray-700 hover:file:bg-gray-50 cursor-pointer" />
+                </div>
+                <button type="submit" disabled={planUploading || isPending}
+                  className="self-end bg-slate-800 text-white px-4 py-1.5 rounded text-sm font-medium hover:bg-slate-700 transition-colors disabled:opacity-40">
+                  {planUploading ? 'Importing…' : 'Upload'}
+                </button>
+              </form>
+            </div>
+            {planUploadMsg && (
+              <p className={`mt-2 text-sm font-medium ${planUploadMsg.startsWith('Fehler') ? 'text-red-600' : 'text-emerald-600'}`}>{planUploadMsg}</p>
+            )}
+            {planning.lastUpload && (
+              <p className="mt-1.5 text-xs text-gray-400">
+                Zuletzt hochgeladen: {new Date(planning.lastUpload).toLocaleString('de-DE')}
+              </p>
+            )}
+          </div>
+        )}
       </div>
 
       {store.entries.length === 0 ? (
@@ -1515,6 +1772,7 @@ export default function TimesheetsClient({ store }: { store: TimesheetStore }) {
               costRates={store.costRates}
               billingRates={store.billingRates}
               memberTypes={store.memberTypes ?? {}}
+              plans={memberPlans}
               onDeletePerson={async () => { await deleteTimesheetPerson(selectedUser); startTransition(() => router.refresh()); }}
               onBaselineChange={async (h) => { await updateTimesheetBaseline(selectedUser, h); startTransition(() => router.refresh()); }}
               onCostRateChange={async (rate) => { await updateMemberCostRate(selectedUser, rate); startTransition(() => router.refresh()); }}

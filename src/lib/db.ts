@@ -1,7 +1,7 @@
 import { Redis } from '@upstash/redis';
 import { unstable_cache, revalidateTag } from 'next/cache';
 import { cache } from 'react';
-import { AppData, Assignment, Project, Forecast, ElsapMirror, TimesheetStore, TicketRate, InvoicingStore, SubContractorStore, ProjektAnalysisProject, FmoStore, FmoMappingStore, FmoProject } from './types';
+import { AppData, Assignment, Project, Forecast, ElsapMirror, TimesheetStore, TicketRate, InvoicingStore, SubContractorStore, ProjektAnalysisProject, FmoStore, FmoMappingStore, FmoProject, PlanningStore } from './types';
 import { getMonthsBetween } from './utils';
 
 const redis = new Redis({
@@ -261,6 +261,21 @@ export const readFmoMappings = cache(async (): Promise<FmoMappingStore> => {
 
 export async function writeFmoMappings(mappings: FmoMappingStore): Promise<void> {
   await withRetry(() => redis.set(FMO_MAPPING_KEY, mappings));
+}
+
+// ─── Planning ─────────────────────────────────────────────────────────────────
+
+const PLANNING_KEY = 'app:planning';
+
+// Uses React cache() — no Vercel Data Cache, avoids stale overwrites on upload
+export const readPlanning = cache(async (): Promise<PlanningStore> => {
+  const raw = await withRetry(() => redis.get<any>(PLANNING_KEY));
+  if (!raw) return { plans: [], lastUpload: '' };
+  return { plans: raw.plans ?? [], lastUpload: raw.lastUpload ?? '' };
+});
+
+export async function writePlanning(store: PlanningStore): Promise<void> {
+  await withRetry(() => redis.set(PLANNING_KEY, store));
 }
 
 const FMO_PROJECTS_KEY  = 'app:fmo:projects';

@@ -270,6 +270,21 @@ export interface ProjektAnalysisProject {
   forecast: ProjektAnalysisForecast;
 }
 
+// ─── Planning Types ───────────────────────────────────────────────────────────
+
+export interface PlanEntry {
+  user: string;
+  project: string;
+  task: string;
+  month: string; // "YYYY-MM"
+  plannedPercent: number;
+}
+
+export interface PlanningStore {
+  plans: PlanEntry[];
+  lastUpload: string;
+}
+
 // ─── FMO Types ────────────────────────────────────────────────────────────────
 
 export type SyncSource = 'manual' | 'excel' | 'sectrack' | 'sap';
