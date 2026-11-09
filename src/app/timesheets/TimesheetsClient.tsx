@@ -1008,14 +1008,20 @@ function PlanungView({ entries, plans, baseline }: {
   plans: PlanEntry[];
   baseline: number;
 }) {
-  const tickets = useMemo(() => {
-    const set = new Set<string>();
-    for (const e of entries) set.add(`${e.project}|||${e.task}`);
-    return [...set].sort().map(t => {
-      const sep = t.indexOf('|||');
-      return { project: t.slice(0, sep), task: t.slice(sep + 3) };
-    });
-  }, [entries]);
+  // Union of IST tickets and planned-only tickets (new projects not yet booked)
+  const { tickets, istSet } = useMemo(() => {
+    const ist = new Set<string>();
+    for (const e of entries) ist.add(`${e.project}|||${e.task}`);
+    const all = new Set(ist);
+    for (const p of plans) all.add(`${p.project}|||${p.task}`);
+    return {
+      tickets: [...all].sort().map(t => {
+        const sep = t.indexOf('|||');
+        return { project: t.slice(0, sep), task: t.slice(sep + 3) };
+      }),
+      istSet: ist,
+    };
+  }, [entries, plans]);
 
   const planMap = useMemo(() => {
     const m = new Map<string, number>();
@@ -1023,19 +1029,28 @@ function PlanungView({ entries, plans, baseline }: {
     return m;
   }, [plans]);
 
+  const planOnlyCount = tickets.filter(t => !istSet.has(`${t.project}|||${t.task}`)).length;
+
   if (tickets.length === 0) {
     return (
       <div className="bg-white rounded-lg border border-gray-200 px-6 py-16 text-center text-gray-400 text-sm">
-        Keine Tickets vorhanden — lade zunächst Zeiterfassungsdaten hoch.
+        Keine Tickets vorhanden — lade zunächst Zeiterfassungsdaten hoch oder eine Planungs-Excel.
       </div>
     );
   }
 
   return (
     <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-      <div className="px-5 py-3.5 border-b border-gray-100 bg-slate-50">
-        <p className="font-semibold text-sm text-slate-800">Kapazitätsplanung</p>
-        <p className="text-xs text-gray-400 mt-0.5">Geplante Auslastung in % der Baseline ({baseline}h/Mo) · Jan 2027 – Jun 2028</p>
+      <div className="px-5 py-3.5 border-b border-gray-100 bg-slate-50 flex items-center justify-between">
+        <div>
+          <p className="font-semibold text-sm text-slate-800">Kapazitätsplanung</p>
+          <p className="text-xs text-gray-400 mt-0.5">Geplante Auslastung in % der Baseline ({baseline}h/Mo) · Jan 2027 – Jun 2028</p>
+        </div>
+        {planOnlyCount > 0 && (
+          <span className="text-xs bg-blue-50 text-blue-600 border border-blue-200 px-2.5 py-1 rounded-full">
+            {planOnlyCount} neu geplant · noch keine Buchungen
+          </span>
+        )}
       </div>
       <div className="overflow-x-auto">
         <table className="w-full text-xs min-w-max">
@@ -1051,20 +1066,28 @@ function PlanungView({ entries, plans, baseline }: {
             </tr>
           </thead>
           <tbody>
-            {tickets.map(({ project, task }) => (
-              <tr key={`${project}|||${task}`} className="border-b border-gray-100 hover:bg-gray-50">
-                <td className="px-3 py-2 text-gray-700 sticky left-0 bg-white font-medium truncate max-w-[220px]">{project}</td>
-                <td className="px-3 py-2 text-gray-500 sticky left-[220px] bg-white truncate max-w-[200px]">{task}</td>
-                {PLAN_MONTHS.map(m => {
-                  const pct = planMap.get(`${project}|||${task}|||${m}`);
-                  return (
-                    <td key={m} className={`text-right px-2 py-2 tabular-nums ${pct !== undefined ? 'text-slate-700 font-medium' : 'text-gray-200'}`}>
-                      {pct !== undefined ? `${pct}%` : '—'}
-                    </td>
-                  );
-                })}
-              </tr>
-            ))}
+            {tickets.map(({ project, task }) => {
+              const isPlanOnly = !istSet.has(`${project}|||${task}`);
+              return (
+                <tr key={`${project}|||${task}`} className={`border-b border-gray-100 hover:bg-gray-50 ${isPlanOnly ? 'bg-blue-50/40' : ''}`}>
+                  <td className={`px-3 py-2 sticky left-0 font-medium truncate max-w-[220px] ${isPlanOnly ? 'text-blue-700 bg-blue-50/60' : 'text-gray-700 bg-white'}`}>
+                    <span className="flex items-center gap-1.5">
+                      {isPlanOnly && <span className="shrink-0 w-1.5 h-1.5 rounded-full bg-blue-400" title="Nur geplant — noch keine Zeitbuchungen" />}
+                      {project}
+                    </span>
+                  </td>
+                  <td className={`px-3 py-2 sticky left-[220px] truncate max-w-[200px] ${isPlanOnly ? 'text-blue-600 bg-blue-50/60' : 'text-gray-500 bg-white'}`}>{task}</td>
+                  {PLAN_MONTHS.map(m => {
+                    const pct = planMap.get(`${project}|||${task}|||${m}`);
+                    return (
+                      <td key={m} className={`text-right px-2 py-2 tabular-nums ${pct !== undefined ? (isPlanOnly ? 'text-blue-700 font-medium' : 'text-slate-700 font-medium') : 'text-gray-200'}`}>
+                        {pct !== undefined ? `${pct}%` : '—'}
+                      </td>
+                    );
+                  })}
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
