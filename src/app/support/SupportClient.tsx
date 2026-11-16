@@ -126,7 +126,13 @@ function UploadArea({ onUpload, uploading }: { onUpload: (f: File) => void; uplo
       <input ref={fileRef} type="file" accept=".xlsx,.xls" className="hidden"
         onChange={(e) => handleFile(e.target.files?.[0] ?? null)} />
       {uploading ? (
-        <p className="text-sm text-slate-500">Wird importiert…</p>
+        <div className="flex items-center justify-center gap-2 text-slate-500">
+          <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+          </svg>
+          <span className="text-sm">Wird importiert…</span>
+        </div>
       ) : (
         <>
           <p className="text-sm font-medium text-slate-600">Support.xlsx hier ablegen oder klicken</p>
@@ -142,6 +148,7 @@ function UploadArea({ onUpload, uploading }: { onUpload: (f: File) => void; uplo
 export default function SupportClient({ store }: { store: SupportStore }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  const [uploading, setUploading] = useState(false);
   const [uploadResult, setUploadResult] = useState<{ ok: boolean; msg: string } | null>(null);
 
   // ── Filters & settings ────────────────────────────────────────────────────
@@ -306,9 +313,12 @@ export default function SupportClient({ store }: { store: SupportStore }) {
 
   // ── Upload ─────────────────────────────────────────────────────────────────
   async function handleUpload(file: File) {
+    setUploading(true);
+    setUploadResult(null);
     const fd = new FormData();
     fd.append('file', file);
     const res = await parseSupportXlsx(fd);
+    setUploading(false);
     if (res.ok) {
       setUploadResult({ ok: true, msg: `${res.entries} Einträge · ${res.employees} Mitarbeiter · ${res.clusters} Cluster` });
       startTransition(() => router.refresh());
@@ -342,7 +352,7 @@ export default function SupportClient({ store }: { store: SupportStore }) {
             </span>
           )}
         </p>
-        <UploadArea onUpload={handleUpload} uploading={isPending} />
+        <UploadArea onUpload={handleUpload} uploading={uploading} />
         {uploadResult && (
           <p className={`text-xs px-3 py-1.5 rounded ${uploadResult.ok ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'}`}>
             {uploadResult.ok ? '✓ ' : '✗ '}{uploadResult.msg}

@@ -22,6 +22,15 @@ function monthLabel(periode: number, yr: number) {
 
 type SortKey = 'periode' | 'name' | 'posText' | 'stunden' | 'status';
 
+function Spinner() {
+  return (
+    <svg className="animate-spin h-3.5 w-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+    </svg>
+  );
+}
+
 async function compressFile(file: File): Promise<File> {
   const ab = await file.arrayBuffer();
   const cs = new CompressionStream('gzip');
@@ -37,7 +46,8 @@ export default function ElsapClient({ mirror }: Props) {
   const isAdmin = useRole() === 'admin';
   const fileRef = useRef<HTMLInputElement>(null);
   const [isPending, startTransition] = useTransition();
-  const [importing, setImporting] = useState(false);
+  const [importPhase, setImportPhase] = useState<'idle' | 'compressing' | 'uploading'>('idle');
+  const [inspecting, setInspecting] = useState(false);
   const [applying, setApplying] = useState(false);
   const [importResult, setImportResult] = useState<{ added: number; removed: number; updated: number; unchanged: number; total: number; error?: string; warnings?: string[] } | null>(null);
   const [inspectResult, setInspectResult] = useState<{ columns: string[]; verrechnetCount: number; verrechnetSamples: string[]; yearBreakdown: Record<string, number>; error?: string } | null>(null);
@@ -134,23 +144,27 @@ export default function ElsapClient({ mirror }: Props) {
     const file = fileRef.current?.files?.[0];
     if (!file) return;
     setInspectResult(null);
+    setInspecting(true);
     const fd = new FormData();
     fd.append('file', await compressFile(file));
     const res = await inspectElsapFile(fd);
     setInspectResult(res);
+    setInspecting(false);
   }
 
   async function handleImport(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const file = fileRef.current?.files?.[0];
     if (!file) return;
-    setImporting(true);
+    setImportPhase('compressing');
     setImportResult(null);
+    const compressed = await compressFile(file);
+    setImportPhase('uploading');
     const fd = new FormData();
-    fd.append('file', await compressFile(file));
+    fd.append('file', compressed);
     const res = await importElsapCsv(fd);
+    setImportPhase('idle');
     setImportResult(res);
-    setImporting(false);
     if (!res.error) {
       if (fileRef.current) fileRef.current.value = '';
       startTransition(() => router.refresh());
@@ -227,18 +241,20 @@ export default function ElsapClient({ mirror }: Props) {
             />
             <button
               type="submit"
-              disabled={importing || isPending}
-              className="bg-slate-600 text-white px-4 py-1.5 rounded text-sm font-medium hover:bg-slate-700 transition-colors disabled:opacity-40"
+              disabled={importPhase !== 'idle' || isPending}
+              className="inline-flex items-center gap-2 bg-slate-600 text-white px-4 py-1.5 rounded text-sm font-medium hover:bg-slate-700 transition-colors disabled:opacity-40"
             >
-              {importing ? 'Importing…' : 'Import'}
+              {importPhase === 'compressing' && <><Spinner />Komprimiere…</>}
+              {importPhase === 'uploading'   && <><Spinner />Importiere…</>}
+              {importPhase === 'idle'        && 'Import'}
             </button>
             <button
               type="button"
               onClick={handleInspect}
-              disabled={importing || isPending}
-              className="border border-gray-300 text-gray-600 px-3 py-1.5 rounded text-sm font-medium hover:bg-gray-50 transition-colors disabled:opacity-40"
+              disabled={inspecting || importPhase !== 'idle' || isPending}
+              className="inline-flex items-center gap-2 border border-gray-300 text-gray-600 px-3 py-1.5 rounded text-sm font-medium hover:bg-gray-50 transition-colors disabled:opacity-40"
             >
-              Inspect columns
+              {inspecting ? <><Spinner />Analysiere…</> : 'Inspect columns'}
             </button>
           </div>
           <p className="text-xs text-gray-400">Each import fully replaces the mirror with the uploaded file.</p>
@@ -248,9 +264,9 @@ export default function ElsapClient({ mirror }: Props) {
         <button
           onClick={handleApply}
           disabled={applying || mirror.rows.length === 0 || isPending}
-          className="bg-emerald-600 text-white px-4 py-1.5 rounded text-sm font-medium hover:bg-emerald-700 transition-colors disabled:opacity-40"
+          className="inline-flex items-center gap-2 bg-emerald-600 text-white px-4 py-1.5 rounded text-sm font-medium hover:bg-emerald-700 transition-colors disabled:opacity-40"
         >
-          {applying ? 'Applying…' : 'Apply to Dashboard'}
+          {applying ? <><Spinner />Applying…</> : 'Apply to Dashboard'}
         </button>
       </div>}
 
