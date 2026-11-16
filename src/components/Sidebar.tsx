@@ -51,7 +51,10 @@ export default function Sidebar({
     },
     {
       key: "sapImport",
-      items: [{ key: "elsap", href: "/elsap" }],
+      items: [
+        { key: "elsap",    href: "/elsap" },
+        { key: "support",  href: "/support" },
+      ],
     },
     {
       key: "bookkeeping",

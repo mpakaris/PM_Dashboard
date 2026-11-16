@@ -56,7 +56,8 @@
     "wbs": "WBS Codes",
     "tickets": "Tickets",
     "members": "Members",
-    "utilization": "Utilization"
+    "utilization": "Utilization",
+    "support": "Support Clusters"
   },
   "import": {
     "title": "Import SecTrack Data",

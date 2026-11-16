@@ -272,6 +272,34 @@ export interface ProjektAnalysisProject {
   forecast: ProjektAnalysisForecast;
 }
 
+// ─── Support Types ────────────────────────────────────────────────────────────
+
+export interface SupportEntry {
+  employee: string;        // "Baumgartner"
+  date: string;            // "2024-11-18" ISO
+  yearMonth: string;       // "2024-11"
+  hours: number;           // decimal hours
+  description: string;     // INC... or meeting name
+  details: string;
+  clusterCode: string;     // normalized sub-cluster "6.2", or "" if none
+  topClusterCode: string;  // parent cluster "6", or "" if none
+  isIncident: boolean;
+}
+
+export interface SupportCluster {
+  code: string;    // "6.2"
+  label: string;   // "Anfragen zur Einrichtung von neuen Mailboxen"
+  parent: string;  // "6"
+  isTop: boolean;
+}
+
+export interface SupportStore {
+  entries: SupportEntry[];
+  clusters: SupportCluster[];
+  lastImport: string;
+  employeeNames: string[];
+}
+
 // ─── Planning Types ───────────────────────────────────────────────────────────
 
 export interface PlanEntry {

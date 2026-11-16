@@ -1,7 +1,7 @@
 import { Redis } from '@upstash/redis';
 import { unstable_cache, revalidateTag } from 'next/cache';
 import { cache } from 'react';
-import { AppData, Assignment, Project, Forecast, ElsapMirror, TimesheetStore, TicketRate, InvoicingStore, SubContractorStore, ProjektAnalysisProject, FmoStore, FmoMappingStore, FmoProject, PlanningStore } from './types';
+import { AppData, Assignment, Project, Forecast, ElsapMirror, TimesheetStore, TicketRate, InvoicingStore, SubContractorStore, ProjektAnalysisProject, FmoStore, FmoMappingStore, FmoProject, PlanningStore, SupportStore } from './types';
 import { getMonthsBetween } from './utils';
 
 const redis = new Redis({
@@ -261,6 +261,32 @@ export const readFmoMappings = cache(async (): Promise<FmoMappingStore> => {
 
 export async function writeFmoMappings(mappings: FmoMappingStore): Promise<void> {
   await withRetry(() => redis.set(FMO_MAPPING_KEY, mappings));
+}
+
+// ─── Support ─────────────────────────────────────────────────────────────────
+
+const SUPPORT_KEY = 'app:support';
+
+const EMPTY_SUPPORT: SupportStore = {
+  entries: [],
+  clusters: [],
+  lastImport: '',
+  employeeNames: [],
+};
+
+export const readSupport = cache(async (): Promise<SupportStore> => {
+  const raw = await withRetry(() => redis.get<any>(SUPPORT_KEY));
+  if (!raw) return { ...EMPTY_SUPPORT };
+  return {
+    entries: raw.entries ?? [],
+    clusters: raw.clusters ?? [],
+    lastImport: raw.lastImport ?? '',
+    employeeNames: raw.employeeNames ?? [],
+  };
+});
+
+export async function writeSupport(store: SupportStore): Promise<void> {
+  await withRetry(() => redis.set(SUPPORT_KEY, store));
 }
 
 // ─── Planning ─────────────────────────────────────────────────────────────────
