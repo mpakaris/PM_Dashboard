@@ -32,12 +32,9 @@ function Spinner() {
 }
 
 async function compressFile(file: File): Promise<File> {
-  const ab = await file.arrayBuffer();
-  const cs = new CompressionStream('gzip');
-  const writer = cs.writable.getWriter();
-  await writer.write(ab);
-  await writer.close();
-  const compressed = await new Response(cs.readable).arrayBuffer();
+  const compressed = await new Response(
+    file.stream().pipeThrough(new CompressionStream('gzip'))
+  ).arrayBuffer();
   return new File([compressed], file.name + '.gz', { type: 'application/gzip' });
 }
 
@@ -145,11 +142,16 @@ export default function ElsapClient({ mirror }: Props) {
     if (!file) return;
     setInspectResult(null);
     setInspecting(true);
-    const fd = new FormData();
-    fd.append('file', await compressFile(file));
-    const res = await inspectElsapFile(fd);
-    setInspectResult(res);
-    setInspecting(false);
+    try {
+      const fd = new FormData();
+      fd.append('file', await compressFile(file));
+      const res = await inspectElsapFile(fd);
+      setInspectResult(res);
+    } catch (err) {
+      setInspectResult({ columns: [], verrechnetCount: 0, verrechnetSamples: [], yearBreakdown: {}, error: String(err) });
+    } finally {
+      setInspecting(false);
+    }
   }
 
   async function handleImport(e: React.FormEvent<HTMLFormElement>) {
@@ -158,16 +160,27 @@ export default function ElsapClient({ mirror }: Props) {
     if (!file) return;
     setImportPhase('compressing');
     setImportResult(null);
-    const compressed = await compressFile(file);
+    let uploadFile: File;
+    try {
+      uploadFile = await compressFile(file);
+    } catch {
+      // compression failed — upload the original file directly
+      uploadFile = file;
+    }
     setImportPhase('uploading');
-    const fd = new FormData();
-    fd.append('file', compressed);
-    const res = await importElsapCsv(fd);
-    setImportPhase('idle');
-    setImportResult(res);
-    if (!res.error) {
-      if (fileRef.current) fileRef.current.value = '';
-      startTransition(() => router.refresh());
+    try {
+      const fd = new FormData();
+      fd.append('file', uploadFile);
+      const res = await importElsapCsv(fd);
+      setImportResult(res);
+      if (!res.error) {
+        if (fileRef.current) fileRef.current.value = '';
+        startTransition(() => router.refresh());
+      }
+    } catch (err) {
+      setImportResult({ added: 0, removed: 0, updated: 0, unchanged: 0, total: 0, error: String(err) });
+    } finally {
+      setImportPhase('idle');
     }
   }
 
