@@ -16,6 +16,7 @@ export interface Profile {
 export interface TeamMember {
   id: string;
   name: string;
+  sapUser?: string;          // SAP user ID (e.g. BAN9001) — used as fallback match key on ELSAP import
   roleId: string;            // ELSAP role — drives billing rates and conversion factors
   typeOverride?: ResourceType;
   profileIds: string[];
@@ -129,6 +130,7 @@ export interface ElsapRow {
   sdmName: string;
   status: string;
   verrechnet: string;
+  extLeistungsnr?: string;
 }
 
 export interface InvoiceRoleOverride {

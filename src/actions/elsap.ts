@@ -13,31 +13,131 @@ function parseStunden(raw: unknown): number {
   return parseFloat(String(raw).replace(',', '.')) || 0;
 }
 
-function makeDedupId(einkBeleg: string, position: string, leistZeile: string, datum: string, sapUser: string, aktivitaet: string): string {
-  return [einkBeleg, position, leistZeile, datum, sapUser, aktivitaet].join('|');
+function makeDedupId(einkBeleg: string, position: string, leistZeile: string, datum: string, sapUser: string, aktivitaet: string, stunden: number): string {
+  // stunden is included so two bookings on the same day/ticket with different hours stay separate.
+  // True duplicates (all fields identical) still collapse to one row.
+  return [einkBeleg, position, leistZeile, datum, sapUser, aktivitaet, String(stunden)].join('|');
+}
+
+// ─── Column mapping ───────────────────────────────────────────────────────────
+
+type ColIdx = {
+  jahr: number; periode: number; datum: number; einkBeleg: number;
+  position: number; posText: number; leistZeile: number; leistZText: number;
+  sapUser: number; name: number; aktivitaet: number; stunden: number;
+  sdm: number; sdmName: number; status: number; verrechnet: number;
+  extLeistungsnr: number;
+};
+
+function buildColIdx(header: string[]): ColIdx {
+  // Try each matcher in order — first match wins.
+  const first = (...matchers: Array<string | ((h: string) => boolean)>): number => {
+    for (const m of matchers) {
+      const i = typeof m === 'string'
+        ? header.indexOf(m)
+        : header.findIndex(m);
+      if (i >= 0) return i;
+    }
+    return -1;
+  };
+
+  return {
+    // ── Stable across both formats ──────────────────────────────────────────
+    jahr:       first('Jahr'),
+    datum:      first('Datum'),
+    einkBeleg:  first('EinkBeleg'),
+    status:     first('Status'),
+
+    // ── Renamed in new format ───────────────────────────────────────────────
+    periode:    first('Periode',     'Per'),
+    position:   first('Position',    'Pos'),
+    posText:    first('PosText',     'Kurztext'),
+    leistZeile: first('LeistZeile',  'Zeile'),   // first occurrence = Zeile[2]
+    leistZText: first('LeistZText',  'Leistnr Kurztext'),
+    sdmName:    first('SDM Name',    'Name des SDM'),
+
+    // ── Partial / multi-name matches ─────────────────────────────────────────
+    sapUser:    first(
+      (h) => h.includes('SAP User') && !h.startsWith('SDM'), // avoid 'SDM SAP Benutzer'
+      'Benutzername',
+    ),
+    name:       first(
+      (h) => h.includes('Name') && h.includes('Leistungserbringer'),
+      'Mitarbeiter',
+    ),
+    aktivitaet: first(
+      (h) => h.includes('Aktivit'),
+      'Benutzerfeld',
+    ),
+    sdm:        first(
+      'SDM',
+      'SDM SAP Benutzer',
+    ),
+
+    // ── Stunden: exact name, or LAST occurrence of 'Menge' (new format has
+    //    two: index 4 = Bestellmenge total, index 18 = actual hours) ─────────
+    stunden: (() => {
+      const exact = header.indexOf('Stunden');
+      if (exact >= 0) return exact;
+      const last = header.lastIndexOf('Menge');
+      return last >= 0 ? last : -1;
+    })(),
+
+    // ── Not present in new format → will be empty string ────────────────────
+    verrechnet:     first((h) => h.toLowerCase() === 'verrechnet'),
+
+    // ── New field: customer cost center (only in new Excel format) ────────────
+    extLeistungsnr: first('ext. Leistungsnr.'),
+  };
+}
+
+// ─── Column failsafe ──────────────────────────────────────────────────────────
+
+type ColWarning = { field: string; severity: 'error' | 'warn'; message: string };
+
+function checkColumns(idx: ColIdx, rows: ElsapRow[]): ColWarning[] {
+  const warnings: ColWarning[] = [];
+
+  // Hard-required columns — import must be blocked if missing
+  if (idx.jahr < 0)
+    warnings.push({ field: 'Jahr', severity: 'error', message: 'Column "Jahr" not found — no rows can be filtered by year' });
+  if (idx.einkBeleg < 0)
+    warnings.push({ field: 'EinkBeleg', severity: 'error', message: 'Column "EinkBeleg" not found — IDs cannot be generated' });
+  if (idx.status < 0)
+    warnings.push({ field: 'Status', severity: 'error', message: 'Column "Status" not found — Verbucht filter will not work' });
+  if (idx.stunden < 0)
+    warnings.push({ field: 'Stunden', severity: 'error', message: 'Column "Stunden" not found — all hours will be 0' });
+
+  // Soft columns — import allowed but data will be incomplete
+  if (idx.name < 0)
+    warnings.push({ field: 'Leistungserbringer Name', severity: 'warn', message: 'Name column not found — person names will be empty' });
+  if (idx.posText < 0)
+    warnings.push({ field: 'PosText', severity: 'warn', message: 'Column "PosText" not found — project names will be empty' });
+  if (idx.periode < 0)
+    warnings.push({ field: 'Periode', severity: 'warn', message: 'Column "Periode" not found — month grouping will be broken' });
+
+  // Data quality checks on parsed rows (only run if we have rows to inspect)
+  if (rows.length > 0) {
+    const zeroHours = rows.filter((r) => r.stunden === 0).length;
+    const emptyName = rows.filter((r) => !r.name).length;
+    const emptyPos  = rows.filter((r) => !r.posText).length;
+    const pct = (n: number) => Math.round((n / rows.length) * 100);
+
+    if (pct(zeroHours) > 30)
+      warnings.push({ field: 'stunden', severity: 'error', message: `${pct(zeroHours)}% of rows have 0 hours — column mapping likely failed` });
+    if (pct(emptyName) > 50)
+      warnings.push({ field: 'name', severity: 'warn', message: `${pct(emptyName)}% of rows have no person name` });
+    if (pct(emptyPos) > 50)
+      warnings.push({ field: 'posText', severity: 'warn', message: `${pct(emptyPos)}% of rows have no project name` });
+  }
+
+  return warnings;
 }
 
 // ─── Shared row builder (works for both CSV columns and Excel cells) ──────────
 
 function rowsFromMatrix(header: string[], data: unknown[][]): ElsapRow[] {
-  const idx = {
-    jahr:      header.indexOf('Jahr'),
-    periode:   header.indexOf('Periode'),
-    datum:     header.indexOf('Datum'),
-    einkBeleg: header.indexOf('EinkBeleg'),
-    position:  header.indexOf('Position'),
-    posText:   header.indexOf('PosText'),
-    leistZeile: header.indexOf('LeistZeile'),
-    leistZText: header.indexOf('LeistZText'),
-    sapUser:   header.findIndex((h) => h.includes('SAP User')),
-    name:      header.findIndex((h) => h.includes('Name') && h.includes('Leistungserbringer')),
-    aktivitaet: header.findIndex((h) => h.includes('Aktivit')),
-    stunden:   header.indexOf('Stunden'),
-    sdm:       header.indexOf('SDM'),
-    sdmName:   header.findIndex((h) => h === 'SDM Name'),
-    status:    header.indexOf('Status'),
-    verrechnet: header.findIndex((h) => h.toLowerCase() === 'verrechnet'),
-  };
+  const idx = buildColIdx(header);
 
   const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
@@ -60,7 +160,7 @@ function rowsFromMatrix(header: string[], data: unknown[][]): ElsapRow[] {
 
   const get = (cols: unknown[], i: number) => i >= 0 ? str(cols[i]) : '';
 
-  const rows: ElsapRow[] = [];
+  const rowMap = new Map<string, ElsapRow>();
   for (const cols of data) {
     const jahr = parseInt(get(cols, idx.jahr), 10);
     if (isNaN(jahr) || jahr !== 2026) continue;
@@ -68,32 +168,36 @@ function rowsFromMatrix(header: string[], data: unknown[][]): ElsapRow[] {
     const einkBeleg  = get(cols, idx.einkBeleg);
     const position   = get(cols, idx.position);
     const leistZeile = get(cols, idx.leistZeile);
-
     const datum      = get(cols, idx.datum);
     const sapUser    = get(cols, idx.sapUser);
     const aktivitaet = get(cols, idx.aktivitaet);
+    const stunden    = parseStunden(idx.stunden >= 0 ? cols[idx.stunden] : 0);
+    const id         = makeDedupId(einkBeleg, position, leistZeile, datum, sapUser, aktivitaet, stunden);
 
-    rows.push({
-      id:         makeDedupId(einkBeleg, position, leistZeile, datum, sapUser, aktivitaet),
-      jahr,
-      periode:    parseInt(get(cols, idx.periode), 10) || 0,
-      datum,
-      einkBeleg,
-      position,
-      posText:    get(cols, idx.posText),
-      leistZeile,
-      leistZText: get(cols, idx.leistZText),
-      sapUser,
-      name:       get(cols, idx.name),
-      aktivitaet,
-      stunden:    parseStunden(idx.stunden >= 0 ? cols[idx.stunden] : 0),
-      sdm:        get(cols, idx.sdm),
-      sdmName:    get(cols, idx.sdmName),
-      status:     get(cols, idx.status),
-      verrechnet: strVerrechnet(idx.verrechnet >= 0 ? cols[idx.verrechnet] : ''),
-    });
+    if (!rowMap.has(id)) {
+      rowMap.set(id, {
+        id,
+        jahr,
+        periode:        parseInt(get(cols, idx.periode), 10) || 0,
+        datum,
+        einkBeleg,
+        position,
+        posText:        get(cols, idx.posText),
+        leistZeile,
+        leistZText:     get(cols, idx.leistZText),
+        sapUser,
+        name:           get(cols, idx.name),
+        aktivitaet,
+        stunden,
+        sdm:            get(cols, idx.sdm),
+        sdmName:        get(cols, idx.sdmName),
+        status:         get(cols, idx.status),
+        verrechnet:     strVerrechnet(idx.verrechnet >= 0 ? cols[idx.verrechnet] : ''),
+        extLeistungsnr: get(cols, idx.extLeistungsnr),
+      });
+    }
   }
-  return rows;
+  return [...rowMap.values()];
 }
 
 // ─── Format-specific parsers ──────────────────────────────────────────────────
@@ -175,13 +279,42 @@ export async function importElsapCsv(formData: FormData): Promise<{
   unchanged: number;
   total: number;
   error?: string;
+  warnings?: string[];
 }> {
   const file = formData.get('file') as File | null;
   if (!file) return { added: 0, removed: 0, updated: 0, unchanged: 0, total: 0, error: 'No file provided' };
 
   const buffer = await file.arrayBuffer();
   const isExcel = /\.(xlsx|xls|xlsb|xlsm)$/i.test(file.name);
+
+  // Parse header separately so we can run column checks before committing
+  let header: string[] = [];
+  if (isExcel) {
+    const workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    const raw = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: '' });
+    if (raw.length > 0) header = (raw[0] as unknown[]).map((h) => String(h ?? '').trim());
+  } else {
+    const text = new TextDecoder('utf-16le').decode(buffer);
+    const firstLine = text.split(/\r?\n/)[0];
+    header = firstLine.split(';').map((h) => h.trim());
+  }
+
+  const colIdx = buildColIdx(header);
   const incoming = isExcel ? parseExcel(buffer) : parseCsv(buffer);
+
+  // Run column + data quality checks
+  const colWarnings = checkColumns(colIdx, incoming);
+  const errors   = colWarnings.filter((w) => w.severity === 'error').map((w) => w.message);
+  const softWarns = colWarnings.filter((w) => w.severity === 'warn').map((w) => w.message);
+
+  if (errors.length > 0) {
+    return {
+      added: 0, removed: 0, updated: 0, unchanged: 0, total: 0,
+      error: `Import blocked — column mapping failed:\n• ${errors.join('\n• ')}`,
+      warnings: softWarns.length > 0 ? softWarns : undefined,
+    };
+  }
 
   if (incoming.length === 0) {
     return { added: 0, removed: 0, updated: 0, unchanged: 0, total: 0, error: 'No 2026 rows found in file — check encoding, Jahr column, or sheet layout' };
@@ -210,7 +343,10 @@ export async function importElsapCsv(formData: FormData): Promise<{
   await writeElsap(mirror);
   revalidatePath('/elsap');
 
-  return { added, removed, updated, unchanged, total: incoming.length };
+  return {
+    added, removed, updated, unchanged, total: incoming.length,
+    warnings: softWarns.length > 0 ? softWarns : undefined,
+  };
 }
 
 // ─── Apply to Dashboard ───────────────────────────────────────────────────────
@@ -242,15 +378,20 @@ export async function applyElsapToDb(): Promise<{
   }
 
   // ── 2. Team Members — only ADD new ones, never remove or modify existing ───
+  // Match priority: exact name → sapUser fallback (handles SAP-ID-only exports for former staff)
   for (const row of verbuchtRows) {
     const name = row.name;
     if (!name) continue;
-    const exists = data.teamMembers.some((m) => m.name === name);
-    if (!exists) {
+    const byName    = data.teamMembers.find((m) => m.name === name);
+    const bySapUser = !byName && row.sapUser
+      ? data.teamMembers.find((m) => m.sapUser === row.sapUser)
+      : undefined;
+    if (!byName && !bySapUser) {
       const role = data.roles.find((r) => r.name === row.leistZText);
       data.teamMembers.push({
         id: generateId(),
         name,
+        sapUser: row.sapUser || undefined,
         roleId: role?.id ?? '',
         profileIds: [],
         monthlyAvailability: 0,
@@ -286,9 +427,13 @@ export async function applyElsapToDb(): Promise<{
   }
 
   // ── 4. Assignments — only ADD new ones, plannedHours are NEVER touched ──────
+  const findMember = (row: { name: string; sapUser: string }) =>
+    data.teamMembers.find((m) => m.name === row.name) ??
+    (row.sapUser ? data.teamMembers.find((m) => m.sapUser === row.sapUser) : undefined);
+
   const seen = new Set<string>();
   for (const row of verbuchtRows) {
-    const member = data.teamMembers.find((m) => m.name === row.name);
+    const member = findMember(row);
     const project = data.projects.find((p) => p.name === row.posText);
     if (!member || !project) continue;
     const key = `${member.id}:${project.id}`;
@@ -306,7 +451,7 @@ export async function applyElsapToDb(): Promise<{
   // ── 5. Recompute billedHours only — plannedHours are never modified ─────────
   const billedMap = new Map<string, number>(); // `${memberId}:${projectId}:${month}` → hours
   for (const row of verbuchtRows) {
-    const member = data.teamMembers.find((m) => m.name === row.name);
+    const member = findMember(row);
     const project = data.projects.find((p) => p.name === row.posText);
     if (!member || !project) continue;
     const month = `${row.jahr}-${String(row.periode).padStart(2, '0')}`;

@@ -29,7 +29,7 @@ export default function ElsapClient({ mirror }: Props) {
   const [isPending, startTransition] = useTransition();
   const [importing, setImporting] = useState(false);
   const [applying, setApplying] = useState(false);
-  const [importResult, setImportResult] = useState<{ added: number; removed: number; updated: number; unchanged: number; total: number; error?: string } | null>(null);
+  const [importResult, setImportResult] = useState<{ added: number; removed: number; updated: number; unchanged: number; total: number; error?: string; warnings?: string[] } | null>(null);
   const [inspectResult, setInspectResult] = useState<{ columns: string[]; verrechnetCount: number; verrechnetSamples: string[]; yearBreakdown: Record<string, number>; error?: string } | null>(null);
   const [applyResult, setApplyResult] = useState<{ roles: number; members: number; projects: number; assignments: number; error?: string } | null>(null);
   const [errorModal, setErrorModal] = useState<string | null>(null);
@@ -246,10 +246,23 @@ export default function ElsapClient({ mirror }: Props) {
 
       {/* Result Banners */}
       {importResult && (
-        <div className={`mb-4 px-4 py-3 rounded-md text-sm ${importResult.error ? 'bg-red-50 text-red-700 border border-red-200' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'}`}>
-          {importResult.error
-            ? `Import failed: ${importResult.error}`
-            : `Import complete — ${importResult.added} new · ${importResult.updated} changed · ${importResult.removed} removed · ${importResult.unchanged} unchanged. Total: ${importResult.total} rows.`}
+        <div className={`mb-4 px-4 py-3 rounded-md text-sm space-y-1 ${importResult.error ? 'bg-red-50 text-red-700 border border-red-200' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'}`}>
+          {importResult.error ? (
+            <>
+              <p className="font-semibold">Import blocked</p>
+              {importResult.error.split('\n').map((line, i) => <p key={i}>{line}</p>)}
+            </>
+          ) : (
+            <>
+              <p>{`Import complete — ${importResult.added} new · ${importResult.updated} changed · ${importResult.removed} removed · ${importResult.unchanged} unchanged. Total: ${importResult.total} rows.`}</p>
+              {importResult.warnings && importResult.warnings.length > 0 && (
+                <div className="mt-1 pt-1 border-t border-emerald-200 text-amber-700">
+                  <p className="font-semibold">Warnings (import succeeded but data may be incomplete):</p>
+                  {importResult.warnings.map((w, i) => <p key={i}>⚠ {w}</p>)}
+                </div>
+              )}
+            </>
+          )}
         </div>
       )}
       {inspectResult && (
@@ -375,6 +388,7 @@ export default function ElsapClient({ mirror }: Props) {
                   <SortTh label="Project" k="posText" />
                   <th className="text-left px-3 py-2.5 font-medium text-gray-600 whitespace-nowrap">PO No.</th>
                   <th className="text-left px-3 py-2.5 font-medium text-gray-600 whitespace-nowrap">Activity</th>
+                  <th className="text-left px-3 py-2.5 font-medium text-gray-600 whitespace-nowrap">Kostenstelle</th>
                   <SortTh label="Hours" k="stunden" />
                   <SortTh label="Status" k="status" />
                   <th className="text-left px-3 py-2.5 font-medium text-gray-600 whitespace-nowrap">Verrechnet</th>
@@ -382,13 +396,16 @@ export default function ElsapClient({ mirror }: Props) {
               </thead>
               <tbody>
                 {visibleRows.map((row, idx) => (
-                  <tr key={row.id} className={`border-b border-gray-50 ${idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/40'}`}>
+                  <tr key={`${row.id}-${idx}`} className={`border-b border-gray-50 ${idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/40'}`}>
                     <td className="px-3 py-2 font-medium text-gray-700 whitespace-nowrap">{monthLabel(row.periode, row.jahr)}</td>
                     <td className="px-3 py-2 text-gray-800 whitespace-nowrap">{row.name || <span className="text-gray-400">{row.sapUser}</span>}</td>
                     <td className="px-3 py-2 text-gray-500 max-w-[180px] truncate" title={row.leistZText}>{row.leistZText}</td>
                     <td className="px-3 py-2 text-gray-700 max-w-[200px] truncate" title={row.posText}>{row.posText}</td>
                     <td className="px-3 py-2 text-gray-400 whitespace-nowrap font-mono">{row.einkBeleg}</td>
                     <td className="px-3 py-2 text-gray-500 max-w-[200px] truncate" title={row.aktivitaet}>{row.aktivitaet}</td>
+                    <td className="px-3 py-2 text-gray-500 font-mono whitespace-nowrap">
+                      {row.extLeistungsnr || <span className="text-gray-300">—</span>}
+                    </td>
                     <td className="px-3 py-2 text-right font-semibold text-slate-700 whitespace-nowrap">
                       {row.stunden.toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 3 })}h
                     </td>
@@ -407,7 +424,7 @@ export default function ElsapClient({ mirror }: Props) {
               </tbody>
               <tfoot>
                 <tr className="border-t-2 border-slate-200 bg-slate-50">
-                  <td colSpan={6} className="px-3 py-2 text-xs font-semibold text-slate-600">
+                  <td colSpan={7} className="px-3 py-2 text-xs font-semibold text-slate-600">
                     Subtotal — {filtered.length.toLocaleString('de-DE')} rows
                   </td>
                   <td className="px-3 py-2 text-right font-bold text-slate-700 whitespace-nowrap">

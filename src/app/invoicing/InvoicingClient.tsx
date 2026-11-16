@@ -453,7 +453,7 @@ function MonthSection({ month, store, allRoles, expanded, onToggle, onRefresh, i
   }
 
   return (
-    <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+    <div className={`bg-white rounded-lg overflow-hidden transition-all ${expanded ? 'border-2 border-black' : 'border border-gray-200'}`}>
       <button onClick={onToggle}
         className="w-full flex items-center justify-between px-5 py-3.5 hover:bg-gray-50 transition-colors text-left">
         <div className="flex items-center gap-3">
@@ -524,11 +524,18 @@ function ProjectCard({ project, month, store, allRoles, onRefresh, isPending }: 
               </div>
 
               <div className="space-y-0.5">
-                {role.members.map(member => (
-                  <MemberRow key={member.sapUser} member={member} month={month}
-                    projectName={project.projectName} allRoles={allRoles}
-                    rate={rate} store={store} onRefresh={onRefresh} />
-                ))}
+                {role.members.map(member => {
+                  const invoicedH = role.invoiceLines
+                    .flatMap(l => l.members ?? [])
+                    .filter(m => m.sapUser === member.sapUser)
+                    .reduce((s, m) => s + m.hours, 0);
+                  return (
+                    <MemberRow key={member.sapUser} member={member} month={month}
+                      projectName={project.projectName} allRoles={allRoles}
+                      rate={rate} store={store} onRefresh={onRefresh}
+                      isInvoiced={invoicedH >= member.hours - 0.001} />
+                  );
+                })}
               </div>
 
               <div className="flex items-center mt-1.5 pt-1.5 border-t border-gray-100 text-xs text-gray-500">
@@ -568,9 +575,9 @@ function ProjectCard({ project, month, store, allRoles, onRefresh, isPending }: 
 
 // ─── Member row ───────────────────────────────────────────────────────────────
 
-function MemberRow({ member, month, projectName, allRoles, rate, store, onRefresh }: {
+function MemberRow({ member, month, projectName, allRoles, rate, store, onRefresh, isInvoiced }: {
   member: ViewMember; month: string; projectName: string; allRoles: string[];
-  rate: number; store: InvoicingStore; onRefresh: () => void;
+  rate: number; store: InvoicingStore; onRefresh: () => void; isInvoiced?: boolean;
 }) {
   const isAdmin = useRole() === 'admin';
   const override = store.roleOverrides.find(o => o.sapUser === member.sapUser && o.month === month && o.projectName === projectName);
@@ -585,7 +592,7 @@ function MemberRow({ member, month, projectName, allRoles, rate, store, onRefres
   return (
     <div className="flex items-center justify-between py-0.5 pl-3 text-sm">
       <div className="flex items-center gap-2 flex-1 min-w-0">
-        <span className="text-gray-700 truncate">{member.name}</span>
+        <span className={`truncate font-bold ${isInvoiced ? 'text-emerald-600' : 'text-amber-700'}`}>{member.name}</span>
         {override && <span className="text-xs text-sky-500 shrink-0">↪ overridden</span>}
       </div>
       <div className="flex items-center gap-3 shrink-0">
