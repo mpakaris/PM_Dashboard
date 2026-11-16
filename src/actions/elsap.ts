@@ -1,10 +1,26 @@
 'use server';
 
 import * as XLSX from 'xlsx';
+import { gunzip } from 'zlib';
+import { promisify } from 'util';
 import { revalidatePath } from 'next/cache';
 import { readData, writeData, readElsap, writeElsap } from '@/lib/db';
 import { generateId } from '@/lib/utils';
 import { ElsapRow } from '@/lib/types';
+
+const gunzipAsync = promisify(gunzip);
+
+async function resolveFileBuffer(file: File): Promise<{ buffer: ArrayBuffer; originalName: string }> {
+  const originalName = file.name.replace(/\.gz$/i, '');
+  if (/\.gz$/i.test(file.name) || file.type === 'application/gzip') {
+    const raw = Buffer.from(await file.arrayBuffer());
+    const decompressed = await gunzipAsync(raw);
+    const ab = new ArrayBuffer(decompressed.length);
+    new Uint8Array(ab).set(decompressed);
+    return { buffer: ab, originalName };
+  }
+  return { buffer: await file.arrayBuffer(), originalName };
+}
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
 
@@ -232,8 +248,8 @@ export async function inspectElsapFile(formData: FormData): Promise<{
   const file = formData.get('file') as File | null;
   if (!file) return { columns: [], verrechnetCount: 0, verrechnetSamples: [], yearBreakdown: {} };
 
-  const buffer = await file.arrayBuffer();
-  const isExcel = /\.(xlsx|xls|xlsb|xlsm)$/i.test(file.name);
+  const { buffer, originalName } = await resolveFileBuffer(file);
+  const isExcel = /\.(xlsx|xls|xlsb|xlsm)$/i.test(originalName);
 
   let allRows: unknown[][] = [];
   let columns: string[] = [];
@@ -284,8 +300,8 @@ export async function importElsapCsv(formData: FormData): Promise<{
   const file = formData.get('file') as File | null;
   if (!file) return { added: 0, removed: 0, updated: 0, unchanged: 0, total: 0, error: 'No file provided' };
 
-  const buffer = await file.arrayBuffer();
-  const isExcel = /\.(xlsx|xls|xlsb|xlsm)$/i.test(file.name);
+  const { buffer, originalName } = await resolveFileBuffer(file);
+  const isExcel = /\.(xlsx|xls|xlsb|xlsm)$/i.test(originalName);
 
   // Parse header separately so we can run column checks before committing
   let header: string[] = [];

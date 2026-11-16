@@ -22,6 +22,16 @@ function monthLabel(periode: number, yr: number) {
 
 type SortKey = 'periode' | 'name' | 'posText' | 'stunden' | 'status';
 
+async function compressFile(file: File): Promise<File> {
+  const ab = await file.arrayBuffer();
+  const cs = new CompressionStream('gzip');
+  const writer = cs.writable.getWriter();
+  await writer.write(ab);
+  await writer.close();
+  const compressed = await new Response(cs.readable).arrayBuffer();
+  return new File([compressed], file.name + '.gz', { type: 'application/gzip' });
+}
+
 export default function ElsapClient({ mirror }: Props) {
   const router = useRouter();
   const isAdmin = useRole() === 'admin';
@@ -125,7 +135,7 @@ export default function ElsapClient({ mirror }: Props) {
     if (!file) return;
     setInspectResult(null);
     const fd = new FormData();
-    fd.append('file', file);
+    fd.append('file', await compressFile(file));
     const res = await inspectElsapFile(fd);
     setInspectResult(res);
   }
@@ -137,7 +147,7 @@ export default function ElsapClient({ mirror }: Props) {
     setImporting(true);
     setImportResult(null);
     const fd = new FormData();
-    fd.append('file', file);
+    fd.append('file', await compressFile(file));
     const res = await importElsapCsv(fd);
     setImportResult(res);
     setImporting(false);
